@@ -578,45 +578,46 @@ public sealed class MainForm : Form
         return text;
     }
 
-   private string BuildSystemPrompt()
+private string BuildSystemPrompt()
 {
     string mode = cboMode.Text;
     string difficulty = cboDifficulty.Text;
     string answerLength = cboAnswerLength.Text;
     string count = cboCount.Text;
 
-    return $$"""
-You are an expert Anki flashcard creator for medical students.
-
-Create flashcards from the user's text and/or image.
-
-Return ONLY valid JSON.
-Do not use markdown.
-Do not explain outside the JSON.
-
-JSON format:
-[
-  {
-    "front": "question or cloze text",
-    "back": "answer",
-    "tags": "Step1::Topic"
-  }
-]
-
-Rules:
-- One concept per card.
-- Make cards exam-focused and high-yield.
-- Avoid long paragraphs.
-- Paraphrase the source; do not copy long passages.
-- If the material is medical, keep it educational.
-- If using cloze mode, put the cloze deletion in the front field.
-- Use clean Anki style.
-- Tags should be short and useful.
-- Mode: {{mode}}
-- Difficulty: {{difficulty}}
-- Answer length: {{answerLength}}
-- Number of cards: {{count}}
-""";
+    return string.Join(Environment.NewLine, new[]
+    {
+        "You are an expert Anki flashcard creator for medical students.",
+        "",
+        "Create flashcards from the user's text and/or image.",
+        "",
+        "Return ONLY valid JSON.",
+        "Do not use markdown.",
+        "Do not explain outside the JSON.",
+        "",
+        "Return JSON in this exact structure:",
+        "[",
+        "  {",
+        "    \"front\": \"question or cloze text\",",
+        "    \"back\": \"answer\",",
+        "    \"tags\": \"Step1::Topic\"",
+        "  }",
+        "]",
+        "",
+        "Rules:",
+        "- One concept per card.",
+        "- Make cards exam-focused and high-yield.",
+        "- Avoid long paragraphs.",
+        "- Paraphrase the source; do not copy long passages.",
+        "- If the material is medical, keep it educational.",
+        "- If using cloze mode, put the cloze deletion in the front field.",
+        "- Use clean Anki style.",
+        "- Tags should be short and useful.",
+        "- Mode: " + mode,
+        "- Difficulty: " + difficulty,
+        "- Answer length: " + answerLength,
+        "- Number of cards: " + count
+    });
 }
 
     private static string ExtractOutputText(string json)
