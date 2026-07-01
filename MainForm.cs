@@ -1,7 +1,10 @@
 using System.Drawing;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Windows.Forms;
 
 namespace AIFlashcardMaker;
 
@@ -35,15 +38,25 @@ public sealed class LocalStore
     public List<UsedActivationCode> UsedCodes { get; set; } = new();
 }
 
+public sealed class AppSettings
+{
+    public string ApiProvider { get; set; } = "Z.ai";
+    public string ApiKey { get; set; } = "";
+    public string Model { get; set; } = "GLM-4.7-FlashX";
+    public string BaseUrl { get; set; } = "https://api.z.ai/api/paas/v4";
+}
+
 public sealed class MainForm : Form
 {
     private readonly string dataDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AIFlashcardMaker");
 
     private string StorePath => Path.Combine(dataDir, "accounts.json");
+    private string SettingsPath => Path.Combine(dataDir, "settings.json");
 
     private readonly List<Flashcard> _cards = new();
     private LocalStore _store = new();
+    private AppSettings _settings = new();
     private LocalAccount? _currentUser;
     private int _currentIndex = -1;
     private bool _suppressCardSelection;
@@ -68,6 +81,10 @@ public sealed class MainForm : Form
     private readonly TextBox txtBack = new();
     private readonly TextBox txtTags = new();
 
+    private readonly TextBox txtApiKey = new();
+    private readonly TextBox txtModel = new();
+    private readonly TextBox txtBaseUrl = new();
+
     private readonly ComboBox cboMode = new();
     private readonly ComboBox cboDifficulty = new();
     private readonly ComboBox cboAnswerLength = new();
@@ -83,7 +100,6 @@ public sealed class MainForm : Form
     private readonly Color Panel = Color.FromArgb(25, 32, 48);
     private readonly Color Panel2 = Color.FromArgb(33, 42, 61);
     private readonly Color Input = Color.FromArgb(8, 12, 20);
-    private readonly Color Border = Color.FromArgb(58, 68, 90);
     private readonly Color TextColor = Color.FromArgb(238, 242, 248);
     private readonly Color Muted = Color.FromArgb(162, 172, 190);
     private readonly Color Blue = Color.FromArgb(92, 142, 255);
@@ -102,6 +118,7 @@ public sealed class MainForm : Form
         DoubleBuffered = true;
 
         LoadStore();
+        LoadSettings();
         EnsureOptionBoxes();
         BuildLoginScreen();
     }
@@ -153,14 +170,14 @@ public sealed class MainForm : Form
 
         hero.Controls.Add(new Label
         {
-            Text = "A clean Anki workflow for medical students: create prompts, import AI JSON, preview, edit, and export cards.",
+            Text = "A clean Anki workflow for medical students: generate cards with Z.ai, preview, edit, study, and export.",
             Dock = DockStyle.Fill,
             ForeColor = Muted,
             Font = new Font("Segoe UI", 13),
             TextAlign = ContentAlignment.TopLeft
         }, 0, 2);
 
-        hero.Controls.Add(Feature("One-click prompt builder"), 0, 3);
+        hero.Controls.Add(Feature("Automatic Z.ai flashcard generation"), 0, 3);
         hero.Controls.Add(Feature("Preview and edit every card"), 0, 4);
         hero.Controls.Add(Feature("Anki-ready copy and .txt export"), 0, 5);
 
@@ -394,11 +411,12 @@ public sealed class MainForm : Form
             BackColor = Sidebar
         };
 
-        sidebar.Controls.Add(NavButton("1. Create Prompt", ShowCreatePage));
+        sidebar.Controls.Add(NavButton("1. Create / Generate", ShowCreatePage));
         sidebar.Controls.Add(NavButton("2. Import JSON", ShowImportPage));
         sidebar.Controls.Add(NavButton("3. Preview / Edit", ShowPreviewPage));
         sidebar.Controls.Add(NavButton("4. Export", ShowExportPage));
         sidebar.Controls.Add(NavButton("5. Account", ShowAccountPage));
+        sidebar.Controls.Add(NavButton("6. AI Settings", ShowSettingsPage));
 
         main.Controls.Add(sidebar, 0, 0);
 
@@ -445,8 +463,8 @@ public sealed class MainForm : Form
 
         _content.Controls.Add(page);
 
-        page.Controls.Add(PageHeader("Step 1 — Create AI Prompt",
-            "Paste your notes, lecture text, UWorld explanation, or describe an uploaded image. Then copy the prompt into ChatGPT/Gemini/Copilot."), 0, 0);
+        page.Controls.Add(PageHeader("Step 1 — Create or Generate Flashcards",
+            "Paste your notes. Use Generate with Z.ai for automatic cards, or Create Prompt as backup."), 0, 0);
 
         page.Controls.Add(OptionsBar(), 0, 1);
 
@@ -464,7 +482,7 @@ public sealed class MainForm : Form
         page.Controls.Add(split, 0, 2);
 
         var sourceCard = CardWithTitle("Source Material");
-        var promptCard = CardWithTitle("AI Prompt");
+        var promptCard = CardWithTitle("Manual AI Prompt Backup");
 
         split.Controls.Add(sourceCard.Container, 0, 0);
         split.Controls.Add(promptCard.Container, 1, 0);
@@ -473,12 +491,13 @@ public sealed class MainForm : Form
         sourceCard.Body.Controls.Add(txtSource);
 
         var sourceButtons = BottomBar();
-        sourceButtons.Controls.Add(Button("Create Prompt", Blue, 145, (_, _) => CreatePrompt()));
-        sourceButtons.Controls.Add(Button("Clear", Panel2, 95, (_, _) => txtSource.Clear()));
-        sourceButtons.Controls.Add(Button("Next: Import", Green, 130, (_, _) => ShowImportPage()));
+        sourceButtons.Controls.Add(Button("Generate with Z.ai", Green, 165, async (_, _) => await GenerateAutomaticallyAsync()));
+        sourceButtons.Controls.Add(Button("Create Prompt", Blue, 135, (_, _) => CreatePrompt()));
+        sourceButtons.Controls.Add(Button("Clear", Panel2, 85, (_, _) => txtSource.Clear()));
+        sourceButtons.Controls.Add(Button("Next: Import", Panel2, 120, (_, _) => ShowImportPage()));
         sourceCard.Footer.Controls.Add(sourceButtons);
 
-        StyleLargeTextBox(txtPrompt, "Your generated AI prompt will appear here...");
+        StyleLargeTextBox(txtPrompt, "Manual prompt will appear here...");
         txtPrompt.ReadOnly = false;
         promptCard.Body.Controls.Add(txtPrompt);
 
@@ -506,7 +525,7 @@ public sealed class MainForm : Form
         _content.Controls.Add(page);
 
         page.Controls.Add(PageHeader("Step 2 — Import AI JSON",
-            "Paste the JSON answer returned by the AI. The app will parse it into editable Anki cards."), 0, 0);
+            "Paste the JSON answer returned by an AI. Automatic Z.ai generation skips this step."), 0, 0);
 
         var split = new TableLayoutPanel
         {
@@ -743,6 +762,93 @@ public sealed class MainForm : Form
         layout.Controls.Add(new Label
         {
             Text = "Demo codes are stored locally and are not secure for real selling. Later we should connect this screen to Supabase/Vercel for real monthly/yearly activation.",
+            ForeColor = Muted,
+            Font = new Font("Segoe UI", 10),
+            Dock = DockStyle.Fill
+        }, 0, 8);
+    }
+
+    private void ShowSettingsPage()
+    {
+        _content.Controls.Clear();
+
+        var page = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            BackColor = Bg
+        };
+
+        page.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        _content.Controls.Add(page);
+
+        page.Controls.Add(PageHeader("AI Settings",
+            "Paste your Z.ai API key here. It is saved locally on this computer, not in GitHub."), 0, 0);
+
+        var card = Card();
+        page.Controls.Add(card, 0, 1);
+
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 410,
+            RowCount = 9,
+            ColumnCount = 1,
+            Padding = new Padding(24),
+            BackColor = Panel
+        };
+
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        card.Controls.Add(layout);
+
+        layout.Controls.Add(Title("Z.ai API"), 0, 0);
+
+        StyleSingleLineTextBox(txtApiKey, "Paste Z.ai API key");
+        txtApiKey.UseSystemPasswordChar = true;
+        txtApiKey.Text = _settings.ApiKey;
+
+        StyleSingleLineTextBox(txtModel, "Model");
+        txtModel.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "GLM-4.7-FlashX" : _settings.Model;
+
+        StyleSingleLineTextBox(txtBaseUrl, "Base URL");
+        txtBaseUrl.Text = string.IsNullOrWhiteSpace(_settings.BaseUrl)
+            ? "https://api.z.ai/api/paas/v4"
+            : _settings.BaseUrl;
+
+        layout.Controls.Add(SmallLabel("API Key"), 0, 1);
+        layout.Controls.Add(txtApiKey, 0, 2);
+
+        layout.Controls.Add(SmallLabel("Model"), 0, 3);
+        layout.Controls.Add(txtModel, 0, 4);
+
+        layout.Controls.Add(SmallLabel("Base URL"), 0, 5);
+        layout.Controls.Add(txtBaseUrl, 0, 6);
+
+        var buttons = BottomBar();
+        buttons.Controls.Add(Button("Save Settings", Green, 150, (_, _) => SaveSettingsFromUi()));
+        buttons.Controls.Add(Button("Clear Key", Red, 110, (_, _) =>
+        {
+            txtApiKey.Clear();
+            SaveSettingsFromUi();
+        }));
+
+        layout.Controls.Add(buttons, 0, 7);
+
+        layout.Controls.Add(new Label
+        {
+            Text = "For testing, local key storage is okay. For selling the app later, the API key should move to your backend so users cannot access it.",
             ForeColor = Muted,
             Font = new Font("Segoe UI", 10),
             Dock = DockStyle.Fill
@@ -1292,6 +1398,59 @@ public sealed class MainForm : Form
         }));
     }
 
+    private void LoadSettings()
+    {
+        try
+        {
+            Directory.CreateDirectory(dataDir);
+
+            if (!File.Exists(SettingsPath))
+            {
+                _settings = new AppSettings();
+                return;
+            }
+
+            string json = File.ReadAllText(SettingsPath);
+            _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+
+            if (string.IsNullOrWhiteSpace(_settings.Model))
+                _settings.Model = "GLM-4.7-FlashX";
+
+            if (string.IsNullOrWhiteSpace(_settings.BaseUrl))
+                _settings.BaseUrl = "https://api.z.ai/api/paas/v4";
+        }
+        catch
+        {
+            _settings = new AppSettings();
+        }
+    }
+
+    private void SaveSettingsFromUi()
+    {
+        _settings.ApiProvider = "Z.ai";
+        _settings.ApiKey = txtApiKey.Text.Trim();
+        _settings.Model = string.IsNullOrWhiteSpace(txtModel.Text.Trim())
+            ? "GLM-4.7-FlashX"
+            : txtModel.Text.Trim();
+        _settings.BaseUrl = string.IsNullOrWhiteSpace(txtBaseUrl.Text.Trim())
+            ? "https://api.z.ai/api/paas/v4"
+            : txtBaseUrl.Text.Trim().TrimEnd('/');
+
+        SaveSettings();
+        SetStatus("AI settings saved locally.");
+        MessageBox.Show("AI settings saved locally.", "Saved");
+    }
+
+    private void SaveSettings()
+    {
+        Directory.CreateDirectory(dataDir);
+
+        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(_settings, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        }));
+    }
+
     private void CreatePrompt()
     {
         string source = txtSource.Text.Trim();
@@ -1362,6 +1521,138 @@ public sealed class MainForm : Form
             "SOURCE MATERIAL:",
             source
         });
+    }
+
+    private string BuildAutomaticPrompt(string source)
+    {
+        return BuildManualPrompt(source);
+    }
+
+    private async Task GenerateAutomaticallyAsync()
+    {
+        string source = txtSource.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            MessageBox.Show("Paste notes or source material first.", "Missing source");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_settings.ApiKey))
+        {
+            MessageBox.Show("Add your Z.ai API key first in AI Settings.", "Missing API key");
+            ShowSettingsPage();
+            return;
+        }
+
+        try
+        {
+            UseWaitCursor = true;
+            SetStatus("Generating flashcards with Z.ai...");
+
+            string prompt = BuildAutomaticPrompt(source);
+            string aiText = await CallZaiAsync(prompt);
+            var parsed = ParseFlashcards(aiText);
+
+            if (parsed.Count == 0)
+            {
+                txtImport.Text = aiText;
+                MessageBox.Show("Z.ai responded, but no cards were parsed. The response was placed in Import JSON so you can inspect it.", "No cards parsed");
+                ShowImportPage();
+                return;
+            }
+
+            _cards.Clear();
+            _cards.AddRange(parsed);
+            _currentIndex = 0;
+
+            RefreshCardList();
+            SyncListSelection();
+
+            SetStatus($"Generated {_cards.Count} flashcards with Z.ai.");
+            MessageBox.Show($"Generated {_cards.Count} flashcards successfully.", "Done");
+
+            ShowPreviewPage();
+            UpdatePreview();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Generation failed:\n\n" + ex.Message, "Z.ai error");
+            SetStatus("Generation failed.");
+        }
+        finally
+        {
+            UseWaitCursor = false;
+        }
+    }
+
+    private async Task<string> CallZaiAsync(string prompt)
+    {
+        string baseUrl = string.IsNullOrWhiteSpace(_settings.BaseUrl)
+            ? "https://api.z.ai/api/paas/v4"
+            : _settings.BaseUrl.Trim().TrimEnd('/');
+
+        string model = string.IsNullOrWhiteSpace(_settings.Model)
+            ? "GLM-4.7-FlashX"
+            : _settings.Model.Trim();
+
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["role"] = "system",
+                    ["content"] = "You create JSON flashcards only. Return valid JSON only."
+                },
+                new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = prompt
+                }
+            },
+            ["temperature"] = 0.2,
+            ["max_tokens"] = 6000,
+            ["stream"] = false
+        };
+
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(3)
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey.Trim());
+        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+
+        using var response = await client.SendAsync(request);
+        string json = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception("Z.ai API error:\n\n" + TrimForMessage(json));
+        }
+
+        string text = ExtractChatCompletionText(json);
+
+        if (string.IsNullOrWhiteSpace(text))
+            throw new Exception("Z.ai returned no usable text:\n\n" + TrimForMessage(json));
+
+        return text;
+    }
+
+    private static string ExtractChatCompletionText(string json)
+    {
+        var root = JsonNode.Parse(json);
+        var choices = root?["choices"]?.AsArray();
+
+        if (choices is null || choices.Count == 0)
+            return "";
+
+        string? content = choices[0]?["message"]?["content"]?.GetValue<string>();
+
+        return content?.Trim() ?? "";
     }
 
     private void ImportCards()
@@ -1769,6 +2060,14 @@ public sealed class MainForm : Form
         using var sha = SHA256.Create();
         byte[] bytes = Encoding.UTF8.GetBytes(email + "::" + password + "::AIFlashcardMakerLocalDemo");
         return Convert.ToHexString(sha.ComputeHash(bytes));
+    }
+
+    private static string TrimForMessage(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        return text.Length <= 1600 ? text : text.Substring(0, 1600) + "...";
     }
 
     private void SetStatus(string message)
