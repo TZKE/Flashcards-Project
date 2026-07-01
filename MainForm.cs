@@ -74,22 +74,25 @@ public sealed class MainForm : Form
     private readonly Label lblStatus = new();
     private readonly Label lblCounter = new();
 
-    private readonly Color bg = Color.FromArgb(18, 22, 33);
-    private readonly Color panel = Color.FromArgb(28, 34, 49);
-    private readonly Color panel2 = Color.FromArgb(35, 42, 60);
-    private readonly Color accent = Color.FromArgb(91, 141, 239);
-    private readonly Color accent2 = Color.FromArgb(94, 210, 171);
-    private readonly Color text = Color.FromArgb(235, 239, 245);
-    private readonly Color muted = Color.FromArgb(165, 174, 190);
-    private readonly Color input = Color.FromArgb(12, 16, 24);
+    // Modern Professional Dark Palette
+    private readonly Color bg = Color.FromArgb(15, 23, 42);           // Slate 900
+    private readonly Color panel = Color.FromArgb(30, 41, 59);        // Slate 800
+    private readonly Color panel2 = Color.FromArgb(51, 65, 85);       // Slate 700
+    private readonly Color accent = Color.FromArgb(59, 130, 246);     // Blue 500
+    private readonly Color accentSuccess = Color.FromArgb(16, 185, 129); // Emerald 500
+    private readonly Color accentDanger = Color.FromArgb(239, 68, 68);   // Red 500
+    private readonly Color text = Color.FromArgb(248, 250, 252);      // Slate 50
+    private readonly Color muted = Color.FromArgb(148, 163, 184);     // Slate 400
+    private readonly Color input = Color.FromArgb(15, 23, 42);        // Slate 900
 
     public MainForm()
     {
         Text = "AI Flashcard Maker";
-        Width = 1280;
-        Height = 860;
+        Width = 1380;
+        Height = 900;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1100, 720);
+        MinimumSize = new Size(1200, 800);
+        BackColor = bg;
 
         LoadStore();
         BuildLoginUi();
@@ -105,20 +108,19 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 1,
-            Padding = new Padding(28),
             BackColor = bg
         };
 
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
 
         Controls.Add(root);
 
         var hero = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(28),
-            BackColor = bg
+            Padding = new Padding(60),
+            BackColor = panel
         };
 
         var heroLayout = new TableLayoutPanel
@@ -126,16 +128,16 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             RowCount = 7,
             ColumnCount = 1,
-            BackColor = bg
+            BackColor = panel
         };
 
-        heroLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 18));
-        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
+        heroLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 15));
         heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));
-        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        heroLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 82));
+        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
+        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        heroLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        heroLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 85));
 
         hero.Controls.Add(heroLayout);
 
@@ -143,60 +145,48 @@ public sealed class MainForm : Form
         {
             Text = "AI Flashcard Maker",
             ForeColor = text,
-            Font = new Font("Segoe UI", 30, FontStyle.Bold),
+            Font = new Font("Segoe UI", 36, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.BottomLeft
         }, 0, 1);
 
         heroLayout.Controls.Add(new Label
         {
-            Text = "Create Anki-ready flashcards from notes, screenshots, lectures, and AI responses.",
+            Text = "Create high-yield Anki flashcards from your medical notes, textbooks, and AI responses in seconds.",
             ForeColor = muted,
-            Font = new Font("Segoe UI", 13),
+            Font = new Font("Segoe UI", 14),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.TopLeft
         }, 0, 2);
 
-        heroLayout.Controls.Add(MakeFeatureLabel("✓ Manual AI mode: no API key required"), 0, 3);
-        heroLayout.Controls.Add(MakeFeatureLabel("✓ Preview, edit, delete, copy, export"), 0, 4);
-        heroLayout.Controls.Add(MakeFeatureLabel("✓ Account screen + activation code demo"), 0, 5);
+        heroLayout.Controls.Add(MakeFeatureLabel("✓ Manual AI mode: No API key required"), 0, 3);
+        heroLayout.Controls.Add(MakeFeatureLabel("✓ Preview, edit, and bulk export to Anki"), 0, 4);
+        heroLayout.Controls.Add(MakeFeatureLabel("✓ Fast, clean, and distraction-free workflow"), 0, 5);
 
         root.Controls.Add(hero, 0, 0);
 
         var cardOuter = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(40, 70, 40, 70),
+            Padding = new Padding(80, 100, 80, 100),
             BackColor = bg
         };
-
-        var card = new Panel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(28),
-            BackColor = panel
-        };
-
-        cardOuter.Controls.Add(card);
-        root.Controls.Add(cardOuter, 1, 0);
 
         var tabs = new TabControl
         {
             Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 11),
-            BackColor = panel,
-            ForeColor = text
+            Font = new Font("Segoe UI", 12),
+            ItemSize = new Size(150, 40)
         };
 
-        var loginTab = new TabPage("Login");
-        var signupTab = new TabPage("Create Account");
-
-        loginTab.BackColor = panel;
-        signupTab.BackColor = panel;
+        var loginTab = new TabPage("Login") { BackColor = panel2 };
+        var signupTab = new TabPage("Create Account") { BackColor = panel2 };
 
         tabs.TabPages.Add(loginTab);
         tabs.TabPages.Add(signupTab);
-        card.Controls.Add(tabs);
+        cardOuter.Controls.Add(tabs);
+
+        root.Controls.Add(cardOuter, 1, 0);
 
         BuildLoginTab(loginTab);
         BuildSignupTab(signupTab);
@@ -207,7 +197,7 @@ public sealed class MainForm : Form
         return new Label
         {
             Text = value,
-            ForeColor = accent2,
+            ForeColor = accentSuccess,
             Font = new Font("Segoe UI", 12, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
@@ -221,16 +211,16 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             RowCount = 8,
             ColumnCount = 1,
-            Padding = new Padding(18),
-            BackColor = panel
+            Padding = new Padding(40),
+            BackColor = panel2
         };
 
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 65));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
@@ -238,30 +228,34 @@ public sealed class MainForm : Form
 
         layout.Controls.Add(new Label
         {
-            Text = "Welcome back",
+            Text = "Welcome Back",
             ForeColor = text,
-            Font = new Font("Segoe UI", 22, FontStyle.Bold),
+            Font = new Font("Segoe UI", 24, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
 
-        ConfigureInput(txtLoginEmail, "Email");
-        ConfigureInput(txtLoginPassword, "Password", password: true);
+        ConfigureInput(txtLoginEmail, "Enter your email");
+        ConfigureInput(txtLoginPassword, "Enter your password", password: true);
 
-        layout.Controls.Add(MakeSmallLabel("Email"), 0, 1);
+        layout.Controls.Add(MakeSmallLabel("Email Address"), 0, 1);
         layout.Controls.Add(txtLoginEmail, 0, 2);
         layout.Controls.Add(MakeSmallLabel("Password"), 0, 3);
         layout.Controls.Add(txtLoginPassword, 0, 4);
 
-        var btnLogin = MakeButton("Login", (_, _) => Login(), accent);
-        btnLogin.Height = 44;
-        layout.Controls.Add(btnLogin, 0, 5);
+        var btnLogin = MakeButton("Sign In", (_, _) => Login(), accent, 180);
+        btnLogin.Height = 50;
+        btnLogin.Font = new Font("Segoe UI", 12, FontStyle.Bold);
+        
+        var btnPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        btnPanel.Controls.Add(btnLogin);
+        layout.Controls.Add(btnPanel, 0, 5);
 
         layout.Controls.Add(new Label
         {
-            Text = "New users must create an account using an activation code.",
+            Text = "New users must create an account using an activation code on the next tab.",
             ForeColor = muted,
-            Font = new Font("Segoe UI", 10),
+            Font = new Font("Segoe UI", 11),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.TopLeft
         }, 0, 6);
@@ -274,18 +268,18 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             RowCount = 10,
             ColumnCount = 1,
-            Padding = new Padding(18),
-            BackColor = panel
+            Padding = new Padding(40),
+            BackColor = panel2
         };
 
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 65));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 110));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
@@ -293,16 +287,16 @@ public sealed class MainForm : Form
 
         layout.Controls.Add(new Label
         {
-            Text = "Create account",
+            Text = "Create Account",
             ForeColor = text,
-            Font = new Font("Segoe UI", 22, FontStyle.Bold),
+            Font = new Font("Segoe UI", 24, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
 
-        ConfigureInput(txtSignupEmail, "Email");
-        ConfigureInput(txtSignupPassword, "Password", password: true);
-        ConfigureInput(txtSignupCode, "Activation code");
+        ConfigureInput(txtSignupEmail, "Enter email address");
+        ConfigureInput(txtSignupPassword, "Choose a password", password: true);
+        ConfigureInput(txtSignupCode, "e.g., FLASH-MONTH-2026");
 
         layout.Controls.Add(MakeSmallLabel("Email"), 0, 1);
         layout.Controls.Add(txtSignupEmail, 0, 2);
@@ -311,15 +305,19 @@ public sealed class MainForm : Form
         layout.Controls.Add(MakeSmallLabel("Activation Code"), 0, 5);
         layout.Controls.Add(txtSignupCode, 0, 6);
 
-        var btnSignup = MakeButton("Create Account", (_, _) => Signup(), accent2);
-        btnSignup.Height = 44;
-        layout.Controls.Add(btnSignup, 0, 7);
+        var btnSignup = MakeButton("Create Account", (_, _) => Signup(), accentSuccess, 180);
+        btnSignup.Height = 50;
+        btnSignup.Font = new Font("Segoe UI", 12, FontStyle.Bold);
+
+        var btnPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        btnPanel.Controls.Add(btnSignup);
+        layout.Controls.Add(btnPanel, 0, 7);
 
         layout.Controls.Add(new Label
         {
-            Text = "Demo activation codes:\nFLASH-MONTH-2026\nFLASH-YEAR-2026\nFLASH-LIFE-2026",
+            Text = "Demo activation codes available:\n• FLASH-MONTH-2026\n• FLASH-YEAR-2026\n• FLASH-LIFE-2026",
             ForeColor = muted,
-            Font = new Font("Consolas", 10),
+            Font = new Font("Consolas", 11),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.TopLeft
         }, 0, 8);
@@ -340,9 +338,9 @@ public sealed class MainForm : Form
             BackColor = bg
         };
 
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
 
         Controls.Add(root);
 
@@ -351,19 +349,19 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 3,
             RowCount = 1,
-            Padding = new Padding(18, 10, 18, 10),
+            Padding = new Padding(24, 15, 24, 15),
             BackColor = panel
         };
 
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 400));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
 
         header.Controls.Add(new Label
         {
             Text = "AI Flashcard Maker",
             ForeColor = text,
-            Font = new Font("Segoe UI", 20, FontStyle.Bold),
+            Font = new Font("Segoe UI", 22, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
@@ -372,17 +370,18 @@ public sealed class MainForm : Form
         {
             Text = GetAccountSummary(),
             ForeColor = muted,
-            Font = new Font("Segoe UI", 10),
+            Font = new Font("Segoe UI", 11),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleRight
         }, 1, 0);
 
-        header.Controls.Add(MakeButton("Logout", (_, _) =>
+        var btnLogout = MakeButton("Logout", (_, _) =>
         {
             _currentUser = null;
             BuildLoginUi();
-        }, Color.FromArgb(70, 78, 98)), 2, 0);
-
+        }, panel2, 130);
+        
+        header.Controls.Add(btnLogout, 2, 0);
         root.Controls.Add(header, 0, 0);
 
         var body = new TableLayoutPanel
@@ -393,7 +392,7 @@ public sealed class MainForm : Form
             BackColor = bg
         };
 
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 230));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         root.Controls.Add(body, 0, 1);
@@ -402,32 +401,34 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
-            Padding = new Padding(14),
-            BackColor = Color.FromArgb(14, 18, 28),
+            Padding = new Padding(15, 30, 15, 15),
+            BackColor = input,
             WrapContents = false
         };
 
         sidebar.Controls.Add(MakeNavButton("1. Create Prompt", (_, _) => RenderPromptPage()));
         sidebar.Controls.Add(MakeNavButton("2. Import JSON", (_, _) => RenderImportPage()));
-        sidebar.Controls.Add(MakeNavButton("3. Preview / Edit", (_, _) => RenderPreviewPage()));
-        sidebar.Controls.Add(MakeNavButton("4. Account", (_, _) => RenderAccountPage()));
+        sidebar.Controls.Add(MakeNavButton("3. Preview & Edit", (_, _) => RenderPreviewPage()));
+        sidebar.Controls.Add(new Panel { Height = 20, BackColor = Color.Transparent }); // Spacer
+        sidebar.Controls.Add(MakeNavButton("Manage Account", (_, _) => RenderAccountPage(), isAccent: false));
 
         body.Controls.Add(sidebar, 0, 0);
 
         _content = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(18),
+            Padding = new Padding(24),
             BackColor = bg
         };
 
         body.Controls.Add(_content, 1, 0);
 
-        lblStatus.Text = "Ready.";
+        lblStatus.Text = " Ready.";
         lblStatus.ForeColor = muted;
         lblStatus.BackColor = panel;
         lblStatus.Dock = DockStyle.Fill;
         lblStatus.TextAlign = ContentAlignment.MiddleLeft;
+        lblStatus.Font = new Font("Segoe UI", 10);
         lblStatus.Padding = new Padding(15, 0, 0, 0);
 
         root.Controls.Add(lblStatus, 0, 2);
@@ -442,32 +443,38 @@ public sealed class MainForm : Form
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            RowCount = 2,
+            RowCount = 3,
             ColumnCount = 1,
             BackColor = bg
         };
 
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         _content.Controls.Add(root);
 
-        root.Controls.Add(BuildOptionsBar(), 0, 0);
+        root.Controls.Add(MakePageHeader("Step 1: Generate AI Prompt", "Configure your settings, paste your notes, and generate a prompt for ChatGPT/Gemini."), 0, 0);
 
-        var split = new SplitContainer
+        var optionsContainer = new Panel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(10) };
+        optionsContainer.Controls.Add(BuildOptionsBar());
+        root.Controls.Add(optionsContainer, 0, 1);
+
+        var split = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterDistance = 520,
+            ColumnCount = 2,
+            RowCount = 1,
             BackColor = bg
         };
+        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
 
-        root.Controls.Add(split, 0, 1);
+        root.Controls.Add(split, 0, 2);
 
         var left = MakeCardPanel();
         var right = MakeCardPanel();
-
-        split.Panel1.Controls.Add(left);
-        split.Panel2.Controls.Add(right);
+        split.Controls.Add(left, 0, 0);
+        split.Controls.Add(right, 1, 0);
 
         var leftLayout = MakeCardLayout("Source Material");
         left.Controls.Add(leftLayout);
@@ -475,35 +482,38 @@ public sealed class MainForm : Form
         txtSource.Multiline = true;
         txtSource.ScrollBars = ScrollBars.Vertical;
         txtSource.Font = new Font("Segoe UI", 11);
-        ConfigureInput(txtSource, "Paste notes here...", multiline: true);
+        ConfigureInput(txtSource, "Paste notes, lectures, or image descriptions here...", multiline: true);
         leftLayout.Controls.Add(txtSource, 0, 1);
 
-        var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel };
-        leftButtons.Controls.Add(MakeButton("Create Prompt", (_, _) => CreatePrompt(), accent));
-        leftButtons.Controls.Add(MakeButton("Clear", (_, _) => txtSource.Clear(), Color.FromArgb(70, 78, 98)));
+        var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(0, 10, 0, 0) };
+        leftButtons.Controls.Add(MakeButton("Generate Prompt", (_, _) => CreatePrompt(), accent, 160));
+        leftButtons.Controls.Add(MakeButton("Clear", (_, _) => txtSource.Clear(), panel2, 100));
         leftLayout.Controls.Add(leftButtons, 0, 2);
 
-        var rightLayout = MakeCardLayout("AI Prompt");
+        var rightLayout = MakeCardLayout("Generated AI Prompt");
         right.Controls.Add(rightLayout);
 
         txtPrompt.Multiline = true;
         txtPrompt.ScrollBars = ScrollBars.Vertical;
-        txtPrompt.Font = new Font("Consolas", 10);
-        ConfigureInput(txtPrompt, "Generated prompt will appear here...", multiline: true);
+        txtPrompt.Font = new Font("Consolas", 11);
+        ConfigureInput(txtPrompt, "Your generated prompt will appear here...", multiline: true);
         rightLayout.Controls.Add(txtPrompt, 0, 1);
 
-        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel };
+        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(0, 10, 0, 0) };
         rightButtons.Controls.Add(MakeButton("Copy Prompt", (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(txtPrompt.Text))
             {
-                MessageBox.Show("Create a prompt first.");
+                MessageBox.Show("Create a prompt first.", "Notice", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             Clipboard.SetText(txtPrompt.Text);
             SetStatus("Prompt copied. Paste it into ChatGPT/Gemini/Copilot.");
-        }, accent2));
+            MessageBox.Show("Prompt copied! Now paste this into your AI of choice, then copy its JSON response.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }, accentSuccess, 160));
+        rightButtons.Controls.Add(MakeButton("Next Step ➔", (_, _) => RenderImportPage(), panel2, 140));
+        
         rightLayout.Controls.Add(rightButtons, 0, 2);
     }
 
@@ -511,128 +521,158 @@ public sealed class MainForm : Form
     {
         _content.Controls.Clear();
 
-        var split = new SplitContainer
+        var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterDistance = 650,
+            RowCount = 2,
+            ColumnCount = 1,
             BackColor = bg
         };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _content.Controls.Add(root);
 
-        _content.Controls.Add(split);
+        root.Controls.Add(MakePageHeader("Step 2: Import AI JSON", "Paste the JSON array output from the AI here to create your flashcards."), 0, 0);
+
+        var split = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = bg
+        };
+        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        root.Controls.Add(split, 0, 1);
 
         var left = MakeCardPanel();
         var right = MakeCardPanel();
+        split.Controls.Add(left, 0, 0);
+        split.Controls.Add(right, 1, 0);
 
-        split.Panel1.Controls.Add(left);
-        split.Panel2.Controls.Add(right);
-
-        var leftLayout = MakeCardLayout("Paste AI JSON Answer");
+        var leftLayout = MakeCardLayout("Paste AI Output");
         left.Controls.Add(leftLayout);
 
         txtImport.Multiline = true;
         txtImport.ScrollBars = ScrollBars.Vertical;
-        txtImport.Font = new Font("Consolas", 10);
-        ConfigureInput(txtImport, "Paste JSON here...", multiline: true);
+        txtImport.Font = new Font("Consolas", 11);
+        ConfigureInput(txtImport, "Paste the resulting JSON here...", multiline: true);
         leftLayout.Controls.Add(txtImport, 0, 1);
 
-        var importButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel };
-        importButtons.Controls.Add(MakeButton("Import Cards", (_, _) => ImportCards(), accent));
-        importButtons.Controls.Add(MakeButton("Clear", (_, _) => txtImport.Clear(), Color.FromArgb(70, 78, 98)));
+        var importButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(0, 10, 0, 0) };
+        importButtons.Controls.Add(MakeButton("Import Cards", (_, _) => ImportCards(), accent, 140));
+        importButtons.Controls.Add(MakeButton("Clear", (_, _) => txtImport.Clear(), panel2, 100));
         leftLayout.Controls.Add(importButtons, 0, 2);
 
-        var rightLayout = MakeCardLayout("Imported Cards");
+        var rightLayout = MakeCardLayout("Imported Overview");
         right.Controls.Add(rightLayout);
 
         lstCards.BackColor = input;
         lstCards.ForeColor = text;
         lstCards.BorderStyle = BorderStyle.FixedSingle;
-        lstCards.Font = new Font("Segoe UI", 10);
+        lstCards.Font = new Font("Segoe UI", 11);
         lstCards.Dock = DockStyle.Fill;
         lstCards.SelectedIndexChanged -= LstCards_SelectedIndexChanged;
         lstCards.SelectedIndexChanged += LstCards_SelectedIndexChanged;
 
         rightLayout.Controls.Add(lstCards, 0, 1);
 
-        var exportButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel };
-        exportButtons.Controls.Add(MakeButton("Copy All For Anki", (_, _) => CopyAll(), accent2, 165));
-        exportButtons.Controls.Add(MakeButton("Export .txt", (_, _) => ExportTxt(), Color.FromArgb(70, 78, 98)));
-        rightLayout.Controls.Add(exportButtons, 0, 2);
+        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(0, 10, 0, 0) };
+        rightButtons.Controls.Add(MakeButton("Next Step: Preview & Edit ➔", (_, _) => RenderPreviewPage(), accentSuccess, 240));
+        rightLayout.Controls.Add(rightButtons, 0, 2);
     }
 
     private void RenderPreviewPage()
     {
         _content.Controls.Clear();
 
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            BackColor = bg
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _content.Controls.Add(root);
+
+        root.Controls.Add(MakePageHeader("Step 3: Preview, Edit & Export", "Review your cards, make edits, and copy them directly to Anki."), 0, 0);
+
         var main = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             RowCount = 6,
             ColumnCount = 1,
-            BackColor = bg
+            BackColor = panel,
+            Padding = new Padding(20)
         };
 
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        main.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
-        main.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
-        main.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        main.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        main.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
 
-        _content.Controls.Add(main);
+        root.Controls.Add(main, 0, 1);
 
         lblCounter.TextAlign = ContentAlignment.MiddleLeft;
-        lblCounter.Font = new Font("Segoe UI", 14, FontStyle.Bold);
-        lblCounter.ForeColor = text;
+        lblCounter.Font = new Font("Segoe UI", 16, FontStyle.Bold);
+        lblCounter.ForeColor = accent;
         lblCounter.Dock = DockStyle.Fill;
         main.Controls.Add(lblCounter, 0, 0);
 
-        ConfigureInput(txtFront, "Front", multiline: true);
-        ConfigureInput(txtBack, "Back", multiline: true);
-        ConfigureInput(txtTags, "Tags");
+        ConfigureInput(txtFront, "Front of card", multiline: true);
+        ConfigureInput(txtBack, "Back of card", multiline: true);
+        ConfigureInput(txtTags, "Tags (e.g. Step1::Cardiology)");
 
-        txtFront.Font = new Font("Segoe UI", 12);
-        txtBack.Font = new Font("Segoe UI", 12);
-        txtTags.Font = new Font("Segoe UI", 11);
+        txtFront.Font = new Font("Segoe UI", 13);
+        txtFront.BackColor = bg; // Make field stand out
+        txtBack.Font = new Font("Segoe UI", 13);
+        txtBack.BackColor = bg;
+        txtTags.Font = new Font("Segoe UI", 12);
+        txtTags.BackColor = bg;
 
         main.Controls.Add(Wrap("Front", txtFront), 0, 1);
         main.Controls.Add(Wrap("Back", txtBack), 0, 2);
 
-        var navButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = bg };
+        main.Controls.Add(Wrap("Tags", txtTags), 0, 3);
 
-        navButtons.Controls.Add(MakeButton("Previous", (_, _) =>
+        var navButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(0, 10, 0, 0) };
+        navButtons.Controls.Add(MakeButton("⬅ Previous", (_, _) =>
         {
             SaveCurrentEdits();
             if (_currentIndex > 0) _currentIndex--;
             SyncListSelection();
             UpdatePreview();
-        }, Color.FromArgb(70, 78, 98)));
+        }, panel2, 130));
 
-        navButtons.Controls.Add(MakeButton("Next", (_, _) =>
+        navButtons.Controls.Add(MakeButton("Next ➡", (_, _) =>
         {
             SaveCurrentEdits();
             if (_currentIndex < _cards.Count - 1) _currentIndex++;
             SyncListSelection();
             UpdatePreview();
-        }, Color.FromArgb(70, 78, 98)));
+        }, panel2, 110));
 
-        navButtons.Controls.Add(MakeButton("Save Card", (_, _) =>
+        navButtons.Controls.Add(new Panel { Width = 30, Height = 1, BackColor = Color.Transparent }); // Spacer
+
+        navButtons.Controls.Add(MakeButton("Save Edit", (_, _) =>
         {
             SaveCurrentEdits();
             RefreshCardList();
             SetStatus("Card saved.");
-        }, accent));
+        }, accent, 120));
 
-        navButtons.Controls.Add(MakeButton("Delete Card", (_, _) => DeleteCurrentCard(), Color.FromArgb(160, 68, 78)));
+        navButtons.Controls.Add(MakeButton("Delete Card", (_, _) => DeleteCurrentCard(), accentDanger, 130));
+        navButtons.Controls.Add(MakeButton("Copy Current", (_, _) => CopyCurrent(), accentSuccess, 150));
 
-        navButtons.Controls.Add(MakeButton("Copy Current", (_, _) => CopyCurrent(), accent2, 130));
+        main.Controls.Add(navButtons, 0, 4);
 
-        main.Controls.Add(navButtons, 0, 3);
-        main.Controls.Add(Wrap("Tags", txtTags), 0, 4);
-
-        var bottomButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = bg };
-        bottomButtons.Controls.Add(MakeButton("Copy All For Anki", (_, _) => CopyAll(), accent2, 165));
-        bottomButtons.Controls.Add(MakeButton("Export .txt", (_, _) => ExportTxt(), Color.FromArgb(70, 78, 98)));
+        var bottomButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = panel, Padding = new Padding(0, 10, 0, 0) };
+        bottomButtons.Controls.Add(MakeButton("Copy ALL For Anki", (_, _) => CopyAll(), accentSuccess, 200));
+        bottomButtons.Controls.Add(MakeButton("Export .txt File", (_, _) => ExportTxt(), panel2, 160));
         main.Controls.Add(bottomButtons, 0, 5);
 
         UpdatePreview();
@@ -643,6 +683,7 @@ public sealed class MainForm : Form
         _content.Controls.Clear();
 
         var card = MakeCardPanel();
+        card.Padding = new Padding(40);
         _content.Controls.Add(card);
 
         var layout = new TableLayoutPanel
@@ -650,26 +691,25 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             RowCount = 8,
             ColumnCount = 1,
-            Padding = new Padding(24),
             BackColor = panel
         };
 
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         card.Controls.Add(layout);
 
         layout.Controls.Add(new Label
         {
-            Text = "Account",
+            Text = "Account Management",
             ForeColor = text,
-            Font = new Font("Segoe UI", 22, FontStyle.Bold),
+            Font = new Font("Segoe UI", 24, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
@@ -678,59 +718,60 @@ public sealed class MainForm : Form
         layout.Controls.Add(MakeInfoLabel("Plan: " + (_currentUser?.Plan ?? "")), 0, 2);
         layout.Controls.Add(MakeInfoLabel("Expires: " + FormatExpiry(_currentUser?.SubscriptionExpiresAt ?? DateTime.UtcNow)), 0, 3);
 
-        layout.Controls.Add(MakeSmallLabel("Apply new activation code"), 0, 4);
+        layout.Controls.Add(MakeSmallLabel("Apply New Activation Code"), 0, 4);
 
         var txtNewCode = new TextBox();
-        ConfigureInput(txtNewCode, "Activation code");
+        ConfigureInput(txtNewCode, "e.g., FLASH-YEAR-2026");
         layout.Controls.Add(txtNewCode, 0, 5);
 
-        layout.Controls.Add(MakeButton("Apply Code", (_, _) =>
-        {
-            ApplyActivationCodeToCurrentUser(txtNewCode.Text);
-        }, accent2, 140), 0, 6);
+        var btnPanel = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        btnPanel.Controls.Add(MakeButton("Apply Code", (_, _) => ApplyActivationCodeToCurrentUser(txtNewCode.Text), accentSuccess, 160));
+        layout.Controls.Add(btnPanel, 0, 6);
 
         layout.Controls.Add(new Label
         {
-            Text = "Note: this login/activation is a local demo. For real monthly/yearly subscriptions, we will connect this to an online backend later.",
+            Text = "Note: This login/activation is a local demo. For real subscriptions, this will connect to a secure backend.",
             ForeColor = muted,
-            Font = new Font("Segoe UI", 10),
+            Font = new Font("Segoe UI", 11),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.TopLeft
         }, 0, 7);
     }
 
-    private TableLayoutPanel BuildOptionsBar()
+    private Control MakePageHeader(string title, string subtitle)
     {
-        var box = new TableLayoutPanel
+        var pnl = new Panel { Dock = DockStyle.Fill };
+        var lblSub = new Label { Text = subtitle, ForeColor = muted, Font = new Font("Segoe UI", 11), Dock = DockStyle.Bottom, Height = 25 };
+        var lblTitle = new Label { Text = title, ForeColor = text, Font = new Font("Segoe UI", 16, FontStyle.Bold), Dock = DockStyle.Top, Height = 30 };
+        pnl.Controls.Add(lblSub);
+        pnl.Controls.Add(lblTitle);
+        return pnl;
+    }
+
+    private FlowLayoutPanel BuildOptionsBar()
+    {
+        var box = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 10,
-            RowCount = 1,
-            Padding = new Padding(14),
-            BackColor = panel
+            BackColor = panel,
+            WrapContents = true,
+            AutoScroll = true
         };
 
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 17));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 17));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 14));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
-        box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27));
+        void AddOption(string label, Control control)
+        {
+            var pnl = new FlowLayoutPanel { Width = 170, Height = 60, FlowDirection = FlowDirection.TopDown, BackColor = panel };
+            pnl.Controls.Add(MakeSmallLabel(label));
+            control.Width = 160;
+            pnl.Controls.Add(control);
+            box.Controls.Add(pnl);
+        }
 
-        box.Controls.Add(MakeSmallLabel("Mode"), 0, 0);
-        box.Controls.Add(cboMode, 1, 0);
-        box.Controls.Add(MakeSmallLabel("Difficulty"), 2, 0);
-        box.Controls.Add(cboDifficulty, 3, 0);
-        box.Controls.Add(MakeSmallLabel("Answer"), 4, 0);
-        box.Controls.Add(cboAnswerLength, 5, 0);
-        box.Controls.Add(MakeSmallLabel("Count"), 6, 0);
-        box.Controls.Add(cboCount, 7, 0);
-        box.Controls.Add(MakeSmallLabel("Language"), 8, 0);
-        box.Controls.Add(cboLanguage, 9, 0);
+        AddOption("Mode", cboMode);
+        AddOption("Difficulty", cboDifficulty);
+        AddOption("Answer Length", cboAnswerLength);
+        AddOption("Card Count", cboCount);
+        AddOption("Language", cboLanguage);
 
         return box;
     }
@@ -740,8 +781,8 @@ public sealed class MainForm : Form
         return new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(12),
-            BackColor = panel
+            Padding = new Padding(10),
+            BackColor = bg
         };
     }
 
@@ -752,18 +793,19 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             RowCount = 3,
             ColumnCount = 1,
-            BackColor = panel
+            BackColor = panel,
+            Padding = new Padding(15)
         };
 
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
 
         layout.Controls.Add(new Label
         {
             Text = title,
             ForeColor = text,
-            Font = new Font("Segoe UI", 13, FontStyle.Bold),
+            Font = new Font("Segoe UI", 14, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
@@ -777,8 +819,9 @@ public sealed class MainForm : Form
         {
             Text = title,
             Dock = DockStyle.Fill,
-            Padding = new Padding(10),
-            ForeColor = text,
+            Padding = new Padding(15, 20, 15, 15),
+            ForeColor = muted,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
             BackColor = panel
         };
 
@@ -794,8 +837,9 @@ public sealed class MainForm : Form
             Text = value,
             ForeColor = muted,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft
+            Dock = DockStyle.Top,
+            Height = 22,
+            TextAlign = ContentAlignment.BottomLeft
         };
     }
 
@@ -805,10 +849,18 @@ public sealed class MainForm : Form
         {
             Text = value,
             ForeColor = text,
-            Font = new Font("Segoe UI", 12),
+            Font = new Font("Segoe UI", 13),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         };
+    }
+
+    private void AddHoverEffect(Button btn, Color baseColor)
+    {
+        // Simple brightener for hover
+        Color hoverColor = ControlPaint.Light(baseColor, 0.15f);
+        btn.MouseEnter += (s, e) => btn.BackColor = hoverColor;
+        btn.MouseLeave += (s, e) => btn.BackColor = baseColor;
     }
 
     private Button MakeButton(string label, EventHandler click, Color color, int width = 120)
@@ -817,25 +869,31 @@ public sealed class MainForm : Form
         {
             Text = label,
             Width = width,
-            Height = 38,
+            Height = 42,
             FlatStyle = FlatStyle.Flat,
             BackColor = color,
             ForeColor = Color.White,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Font = new Font("Segoe UI", 11, FontStyle.Bold),
             Cursor = Cursors.Hand,
-            UseVisualStyleBackColor = false
+            UseVisualStyleBackColor = false,
+            Margin = new Padding(0, 0, 10, 0)
         };
 
         btn.FlatAppearance.BorderSize = 0;
         btn.Click += click;
+        AddHoverEffect(btn, color);
+        
         return btn;
     }
 
-    private Button MakeNavButton(string label, EventHandler click)
+    private Button MakeNavButton(string label, EventHandler click, bool isAccent = true)
     {
-        var btn = MakeButton(label, click, panel2, 190);
-        btn.Height = 46;
+        Color btnColor = isAccent ? panel2 : bg;
+        var btn = MakeButton(label, click, btnColor, 230);
+        btn.Height = 50;
         btn.TextAlign = ContentAlignment.MiddleLeft;
+        btn.Padding = new Padding(10, 0, 0, 0);
+        btn.Margin = new Padding(0, 0, 0, 10);
         return btn;
     }
 
@@ -848,7 +906,7 @@ public sealed class MainForm : Form
         tb.BackColor = input;
         tb.ForeColor = text;
         tb.BorderStyle = BorderStyle.FixedSingle;
-        tb.Font = new Font("Segoe UI", 11);
+        tb.Font = new Font("Segoe UI", 12);
         tb.Dock = DockStyle.Fill;
     }
 
@@ -900,9 +958,10 @@ public sealed class MainForm : Form
         {
             cb.BackColor = input;
             cb.ForeColor = text;
-            cb.Font = new Font("Segoe UI", 10);
+            cb.Font = new Font("Segoe UI", 11);
             cb.Dock = DockStyle.Fill;
             cb.DropDownStyle = ComboBoxStyle.DropDownList;
+            cb.FlatStyle = FlatStyle.Flat;
         }
     }
 
@@ -913,7 +972,7 @@ public sealed class MainForm : Form
 
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
         {
-            MessageBox.Show("Enter email and password.");
+            MessageBox.Show("Please enter your email and password.", "Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -922,20 +981,20 @@ public sealed class MainForm : Form
 
         if (user is null)
         {
-            MessageBox.Show("Account not found.");
+            MessageBox.Show("Account not found. Please check your email or create a new account.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         if (user.PasswordHash != HashPassword(email, password))
         {
-            MessageBox.Show("Wrong password.");
+            MessageBox.Show("Incorrect password.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         if (DateTime.UtcNow > user.SubscriptionExpiresAt)
         {
-            MessageBox.Show("Your activation expired. Apply a new activation code.");
-            return;
+            MessageBox.Show("Your activation has expired. Please apply a new activation code on the Account page.", "Expired", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            // Still log them in so they can access the account page
         }
 
         _currentUser = user;
@@ -950,19 +1009,19 @@ public sealed class MainForm : Form
 
         if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
         {
-            MessageBox.Show("Enter a valid email.");
+            MessageBox.Show("Please enter a valid email address.", "Invalid Email", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         if (password.Length < 4)
         {
-            MessageBox.Show("Password should be at least 4 characters for this demo.");
+            MessageBox.Show("Password should be at least 4 characters.", "Weak Password", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         if (_store.Accounts.Any(x => string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
-            MessageBox.Show("This email already has an account.");
+            MessageBox.Show("This email is already registered. Please login instead.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -970,13 +1029,13 @@ public sealed class MainForm : Form
 
         if (activation is null)
         {
-            MessageBox.Show("Invalid activation code.");
+            MessageBox.Show("Invalid activation code. Try 'FLASH-MONTH-2026'.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         if (IsCodeUsed(code))
         {
-            MessageBox.Show("This activation code was already used.");
+            MessageBox.Show("This activation code has already been used.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -1003,6 +1062,7 @@ public sealed class MainForm : Form
         SaveStore();
 
         _currentUser = user;
+        MessageBox.Show("Account created successfully!", "Welcome", MessageBoxButtons.OK, MessageBoxIcon.Information);
         BuildAppUi();
     }
 
@@ -1015,13 +1075,13 @@ public sealed class MainForm : Form
 
         if (activation is null)
         {
-            MessageBox.Show("Invalid activation code.");
+            MessageBox.Show("Invalid activation code.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         if (IsCodeUsed(code))
         {
-            MessageBox.Show("This activation code was already used.");
+            MessageBox.Show("This activation code has already been used.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -1032,7 +1092,6 @@ public sealed class MainForm : Form
         else
         {
             DateTime start = DateTime.UtcNow;
-
             if (_currentUser.SubscriptionExpiresAt > start)
                 start = _currentUser.SubscriptionExpiresAt;
 
@@ -1050,7 +1109,7 @@ public sealed class MainForm : Form
         });
 
         SaveStore();
-        MessageBox.Show("Activation applied.");
+        MessageBox.Show("Activation applied successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
         BuildAppUi();
         RenderAccountPage();
     }
@@ -1088,18 +1147,14 @@ public sealed class MainForm : Form
 
     private string GetAccountSummary()
     {
-        if (_currentUser is null)
-            return "";
-
-        return _currentUser.Email + " • " + _currentUser.Plan + " • " + FormatExpiry(_currentUser.SubscriptionExpiresAt);
+        if (_currentUser is null) return "";
+        return $"{_currentUser.Email} | {_currentUser.Plan} Plan";
     }
 
     private static string FormatExpiry(DateTime expiry)
     {
-        if (expiry.Year > 9000)
-            return "Lifetime";
-
-        return expiry.ToLocalTime().ToString("yyyy-MM-dd");
+        if (expiry.Year > 9000) return "Lifetime";
+        return expiry.ToLocalTime().ToString("MMM dd, yyyy");
     }
 
     private static string NormalizeEmail(string email)
@@ -1124,13 +1179,11 @@ public sealed class MainForm : Form
         try
         {
             Directory.CreateDirectory(dataDir);
-
             if (!File.Exists(StorePath))
             {
                 _store = new LocalStore();
                 return;
             }
-
             string json = File.ReadAllText(StorePath);
             _store = JsonSerializer.Deserialize<LocalStore>(json) ?? new LocalStore();
         }
@@ -1143,11 +1196,7 @@ public sealed class MainForm : Form
     private void SaveStore()
     {
         Directory.CreateDirectory(dataDir);
-
-        File.WriteAllText(StorePath, JsonSerializer.Serialize(_store, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        }));
+        File.WriteAllText(StorePath, JsonSerializer.Serialize(_store, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private void CreatePrompt()
@@ -1160,8 +1209,16 @@ public sealed class MainForm : Form
         }
 
         txtPrompt.Text = BuildManualPrompt(source);
-        Clipboard.SetText(txtPrompt.Text);
-        SetStatus("Prompt created and copied. Paste it into ChatGPT/Gemini/Copilot.");
+        
+        try 
+        { 
+            Clipboard.SetText(txtPrompt.Text); 
+            SetStatus("Prompt created and copied to clipboard.");
+        } 
+        catch 
+        {
+            SetStatus("Prompt created. (Could not auto-copy, please copy manually).");
+        }
     }
 
     private string BuildManualPrompt(string source)
@@ -1174,13 +1231,13 @@ public sealed class MainForm : Form
 
         return string.Join(Environment.NewLine, new[]
         {
-            "You are an expert Anki flashcard creator for medical students.",
+            "You are an expert Anki flashcard creator for students.",
             "",
             "Create high-yield flashcards from the source material I provide.",
             "",
             "IMPORTANT OUTPUT RULES:",
             "- Return ONLY valid JSON.",
-            "- Do not use markdown.",
+            "- Do not use markdown around the JSON.",
             "- Do not use code fences.",
             "- Do not explain anything outside the JSON.",
             "- Use this exact JSON structure:",
@@ -1188,7 +1245,7 @@ public sealed class MainForm : Form
             "  {",
             "    \"front\": \"question or cloze text\",",
             "    \"back\": \"answer\",",
-            "    \"tags\": \"Step1::Topic\"",
+            "    \"tags\": \"Topic::Subtopic\"",
             "  }",
             "]",
             "",
@@ -1200,7 +1257,7 @@ public sealed class MainForm : Form
             "- Do not copy long passages from the source.",
             "- If the source is an image, analyze the image and make cards from the visible text/diagram/table.",
             "- If the mode is Cloze Deletion, put the cloze deletion in the front field.",
-            "- Keep tags short and useful.",
+            "- Keep tags short and useful without spaces.",
             "",
             "OPTIONS:",
             "- Mode: " + mode,
@@ -1222,7 +1279,7 @@ public sealed class MainForm : Form
 
             if (string.IsNullOrWhiteSpace(textToImport))
             {
-                MessageBox.Show("Paste the AI JSON first.");
+                MessageBox.Show("Please paste the AI JSON output first.", "Empty Input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1230,24 +1287,32 @@ public sealed class MainForm : Form
 
             if (parsed.Count == 0)
             {
-                MessageBox.Show("No cards found. Make sure the AI returned JSON with front, back, and tags.");
+                MessageBox.Show("No cards found. Make sure the AI returned proper JSON.", "Parse Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             _cards.Clear();
             _cards.AddRange(parsed);
-            _currentIndex = 0;
-
+            
             RefreshCardList();
-            SyncListSelection();
+            
+            // Force selection to first item and trigger preview update
+            _currentIndex = 0;
+            if (lstCards.Items.Count > 0)
+            {
+                lstCards.SelectedIndex = -1; // reset
+                lstCards.SelectedIndex = 0;  // trigger event
+            }
+            
             UpdatePreview();
 
-            SetStatus("Imported " + _cards.Count + " cards.");
+            SetStatus($"Successfully imported {_cards.Count} cards.");
+            MessageBox.Show($"Successfully parsed {_cards.Count} cards. You can now Preview and Edit them.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             RenderPreviewPage();
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Could not import cards:\n\n" + ex.Message);
+            MessageBox.Show("Could not import cards:\n\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             SetStatus("Import failed.");
         }
     }
@@ -1301,8 +1366,7 @@ public sealed class MainForm : Form
 
     private static string GetPropertyText(JsonElement el, params string[] names)
     {
-        if (el.ValueKind != JsonValueKind.Object)
-            return "";
+        if (el.ValueKind != JsonValueKind.Object) return "";
 
         foreach (var prop in el.EnumerateObject())
         {
@@ -1320,44 +1384,31 @@ public sealed class MainForm : Form
                 }
             }
         }
-
         return "";
     }
 
     private static List<Flashcard> TryParseTabSeparated(string text)
     {
         var list = new List<Flashcard>();
-
-        var lines = text.Replace("\r\n", "\n")
-                        .Replace("\r", "\n")
-                        .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
         foreach (string rawLine in lines)
         {
             string line = rawLine.Trim();
-
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            if (line.StartsWith("Front", StringComparison.OrdinalIgnoreCase) &&
-                line.Contains("Back", StringComparison.OrdinalIgnoreCase))
-                continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.StartsWith("Front", StringComparison.OrdinalIgnoreCase) && line.Contains("Back", StringComparison.OrdinalIgnoreCase)) continue;
 
             string[] parts = line.Split('\t');
-
             if (parts.Length >= 2)
             {
                 list.Add(new Flashcard
                 {
                     Front = parts[0].Trim(),
                     Back = parts[1].Trim(),
-                    Tags = parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2])
-                        ? parts[2].Trim()
-                        : "AIFlashcards"
+                    Tags = parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]) ? parts[2].Trim() : "AIFlashcards"
                 });
             }
         }
-
         return list;
     }
 
@@ -1374,12 +1425,11 @@ public sealed class MainForm : Form
     private void RefreshCardList()
     {
         lstCards.Items.Clear();
-
         for (int i = 0; i < _cards.Count; i++)
         {
             string front = _cards[i].Front.Replace("\r", " ").Replace("\n", " ");
             if (front.Length > 75) front = front.Substring(0, 75) + "...";
-            lstCards.Items.Add((i + 1) + ". " + front);
+            lstCards.Items.Add($"{i + 1}. {front}");
         }
     }
 
@@ -1387,7 +1437,7 @@ public sealed class MainForm : Form
     {
         if (_cards.Count == 0 || _currentIndex < 0 || _currentIndex >= _cards.Count)
         {
-            lblCounter.Text = "No card selected.";
+            lblCounter.Text = "No cards available.";
             txtFront.Text = "";
             txtBack.Text = "";
             txtTags.Text = "";
@@ -1395,7 +1445,7 @@ public sealed class MainForm : Form
         }
 
         var card = _cards[_currentIndex];
-        lblCounter.Text = "Card " + (_currentIndex + 1) + " / " + _cards.Count;
+        lblCounter.Text = $"Card {_currentIndex + 1} of {_cards.Count}";
         txtFront.Text = card.Front;
         txtBack.Text = card.Back;
         txtTags.Text = card.Tags;
@@ -1403,8 +1453,7 @@ public sealed class MainForm : Form
 
     private void SaveCurrentEdits()
     {
-        if (_currentIndex < 0 || _currentIndex >= _cards.Count)
-            return;
+        if (_currentIndex < 0 || _currentIndex >= _cards.Count) return;
 
         _cards[_currentIndex].Front = txtFront.Text.Trim();
         _cards[_currentIndex].Back = txtBack.Text.Trim();
@@ -1413,15 +1462,12 @@ public sealed class MainForm : Form
 
     private void DeleteCurrentCard()
     {
-        if (_currentIndex < 0 || _currentIndex >= _cards.Count)
-            return;
+        if (_currentIndex < 0 || _currentIndex >= _cards.Count) return;
 
         _cards.RemoveAt(_currentIndex);
 
-        if (_cards.Count == 0)
-            _currentIndex = -1;
-        else if (_currentIndex >= _cards.Count)
-            _currentIndex = _cards.Count - 1;
+        if (_cards.Count == 0) _currentIndex = -1;
+        else if (_currentIndex >= _cards.Count) _currentIndex = _cards.Count - 1;
 
         RefreshCardList();
         SyncListSelection();
@@ -1438,44 +1484,51 @@ public sealed class MainForm : Form
     private void CopyCurrent()
     {
         SaveCurrentEdits();
-
         if (_currentIndex < 0 || _currentIndex >= _cards.Count)
         {
-            MessageBox.Show("No card selected.");
+            MessageBox.Show("No card selected.", "Notice", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-
-        Clipboard.SetText(ToAnkiLine(_cards[_currentIndex]));
-        SetStatus("Current card copied.");
+        
+        try
+        {
+            Clipboard.SetText(ToAnkiLine(_cards[_currentIndex]));
+            SetStatus("Current card copied.");
+            MessageBox.Show("Card copied to clipboard! Paste directly into Anki.", "Copied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch { SetStatus("Failed to access clipboard."); }
     }
 
     private void CopyAll()
     {
         SaveCurrentEdits();
-
         if (_cards.Count == 0)
         {
-            MessageBox.Show("No cards to copy.");
+            MessageBox.Show("No cards to copy.", "Notice", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        Clipboard.SetText(GetAnkiText());
-        SetStatus("All cards copied for Anki.");
+        try
+        {
+            Clipboard.SetText(GetAnkiText());
+            SetStatus("All cards copied for Anki.");
+            MessageBox.Show($"Successfully copied {_cards.Count} cards!\n\nOpen Anki, go to 'Import', and paste.", "Ready for Anki", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch { SetStatus("Failed to access clipboard."); }
     }
 
     private void ExportTxt()
     {
         SaveCurrentEdits();
-
         if (_cards.Count == 0)
         {
-            MessageBox.Show("No cards to export.");
+            MessageBox.Show("No cards to export.", "Notice", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         using var sfd = new SaveFileDialog
         {
-            Title = "Export Anki text file",
+            Title = "Export Anki Text File",
             Filter = "Text file|*.txt",
             FileName = "anki_flashcards.txt"
         };
@@ -1483,7 +1536,8 @@ public sealed class MainForm : Form
         if (sfd.ShowDialog() == DialogResult.OK)
         {
             File.WriteAllText(sfd.FileName, GetAnkiText(), Encoding.UTF8);
-            SetStatus("Exported .txt file.");
+            SetStatus("Exported .txt file successfully.");
+            MessageBox.Show("File saved successfully. You can import this .txt file directly into Anki.", "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 
@@ -1494,7 +1548,7 @@ public sealed class MainForm : Form
 
     private static string ToAnkiLine(Flashcard card)
     {
-        return CleanField(card.Front) + "\t" + CleanField(card.Back) + "\t" + CleanField(card.Tags);
+        return $"{CleanField(card.Front)}\t{CleanField(card.Back)}\t{CleanField(card.Tags)}";
     }
 
     private static string CleanField(string value)
@@ -1508,6 +1562,6 @@ public sealed class MainForm : Form
 
     private void SetStatus(string message)
     {
-        lblStatus.Text = message;
+        lblStatus.Text = $" {message}";
     }
 }
