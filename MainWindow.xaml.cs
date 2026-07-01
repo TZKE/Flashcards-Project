@@ -357,8 +357,9 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            SetStatus("Generating flashcards with Z.ai...");
-            IsEnabled = false;
+            ShowLoading("Generating with Z.ai...");
+SetStatus("Generating flashcards with Z.ai...");
+IsEnabled = false;
 
             string prompt = BuildPrompt(source);
             string aiText = await CallZaiAsync(prompt);
