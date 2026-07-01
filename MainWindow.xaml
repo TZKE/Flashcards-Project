@@ -42,8 +42,7 @@
                     Background="{StaticResource PanelBrush}"
                     CornerRadius="22"
                     Padding="28"
-                    Margin="30,60"
-                    Effect="{DynamicResource {x:Static SystemParameters.DropShadowKey}}">
+                    Margin="30,60">
                 <TabControl>
                     <TabItem Header="Login">
                         <StackPanel Margin="22">
