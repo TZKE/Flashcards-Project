@@ -397,9 +397,10 @@ IsEnabled = false;
             SetStatus("Generation failed.");
         }
         finally
-        {
-            IsEnabled = true;
-        }
+{
+    IsEnabled = true;
+    HideLoading();
+}
     }
 
     private void CreatePrompt_Click(object sender, RoutedEventArgs e)
