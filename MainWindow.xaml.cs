@@ -1887,8 +1887,19 @@ IsEnabled = false;
         return string.IsNullOrWhiteSpace(value) ? "deck" : value.Trim();
     }
 
-    private void SetStatus(string message)
-    {
-        StatusText.Text = message;
-    }
+    private void ShowLoading(string message)
+{
+    LoadingMessageText.Text = message;
+    LoadingOverlay.Visibility = Visibility.Visible;
+}
+
+private void HideLoading()
+{
+    LoadingOverlay.Visibility = Visibility.Collapsed;
+}
+
+private void SetStatus(string message)
+{
+    StatusText.Text = message;
+}
 }
