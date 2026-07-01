@@ -578,14 +578,14 @@ public sealed class MainForm : Form
         return text;
     }
 
-    private string BuildSystemPrompt()
-    {
-        string mode = cboMode.Text;
-        string difficulty = cboDifficulty.Text;
-        string answerLength = cboAnswerLength.Text;
-        string count = cboCount.Text;
+   private string BuildSystemPrompt()
+{
+    string mode = cboMode.Text;
+    string difficulty = cboDifficulty.Text;
+    string answerLength = cboAnswerLength.Text;
+    string count = cboCount.Text;
 
-        return $"""
+    return $$"""
 You are an expert Anki flashcard creator for medical students.
 
 Create flashcards from the user's text and/or image.
@@ -596,11 +596,11 @@ Do not explain outside the JSON.
 
 JSON format:
 [
-  {{
+  {
     "front": "question or cloze text",
     "back": "answer",
     "tags": "Step1::Topic"
-  }}
+  }
 ]
 
 Rules:
@@ -612,12 +612,12 @@ Rules:
 - If using cloze mode, put the cloze deletion in the front field.
 - Use clean Anki style.
 - Tags should be short and useful.
-- Mode: {mode}
-- Difficulty: {difficulty}
-- Answer length: {answerLength}
-- Number of cards: {count}
+- Mode: {{mode}}
+- Difficulty: {{difficulty}}
+- Answer length: {{answerLength}}
+- Number of cards: {{count}}
 """;
-    }
+}
 
     private static string ExtractOutputText(string json)
     {
