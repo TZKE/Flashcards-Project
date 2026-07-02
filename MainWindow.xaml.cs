@@ -157,6 +157,7 @@ public sealed partial class MainWindow : Window
     {
         AuthGrid.Visibility = Visibility.Visible;
         AppGrid.Visibility = Visibility.Collapsed;
+        HideLoading();
     }
 
     private void ShowApp()
@@ -358,8 +359,8 @@ public sealed partial class MainWindow : Window
         try
         {
             ShowLoading("Generating with Z.ai...");
-SetStatus("Generating flashcards with Z.ai...");
-IsEnabled = false;
+            SetStatus("Generating flashcards with Z.ai...");
+            IsEnabled = false;
 
             string prompt = BuildPrompt(source);
             string aiText = await CallZaiAsync(prompt);
@@ -397,10 +398,10 @@ IsEnabled = false;
             SetStatus("Generation failed.");
         }
         finally
-{
-    IsEnabled = true;
-    HideLoading();
-}
+        {
+            IsEnabled = true;
+            HideLoading();
+        }
     }
 
     private void CreatePrompt_Click(object sender, RoutedEventArgs e)
@@ -728,7 +729,6 @@ IsEnabled = false;
     private void DeleteCard_Click(object sender, RoutedEventArgs e) => DeleteCurrentCard();
     private void CopyCurrent_Click(object sender, RoutedEventArgs e) => CopyCurrent();
     private void CopyAll_Click(object sender, RoutedEventArgs e) => CopyAllDecksToClipboard();
-    private void ExportTxt_Click(object sender, RoutedEventArgs e) => ExportSelectedDeck_Click(sender, e);
 
     private void RefreshExport_Click(object sender, RoutedEventArgs e)
     {
@@ -930,6 +930,7 @@ IsEnabled = false;
         card.LastStudiedAt = DateTime.UtcNow;
 
         var deck = GetActiveDeck();
+
         if (deck is not null)
             deck.LastStudiedAt = DateTime.UtcNow;
 
@@ -1888,18 +1889,18 @@ IsEnabled = false;
     }
 
     private void ShowLoading(string message)
-{
-    LoadingMessageText.Text = message;
-    LoadingOverlay.Visibility = Visibility.Visible;
-}
+    {
+        LoadingMessageText.Text = message;
+        LoadingOverlay.Visibility = Visibility.Visible;
+    }
 
-private void HideLoading()
-{
-    LoadingOverlay.Visibility = Visibility.Collapsed;
-}
+    private void HideLoading()
+    {
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+    }
 
-private void SetStatus(string message)
-{
-    StatusText.Text = message;
-}
+    private void SetStatus(string message)
+    {
+        StatusText.Text = message;
+    }
 }
