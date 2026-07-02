@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 
 namespace AIFlashcardMaker;
 
@@ -126,6 +127,8 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        InitializeGifAnimations();
+
         Directory.CreateDirectory(dataDir);
 
         LoadStore();
@@ -155,15 +158,22 @@ public sealed partial class MainWindow : Window
 
     private void ShowAuth()
     {
+        HideLoading();
+
         AuthGrid.Visibility = Visibility.Visible;
         AppGrid.Visibility = Visibility.Collapsed;
-        HideLoading();
+
+        FadeIn(AuthGrid, 220);
     }
 
     private void ShowApp()
     {
+        HideLoading();
+
         AuthGrid.Visibility = Visibility.Collapsed;
         AppGrid.Visibility = Visibility.Visible;
+
+        FadeIn(AppGrid, 240);
 
         UserSummaryText.Text = GetAccountSummary();
 
@@ -178,10 +188,8 @@ public sealed partial class MainWindow : Window
             child.Visibility = Visibility.Collapsed;
 
         page.Visibility = Visibility.Visible;
-        page.Opacity = 0;
 
-        var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180));
-        page.BeginAnimation(OpacityProperty, fade);
+        FadeIn(page, 180);
 
         RefreshAll();
     }
@@ -1891,12 +1899,103 @@ public sealed partial class MainWindow : Window
     private void ShowLoading(string message)
     {
         LoadingMessageText.Text = message;
+
         LoadingOverlay.Visibility = Visibility.Visible;
+        LoadingOverlay.Opacity = 0;
+
+        var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160));
+        LoadingOverlay.BeginAnimation(UIElement.OpacityProperty, fade);
     }
 
     private void HideLoading()
     {
-        LoadingOverlay.Visibility = Visibility.Collapsed;
+        if (LoadingOverlay.Visibility != Visibility.Visible)
+            return;
+
+        var fade = new DoubleAnimation(LoadingOverlay.Opacity, 0, TimeSpan.FromMilliseconds(140));
+
+        fade.Completed += (_, _) =>
+        {
+            LoadingOverlay.Visibility = Visibility.Collapsed;
+            LoadingOverlay.Opacity = 1;
+        };
+
+        LoadingOverlay.BeginAnimation(UIElement.OpacityProperty, fade);
+    }
+
+    private static void FadeIn(UIElement element, int milliseconds)
+    {
+        element.Opacity = 0;
+
+        var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(milliseconds))
+        {
+            EasingFunction = new CubicEase
+            {
+                EasingMode = EasingMode.EaseOut
+            }
+        };
+
+        element.BeginAnimation(UIElement.OpacityProperty, fade);
+    }
+
+    private void InitializeGifAnimations()
+    {
+        AnimateGif(AuthStudyGif, "Study.gif", 85);
+        AnimateGif(AuthSuccessGif, "Success.gif", 85);
+
+        AnimateGif(SidebarStreakGif, "streakfire.gif", 85);
+        AnimateGif(DashboardStudyGif, "Study.gif", 85);
+        AnimateGif(DashboardStreakGif, "streakfire.gif", 85);
+        AnimateGif(DashboardSuccessGif, "Success.gif", 85);
+
+        AnimateGif(GenerateLoadingGif, "Loading.gif", 75);
+        AnimateGif(ImportUploadGif, "Upload.gif", 85);
+        AnimateGif(ExportDownloadGif, "exportdownload.gif", 85);
+        AnimateGif(LoadingGifImage, "Loading.gif", 75);
+    }
+
+    private static void AnimateGif(Image image, string fileName, int frameMilliseconds)
+    {
+        try
+        {
+            var uri = new Uri(
+                $"pack://application:,,,/Assets/Animations/{fileName}",
+                UriKind.Absolute);
+
+            var decoder = new GifBitmapDecoder(
+                uri,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+
+            if (decoder.Frames.Count == 0)
+                return;
+
+            if (decoder.Frames.Count == 1)
+            {
+                image.Source = decoder.Frames[0];
+                return;
+            }
+
+            var animation = new ObjectAnimationUsingKeyFrames
+            {
+                RepeatBehavior = RepeatBehavior.Forever,
+                Duration = new Duration(TimeSpan.FromMilliseconds(frameMilliseconds * decoder.Frames.Count))
+            };
+
+            for (int i = 0; i < decoder.Frames.Count; i++)
+            {
+                animation.KeyFrames.Add(
+                    new DiscreteObjectKeyFrame(
+                        decoder.Frames[i],
+                        KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(frameMilliseconds * i))));
+            }
+
+            image.BeginAnimation(Image.SourceProperty, animation);
+        }
+        catch
+        {
+            // If a GIF fails to load, the app should still run.
+        }
     }
 
     private void SetStatus(string message)
