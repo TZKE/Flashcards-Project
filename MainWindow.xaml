@@ -17,59 +17,66 @@
                 <ColumnDefinition Width="0.54*"/>
             </Grid.ColumnDefinitions>
 
+            <!-- LEFT HERO -->
             <StackPanel Grid.Column="0" Margin="28" VerticalAlignment="Center">
 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,28">
-                    <Border Width="58" Height="58" Background="{StaticResource PrimaryBrush}" CornerRadius="16" Margin="0,0,14,0">
-                        <TextBlock Text="⚡" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
+                    <Border Width="62" Height="62" Background="{StaticResource PrimaryBrush}" CornerRadius="18" Margin="0,0,14,0">
+                        <TextBlock Text="⚡" FontSize="34" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
                     </Border>
 
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="AI Flashcard Maker" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                        <TextBlock Text="AI Flashcard Maker" FontSize="31" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
                         <TextBlock Text="Premium medical study workspace" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
                     </StackPanel>
                 </StackPanel>
 
                 <TextBlock Text="Generate, organize, and study high-yield flashcards."
-                           FontSize="42"
+                           FontSize="43"
                            FontWeight="Bold"
                            Foreground="{StaticResource TextBrush}"
                            TextWrapping="Wrap"
-                           Margin="0,0,30,16"/>
+                           LineHeight="54"
+                           Margin="0,0,34,18"/>
 
                 <TextBlock Text="A clean Windows desktop app for medical students: decks, Z.ai generation, spaced repetition, export, and animated study feedback."
                            FontSize="16"
                            Foreground="{StaticResource MutedBrush}"
                            TextWrapping="Wrap"
-                           Margin="0,0,46,26"/>
+                           LineHeight="25"
+                           Margin="0,0,54,28"/>
 
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,46,22">
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,54,22" Padding="22">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="88"/>
+                            <ColumnDefinition Width="92"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
-                        <Image Source="/Assets/Animations/Study.gif"
-                               Width="70"
-                               Height="70"
-                               Stretch="Uniform"
-                               VerticalAlignment="Center"/>
+                        <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Width="72" Height="72">
+                            <Image x:Name="AuthStudyGif"
+                                   Source="/Assets/Animations/Study.gif"
+                                   Width="58"
+                                   Height="58"
+                                   Stretch="Uniform"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                        </Border>
 
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                             <TextBlock Text="Study smarter, not harder" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
                             <TextBlock Text="Create decks, review weak cards, and export to Anki when needed."
                                        TextWrapping="Wrap"
                                        Foreground="{StaticResource MutedBrush}"
-                                       Margin="0,8,0,0"/>
+                                       Margin="0,7,0,0"/>
                         </StackPanel>
                     </Grid>
                 </Border>
 
-                <UniformGrid Columns="2" Margin="0,0,46,0">
+                <UniformGrid Columns="2" Margin="0,0,54,0">
                     <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,10,10">
                         <StackPanel>
-                            <TextBlock Text="🗂️" FontSize="26"/>
+                            <TextBlock Text="🗂️" FontSize="28"/>
                             <TextBlock Text="Multi-deck" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
                             <TextBlock Text="Organize topics cleanly." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
@@ -77,7 +84,7 @@
 
                     <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock Text="🤖" FontSize="26"/>
+                            <TextBlock Text="🤖" FontSize="28"/>
                             <TextBlock Text="Z.ai Cards" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
                             <TextBlock Text="Generate from notes." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
@@ -85,7 +92,7 @@
 
                     <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="🔥" FontSize="26"/>
+                            <TextBlock Text="🔥" FontSize="28"/>
                             <TextBlock Text="Streaks" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
                             <TextBlock Text="Track daily progress." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
@@ -93,7 +100,7 @@
 
                     <Border Style="{StaticResource SoftCardBorder}">
                         <StackPanel>
-                            <TextBlock Text="📤" FontSize="26"/>
+                            <TextBlock Text="📤" FontSize="28"/>
                             <TextBlock Text="Export" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
                             <TextBlock Text="Copy or save for Anki." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
@@ -102,28 +109,29 @@
 
             </StackPanel>
 
+            <!-- AUTH CARD -->
             <Border Grid.Column="1"
                     Style="{StaticResource CardBorder}"
-                    Width="560"
+                    Width="580"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Padding="34">
+                    Padding="38">
 
                 <TabControl>
                     <TabItem Header="Login">
-                        <StackPanel Margin="10">
+                        <StackPanel Margin="10,4,10,10">
 
-                            <StackPanel HorizontalAlignment="Center" Margin="0,8,0,26">
-                                <Border Width="54" Height="54" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" HorizontalAlignment="Center">
-                                    <TextBlock Text="⚡" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <StackPanel HorizontalAlignment="Center" Margin="0,8,0,28">
+                                <Border Width="68" Height="68" Background="{StaticResource PrimarySoftBrush}" CornerRadius="20" HorizontalAlignment="Center">
+                                    <TextBlock Text="⚡" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource PrimaryBrush}"/>
                                 </Border>
 
                                 <TextBlock Text="Welcome back 👋"
-                                           FontSize="28"
+                                           FontSize="30"
                                            FontWeight="Bold"
                                            Foreground="{StaticResource TextBrush}"
                                            HorizontalAlignment="Center"
-                                           Margin="0,14,0,4"/>
+                                           Margin="0,16,0,4"/>
 
                                 <TextBlock Text="Sign in to continue your flashcard workspace."
                                            FontSize="14"
@@ -131,41 +139,58 @@
                                            HorizontalAlignment="Center"/>
                             </StackPanel>
 
-                            <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <TextBox x:Name="LoginEmailBox" Height="44" Margin="0,8,0,16"/>
+                            <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="LoginEmailBox"
+                                     Height="48"
+                                     FontSize="15"
+                                     Padding="15,0"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,0,18"/>
 
-                            <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <PasswordBox x:Name="LoginPasswordBox" Height="44" Margin="0,8,0,22"/>
+                            <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <PasswordBox x:Name="LoginPasswordBox"
+                                         Height="48"
+                                         FontSize="15"
+                                         Padding="15,0"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,0,24"/>
 
                             <Button Content="Login"
                                     Style="{StaticResource PremiumButton}"
                                     Click="Login_Click"
-                                    Height="46"/>
+                                    Height="48"
+                                    FontSize="15"
+                                    Margin="0"/>
 
-                            <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="14" Margin="0,24,0,0">
+                            <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="15" Margin="0,24,0,0">
                                 <TextBlock Text="New users should create an account using a demo activation code."
                                            Foreground="{StaticResource WarningBrush}"
-                                           TextWrapping="Wrap"/>
+                                           TextWrapping="Wrap"
+                                           FontWeight="SemiBold"/>
                             </Border>
                         </StackPanel>
                     </TabItem>
 
                     <TabItem Header="Create Account">
-                        <StackPanel Margin="10">
+                        <StackPanel Margin="10,4,10,10">
 
-                            <StackPanel HorizontalAlignment="Center" Margin="0,8,0,24">
-                                <Image Source="/Assets/Animations/Success.gif"
-                                       Width="72"
-                                       Height="72"
-                                       Stretch="Uniform"
-                                       HorizontalAlignment="Center"/>
+                            <StackPanel HorizontalAlignment="Center" Margin="0,4,0,24">
+                                <Border Width="72" Height="72" Background="{StaticResource SuccessSoftBrush}" CornerRadius="20" HorizontalAlignment="Center">
+                                    <Image x:Name="AuthSuccessGif"
+                                           Source="/Assets/Animations/Success.gif"
+                                           Width="56"
+                                           Height="56"
+                                           Stretch="Uniform"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                                </Border>
 
                                 <TextBlock Text="Create account"
-                                           FontSize="28"
+                                           FontSize="30"
                                            FontWeight="Bold"
                                            Foreground="{StaticResource TextBrush}"
                                            HorizontalAlignment="Center"
-                                           Margin="0,10,0,4"/>
+                                           Margin="0,14,0,4"/>
 
                                 <TextBlock Text="Use a local demo code to unlock the app."
                                            FontSize="14"
@@ -173,23 +198,42 @@
                                            HorizontalAlignment="Center"/>
                             </StackPanel>
 
-                            <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <TextBox x:Name="SignupEmailBox" Height="44" Margin="0,8,0,14"/>
+                            <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupEmailBox"
+                                     Height="48"
+                                     FontSize="15"
+                                     Padding="15,0"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,0,14"/>
 
-                            <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <PasswordBox x:Name="SignupPasswordBox" Height="44" Margin="0,8,0,14"/>
+                            <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <PasswordBox x:Name="SignupPasswordBox"
+                                         Height="48"
+                                         FontSize="15"
+                                         Padding="15,0"
+                                         VerticalContentAlignment="Center"
+                                         Margin="0,0,0,14"/>
 
-                            <TextBlock Text="Activation Code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <TextBox x:Name="SignupCodeBox" Height="44" Margin="0,8,0,20"/>
+                            <TextBlock Text="Activation Code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupCodeBox"
+                                     Height="48"
+                                     FontSize="15"
+                                     Padding="15,0"
+                                     VerticalContentAlignment="Center"
+                                     Margin="0,0,0,20"/>
 
                             <Button Content="Create Account"
                                     Style="{StaticResource PremiumButton}"
                                     Background="{StaticResource SuccessBrush}"
                                     Click="Signup_Click"
-                                    Height="46"/>
+                                    Height="48"
+                                    FontSize="15"
+                                    Margin="0"/>
 
-                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Padding="14" Margin="0,22,0,0">
-                                <TextBlock Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" FontSize="12"
+                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Padding="15" Margin="0,22,0,0">
+                                <TextBlock Foreground="{StaticResource PrimaryBrush}"
+                                           FontFamily="Consolas"
+                                           FontSize="12"
                                            Text="Demo codes: FLASH-MONTH-2026, FLASH-YEAR-2026, FLASH-LIFE-2026"/>
                             </Border>
                         </StackPanel>
@@ -211,17 +255,17 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="82"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="130"/>
+                        <RowDefinition Height="138"/>
                     </Grid.RowDefinitions>
 
                     <StackPanel Orientation="Horizontal">
-                        <Border Width="48" Height="48" Background="{StaticResource PrimaryBrush}" CornerRadius="14" Margin="0,0,12,0">
-                            <TextBlock Text="⚡" FontSize="27" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
+                        <Border Width="50" Height="50" Background="{StaticResource PrimaryBrush}" CornerRadius="15" Margin="0,0,12,0">
+                            <TextBlock Text="⚡" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
                         </Border>
 
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="AI Flashcards" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="V7.4 Sneat UI" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock Text="V7.4.1 Polish" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
                         </StackPanel>
                     </StackPanel>
 
@@ -244,11 +288,12 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <Border Grid.Row="2" Background="{StaticResource PrimarySoftBrush}" CornerRadius="14" Padding="16">
+                    <Border Grid.Row="2" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Padding="16">
                         <StackPanel>
-                            <Image Source="/Assets/Animations/streakfire.gif"
-                                   Width="42"
-                                   Height="42"
+                            <Image x:Name="SidebarStreakGif"
+                                   Source="/Assets/Animations/streakfire.gif"
+                                   Width="46"
+                                   Height="46"
                                    HorizontalAlignment="Left"
                                    Stretch="Uniform"/>
                             <TextBlock Text="Keep your streak" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="0,8,0,4"/>
@@ -320,7 +365,7 @@
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="180"/>
+                                                <ColumnDefinition Width="170"/>
                                             </Grid.ColumnDefinitions>
 
                                             <StackPanel>
@@ -337,10 +382,11 @@
                                                 </StackPanel>
                                             </StackPanel>
 
-                                            <Image Grid.Column="1"
+                                            <Image x:Name="DashboardStudyGif"
+                                                   Grid.Column="1"
                                                    Source="/Assets/Animations/Study.gif"
-                                                   Width="150"
-                                                   Height="150"
+                                                   Width="138"
+                                                   Height="138"
                                                    Stretch="Uniform"
                                                    HorizontalAlignment="Right"/>
                                         </Grid>
@@ -350,7 +396,12 @@
                                         <StackPanel>
                                             <TextBlock Text="Study streak" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
                                             <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                                <Image Source="/Assets/Animations/streakfire.gif" Width="64" Height="64" Stretch="Uniform" Margin="0,0,14,0"/>
+                                                <Image x:Name="DashboardStreakGif"
+                                                       Source="/Assets/Animations/streakfire.gif"
+                                                       Width="64"
+                                                       Height="64"
+                                                       Stretch="Uniform"
+                                                       Margin="0,0,14,0"/>
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock x:Name="StatsStreak" Text="0 days" Foreground="{StaticResource WarningBrush}" FontSize="28" FontWeight="Bold"/>
                                                     <TextBlock Text="Keep reviewing daily" Foreground="{StaticResource MutedBrush}"/>
@@ -453,7 +504,11 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <Image Source="/Assets/Animations/Success.gif" Width="74" Height="74" Stretch="Uniform"/>
+                                            <Image x:Name="DashboardSuccessGif"
+                                                   Source="/Assets/Animations/Success.gif"
+                                                   Width="74"
+                                                   Height="74"
+                                                   Stretch="Uniform"/>
 
                                             <StackPanel Grid.Column="1">
                                                 <TextBlock Text="Recommended next step" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
@@ -473,8 +528,8 @@
                     <!-- GENERATE -->
                     <Grid x:Name="PageGenerate" Visibility="Collapsed">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="70"/>
+                            <RowDefinition Height="72"/>
+                            <RowDefinition Height="112"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
@@ -484,25 +539,48 @@
                                        Foreground="{StaticResource MutedBrush}"/>
                         </StackPanel>
 
-                        <WrapPanel Grid.Row="1" VerticalAlignment="Center">
-                            <TextBlock Text="Deck" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="GenerateDeckCombo" Width="190" Margin="0,0,14,0" SelectionChanged="DeckSelector_SelectionChanged"/>
+                        <Border Grid.Row="1" Style="{StaticResource SoftCardBorder}" Padding="16" Margin="0,0,0,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.25*"/>
+                                    <ColumnDefinition Width="1.1*"/>
+                                    <ColumnDefinition Width="0.95*"/>
+                                    <ColumnDefinition Width="0.9*"/>
+                                    <ColumnDefinition Width="0.7*"/>
+                                    <ColumnDefinition Width="1.2*"/>
+                                </Grid.ColumnDefinitions>
 
-                            <TextBlock Text="Mode" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="ModeCombo" Width="170" Margin="0,0,14,0"/>
+                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                    <TextBlock Text="Deck" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                    <ComboBox x:Name="GenerateDeckCombo" Height="44" SelectionChanged="DeckSelector_SelectionChanged"/>
+                                </StackPanel>
 
-                            <TextBlock Text="Difficulty" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="DifficultyCombo" Width="130" Margin="0,0,14,0"/>
+                                <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                                    <TextBlock Text="Mode" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                    <ComboBox x:Name="ModeCombo" Height="44"/>
+                                </StackPanel>
 
-                            <TextBlock Text="Answer" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="AnswerLengthCombo" Width="120" Margin="0,0,14,0"/>
+                                <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                                    <TextBlock Text="Difficulty" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                    <ComboBox x:Name="DifficultyCombo" Height="44"/>
+                                </StackPanel>
 
-                            <TextBlock Text="Count" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="CountCombo" Width="90" Margin="0,0,14,0"/>
+                                <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                                    <TextBlock Text="Answer" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                    <ComboBox x:Name="AnswerLengthCombo" Height="44"/>
+                                </StackPanel>
 
-                            <TextBlock Text="Language" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="LanguageCombo" Width="210"/>
-                        </WrapPanel>
+                                <StackPanel Grid.Column="4" Margin="0,0,10,0">
+                                    <TextBlock Text="Count" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                    <ComboBox x:Name="CountCombo" Height="44"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="5">
+                                    <TextBlock Text="Language" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                    <ComboBox x:Name="LanguageCombo" Height="44"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
 
                         <Grid Grid.Row="2">
                             <Grid.ColumnDefinitions>
@@ -515,11 +593,18 @@
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="42"/>
                                         <RowDefinition Height="*"/>
-                                        <RowDefinition Height="60"/>
+                                        <RowDefinition Height="62"/>
                                     </Grid.RowDefinitions>
 
                                     <TextBlock Text="Source Material" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                    <TextBox x:Name="SourceBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+
+                                    <TextBox x:Name="SourceBox"
+                                             Grid.Row="1"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top"
+                                             Padding="16,14"/>
 
                                     <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Bottom">
                                         <Button Content="Generate with Z.ai" Style="{StaticResource PremiumButton}" Click="GenerateAutomatic_Click" Width="170"/>
@@ -533,9 +618,9 @@
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="42"/>
-                                        <RowDefinition Height="96"/>
+                                        <RowDefinition Height="92"/>
                                         <RowDefinition Height="*"/>
-                                        <RowDefinition Height="60"/>
+                                        <RowDefinition Height="62"/>
                                     </Grid.RowDefinitions>
 
                                     <TextBlock Text="Manual Prompt Backup" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
@@ -543,11 +628,16 @@
                                     <Border Grid.Row="1" Background="{StaticResource PrimarySoftBrush}" CornerRadius="14" Padding="12" Margin="0,0,0,12">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="70"/>
+                                                <ColumnDefinition Width="60"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <Image Source="/Assets/Animations/Loading.gif" Width="58" Height="58" Stretch="Uniform"/>
+                                            <Image x:Name="GenerateLoadingGif"
+                                                   Source="/Assets/Animations/Loading.gif"
+                                                   Width="48"
+                                                   Height="48"
+                                                   Stretch="Uniform"/>
+
                                             <TextBlock Grid.Column="1"
                                                        Text="Automatic generation is best. Manual prompt is only a backup."
                                                        Foreground="{StaticResource PrimaryBrush}"
@@ -556,8 +646,20 @@
                                         </Grid>
                                     </Border>
 
-                                    <TextBox x:Name="PromptBox" Grid.Row="2" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                                    <Button Grid.Row="3" Content="Copy Prompt" Style="{StaticResource PremiumButton}" Click="CopyPrompt_Click" Width="140" VerticalAlignment="Bottom"/>
+                                    <TextBox x:Name="PromptBox"
+                                             Grid.Row="2"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top"
+                                             Padding="16,14"/>
+
+                                    <Button Grid.Row="3"
+                                            Content="Copy Prompt"
+                                            Style="{StaticResource PremiumButton}"
+                                            Click="CopyPrompt_Click"
+                                            Width="140"
+                                            VerticalAlignment="Bottom"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -597,7 +699,14 @@
                                     </Grid.RowDefinitions>
 
                                     <TextBlock Text="Paste JSON" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                    <TextBox x:Name="ImportBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+
+                                    <TextBox x:Name="ImportBox"
+                                             Grid.Row="1"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top"
+                                             Padding="16,14"/>
 
                                     <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Bottom">
                                         <Button Content="Import Cards" Style="{StaticResource PremiumButton}" Click="ImportCards_Click" Width="140"/>
@@ -624,7 +733,11 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <Image Source="/Assets/Animations/Upload.gif" Width="50" Height="50" Stretch="Uniform"/>
+                                            <Image x:Name="ImportUploadGif"
+                                                   Source="/Assets/Animations/Upload.gif"
+                                                   Width="50"
+                                                   Height="50"
+                                                   Stretch="Uniform"/>
                                             <TextBlock Grid.Column="1"
                                                        Text="Import cards into the active deck."
                                                        Foreground="{StaticResource MutedBrush}"
@@ -655,16 +768,16 @@
                         </StackPanel>
 
                         <WrapPanel Grid.Row="1" VerticalAlignment="Center">
-                            <TextBox x:Name="DeckNameBox" Width="250" Height="40" Margin="0,0,10,0"/>
+                            <TextBox x:Name="DeckNameBox" Width="250" Height="42" Margin="0,0,10,0"/>
                             <Button Content="Create Deck" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="CreateDeck_Click" Width="130"/>
                             <Button Content="Rename" Style="{StaticResource SoftButton}" Click="RenameDeck_Click" Width="110"/>
                             <Button Content="Delete Deck" Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Click="DeleteDeck_Click" Width="130"/>
 
                             <TextBlock Text="Search" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="24,0,8,0"/>
-                            <TextBox x:Name="SearchBox" Width="220" Height="40" TextChanged="SearchFilter_Changed"/>
+                            <TextBox x:Name="SearchBox" Width="220" Height="42" TextChanged="SearchFilter_Changed"/>
 
                             <TextBlock Text="Tag" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="16,0,8,0"/>
-                            <TextBox x:Name="TagFilterBox" Width="160" Height="40" TextChanged="SearchFilter_Changed"/>
+                            <TextBox x:Name="TagFilterBox" Width="160" Height="42" TextChanged="SearchFilter_Changed"/>
 
                             <CheckBox x:Name="DueOnlyCheck" Content="Due only" VerticalAlignment="Center" Margin="16,0,0,0" Checked="DueOnly_Checked" Unchecked="DueOnly_Checked"/>
                         </WrapPanel>
@@ -733,7 +846,7 @@
 
                         <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="Study deck:" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="StudyDeckCombo" Width="280" SelectionChanged="DeckSelector_SelectionChanged"/>
+                            <ComboBox x:Name="StudyDeckCombo" Width="320" SelectionChanged="DeckSelector_SelectionChanged"/>
                             <Button Content="Restart Session" Style="{StaticResource SoftButton}" Click="StudySelectedDeck_Click" Width="155" Margin="16,0,0,0"/>
                         </StackPanel>
 
@@ -813,11 +926,21 @@
                                 <TextBlock x:Name="CardCounterText" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
 
                                 <GroupBox Grid.Row="1" Header="Front" Margin="0,0,0,10">
-                                    <TextBox x:Name="FrontBox" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                                    <TextBox x:Name="FrontBox"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top"
+                                             Padding="16,14"/>
                                 </GroupBox>
 
                                 <GroupBox Grid.Row="2" Header="Back" Margin="0,0,0,10">
-                                    <TextBox x:Name="BackBox" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                                    <TextBox x:Name="BackBox"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalContentAlignment="Top"
+                                             Padding="16,14"/>
                                 </GroupBox>
 
                                 <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Center">
@@ -857,7 +980,7 @@
 
                         <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="Export deck:" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="ExportDeckCombo" Width="280" SelectionChanged="DeckSelector_SelectionChanged"/>
+                            <ComboBox x:Name="ExportDeckCombo" Width="320" SelectionChanged="DeckSelector_SelectionChanged"/>
                         </StackPanel>
 
                         <Border Grid.Row="2" Style="{StaticResource CardBorder}">
@@ -867,11 +990,25 @@
                                     <ColumnDefinition Width="220"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBox x:Name="ExportPreviewBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                                <TextBox x:Name="ExportPreviewBox"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="NoWrap"
+                                         FontFamily="Consolas"
+                                         FontSize="13"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         VerticalScrollBarVisibility="Auto"
+                                         VerticalContentAlignment="Top"
+                                         Padding="16,14"/>
 
                                 <Border Grid.Column="1" Background="{StaticResource SuccessSoftBrush}" CornerRadius="14" Padding="16" Margin="18,0,0,0">
                                     <StackPanel VerticalAlignment="Center">
-                                        <Image Source="/Assets/Animations/exportdownload.gif" Width="90" Height="90" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                        <Image x:Name="ExportDownloadGif"
+                                               Source="/Assets/Animations/exportdownload.gif"
+                                               Width="90"
+                                               Height="90"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center"/>
                                         <TextBlock Text="Export ready" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextAlignment="Center" Margin="0,10,0,4"/>
                                         <TextBlock Text="Copy or save your cards for Anki."
                                                    Foreground="{StaticResource MutedBrush}"
@@ -918,8 +1055,8 @@
                                             </StackPanel>
                                         </StackPanel>
 
-                                        <TextBlock Text="API Key" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                        <PasswordBox x:Name="ApiKeyBox" Height="44" Margin="0,8,0,16"/>
+                                        <TextBlock Text="API Key" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                        <PasswordBox x:Name="ApiKeyBox" Height="48" Margin="0,0,0,16"/>
 
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -928,13 +1065,13 @@
                                             </Grid.ColumnDefinitions>
 
                                             <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                                <TextBlock Text="Model" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                                <TextBox x:Name="ModelBox" Height="44" Margin="0,8,0,16"/>
+                                                <TextBlock Text="Model" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                                <TextBox x:Name="ModelBox" Height="48" Margin="0,0,0,16"/>
                                             </StackPanel>
 
                                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                                <TextBlock Text="Base URL" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                                <TextBox x:Name="BaseUrlBox" Height="44" Margin="0,8,0,16"/>
+                                                <TextBlock Text="Base URL" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                                <TextBox x:Name="BaseUrlBox" Height="48" Margin="0,0,0,16"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -1003,8 +1140,8 @@
                                             </Border>
                                         </Grid>
 
-                                        <TextBlock Text="Apply new activation code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                        <TextBox x:Name="ApplyCodeBox" Height="44" Margin="0,8,0,16"/>
+                                        <TextBlock Text="Apply new activation code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                                        <TextBox x:Name="ApplyCodeBox" Height="48" Margin="0,0,0,16"/>
 
                                         <Button Content="Apply Code" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="ApplyCode_Click" Width="130"/>
                                     </StackPanel>
@@ -1032,18 +1169,30 @@
         <!-- LOADING OVERLAY -->
         <Grid x:Name="LoadingOverlay" Background="#88000000" Visibility="Collapsed">
             <Border Background="{StaticResource CardBrush}"
-                    CornerRadius="18"
+                    CornerRadius="20"
                     Padding="34"
-                    Width="410"
+                    Width="430"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center">
                 <StackPanel HorizontalAlignment="Center">
-                    <Image Source="/Assets/Animations/Loading.gif"
-                           Width="112"
-                           Height="112"
-                           Stretch="Uniform"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,14"/>
+
+                    <Border Width="118" Height="118" Background="{StaticResource PrimarySoftBrush}" CornerRadius="28" Margin="0,0,0,18">
+                        <Grid>
+                            <Image x:Name="LoadingGifImage"
+                                   Source="/Assets/Animations/Loading.gif"
+                                   Width="92"
+                                   Height="92"
+                                   Stretch="Uniform"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                            <TextBlock Text="⚡"
+                                       FontSize="38"
+                                       Foreground="{StaticResource PrimaryBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.18"/>
+                        </Grid>
+                    </Border>
 
                     <TextBlock x:Name="LoadingMessageText"
                                Text="Working..."
