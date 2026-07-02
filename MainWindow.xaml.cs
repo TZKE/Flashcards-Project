@@ -1,1065 +1,1906 @@
-<Window x:Class="AIFlashcardMaker.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AI Flashcard Maker"
-        Width="1460"
-        Height="920"
-        MinWidth="1180"
-        MinHeight="760"
-        WindowStartupLocation="CenterScreen">
-
-    <Grid Background="{StaticResource AppBgBrush}">
-
-        <!-- AUTH SCREEN -->
-        <Grid x:Name="AuthGrid" Margin="34">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="0.46*"/>
-                <ColumnDefinition Width="0.54*"/>
-            </Grid.ColumnDefinitions>
-
-            <StackPanel Grid.Column="0" Margin="28" VerticalAlignment="Center">
-
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,28">
-                    <Border Width="58" Height="58" Background="{StaticResource PrimaryBrush}" CornerRadius="16" Margin="0,0,14,0">
-                        <TextBlock Text="⚡" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
-                    </Border>
-
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="AI Flashcard Maker" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                        <TextBlock Text="Premium medical study workspace" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
-                    </StackPanel>
-                </StackPanel>
-
-                <TextBlock Text="Generate, organize, and study high-yield flashcards."
-                           FontSize="42"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource TextBrush}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,30,16"/>
-
-                <TextBlock Text="A clean Windows desktop app for medical students: decks, Z.ai generation, spaced repetition, export, and animated study feedback."
-                           FontSize="16"
-                           Foreground="{StaticResource MutedBrush}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,46,26"/>
-
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,46,22">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="88"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Image Source="/Assets/Animations/Study.gif"
-                               Width="70"
-                               Height="70"
-                               Stretch="Uniform"
-                               VerticalAlignment="Center"/>
-
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="Study smarter, not harder" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Create decks, review weak cards, and export to Anki when needed."
-                                       TextWrapping="Wrap"
-                                       Foreground="{StaticResource MutedBrush}"
-                                       Margin="0,8,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <UniformGrid Columns="2" Margin="0,0,46,0">
-                    <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,10,10">
-                        <StackPanel>
-                            <TextBlock Text="🗂️" FontSize="26"/>
-                            <TextBlock Text="Multi-deck" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
-                            <TextBlock Text="Organize topics cleanly." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,0,10">
-                        <StackPanel>
-                            <TextBlock Text="🤖" FontSize="26"/>
-                            <TextBlock Text="Z.ai Cards" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
-                            <TextBlock Text="Generate from notes." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock Text="🔥" FontSize="26"/>
-                            <TextBlock Text="Streaks" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
-                            <TextBlock Text="Track daily progress." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource SoftCardBorder}">
-                        <StackPanel>
-                            <TextBlock Text="📤" FontSize="26"/>
-                            <TextBlock Text="Export" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,2"/>
-                            <TextBlock Text="Copy or save for Anki." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-                </UniformGrid>
-
-            </StackPanel>
-
-            <Border Grid.Column="1"
-                    Style="{StaticResource CardBorder}"
-                    Width="560"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Padding="34">
-
-                <TabControl>
-                    <TabItem Header="Login">
-                        <StackPanel Margin="10">
-
-                            <StackPanel HorizontalAlignment="Center" Margin="0,8,0,26">
-                                <Border Width="54" Height="54" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" HorizontalAlignment="Center">
-                                    <TextBlock Text="⚡" FontSize="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-
-                                <TextBlock Text="Welcome back 👋"
-                                           FontSize="28"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,14,0,4"/>
-
-                                <TextBlock Text="Sign in to continue your flashcard workspace."
-                                           FontSize="14"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           HorizontalAlignment="Center"/>
-                            </StackPanel>
-
-                            <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <TextBox x:Name="LoginEmailBox" Height="44" Margin="0,8,0,16"/>
-
-                            <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <PasswordBox x:Name="LoginPasswordBox" Height="44" Margin="0,8,0,22"/>
-
-                            <Button Content="Login"
-                                    Style="{StaticResource PremiumButton}"
-                                    Click="Login_Click"
-                                    Height="46"/>
-
-                            <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="14" Margin="0,24,0,0">
-                                <TextBlock Text="New users should create an account using a demo activation code."
-                                           Foreground="{StaticResource WarningBrush}"
-                                           TextWrapping="Wrap"/>
-                            </Border>
-                        </StackPanel>
-                    </TabItem>
-
-                    <TabItem Header="Create Account">
-                        <StackPanel Margin="10">
-
-                            <StackPanel HorizontalAlignment="Center" Margin="0,8,0,24">
-                                <Image Source="/Assets/Animations/Success.gif"
-                                       Width="72"
-                                       Height="72"
-                                       Stretch="Uniform"
-                                       HorizontalAlignment="Center"/>
-
-                                <TextBlock Text="Create account"
-                                           FontSize="28"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,10,0,4"/>
-
-                                <TextBlock Text="Use a local demo code to unlock the app."
-                                           FontSize="14"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           HorizontalAlignment="Center"/>
-                            </StackPanel>
-
-                            <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <TextBox x:Name="SignupEmailBox" Height="44" Margin="0,8,0,14"/>
-
-                            <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <PasswordBox x:Name="SignupPasswordBox" Height="44" Margin="0,8,0,14"/>
-
-                            <TextBlock Text="Activation Code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                            <TextBox x:Name="SignupCodeBox" Height="44" Margin="0,8,0,20"/>
-
-                            <Button Content="Create Account"
-                                    Style="{StaticResource PremiumButton}"
-                                    Background="{StaticResource SuccessBrush}"
-                                    Click="Signup_Click"
-                                    Height="46"/>
-
-                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Padding="14" Margin="0,22,0,0">
-                                <TextBlock Foreground="{StaticResource PrimaryBrush}" FontFamily="Consolas" FontSize="12"
-                                           Text="Demo codes: FLASH-MONTH-2026, FLASH-YEAR-2026, FLASH-LIFE-2026"/>
-                            </Border>
-                        </StackPanel>
-                    </TabItem>
-                </TabControl>
-            </Border>
-        </Grid>
-
-        <!-- MAIN APP -->
-        <Grid x:Name="AppGrid" Visibility="Collapsed">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- SIDEBAR -->
-            <Border Grid.Column="0" Background="{StaticResource SidebarBrush}" Padding="22,24">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="82"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="130"/>
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="48" Height="48" Background="{StaticResource PrimaryBrush}" CornerRadius="14" Margin="0,0,12,0">
-                            <TextBlock Text="⚡" FontSize="27" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
-                        </Border>
-
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="AI Flashcards" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="V7.4 Sneat UI" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
-                            <TextBlock Text="WORKSPACE" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold" Margin="0,8,0,10"/>
-
-                            <Button Content="🏠  Dashboard" Style="{StaticResource NavButton}" Click="Dashboard_Click"/>
-                            <Button Content="✨  Generate" Style="{StaticResource NavButton}" Click="GeneratePage_Click"/>
-                            <Button Content="📥  Import JSON" Style="{StaticResource NavButton}" Click="ImportPage_Click"/>
-                            <Button Content="🗂️  My Decks" Style="{StaticResource NavButton}" Click="DecksPage_Click"/>
-                            <Button Content="🎯  Study Mode" Style="{StaticResource NavButton}" Click="StudyPage_Click"/>
-                            <Button Content="✏️  Preview / Edit" Style="{StaticResource NavButton}" Click="PreviewPage_Click"/>
-                            <Button Content="📤  Export" Style="{StaticResource NavButton}" Click="ExportPage_Click"/>
-
-                            <TextBlock Text="SYSTEM" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold" Margin="0,22,0,10"/>
-
-                            <Button Content="🔑  AI Settings" Style="{StaticResource NavButton}" Click="SettingsPage_Click"/>
-                            <Button Content="👤  Account" Style="{StaticResource NavButton}" Click="AccountPage_Click"/>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <Border Grid.Row="2" Background="{StaticResource PrimarySoftBrush}" CornerRadius="14" Padding="16">
-                        <StackPanel>
-                            <Image Source="/Assets/Animations/streakfire.gif"
-                                   Width="42"
-                                   Height="42"
-                                   HorizontalAlignment="Left"
-                                   Stretch="Uniform"/>
-                            <TextBlock Text="Keep your streak" Foreground="{StaticResource TextBrush}" FontWeight="Bold" Margin="0,8,0,4"/>
-                            <TextBlock Text="Review due cards daily for long-term retention."
-                                       Foreground="{StaticResource MutedBrush}"
-                                       FontSize="12"
-                                       TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </Border>
-
-            <!-- RIGHT APP AREA -->
-            <Grid Grid.Column="1">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="82"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="30"/>
-                </Grid.RowDefinitions>
-
-                <!-- TOP BAR -->
-                <Border Grid.Row="0" Background="{StaticResource AppBgBrush}" Padding="24,16">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="650"/>
-                            <ColumnDefinition Width="112"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16,10" Width="420" HorizontalAlignment="Left">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🔎" FontSize="18" Margin="0,0,12,0"/>
-                                <TextBlock Text="Search decks, cards, tags..."
-                                           Foreground="{StaticResource SoftMutedBrush}"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock x:Name="UserSummaryText"
-                                   Grid.Column="1"
-                                   Foreground="{StaticResource MutedBrush}"
-                                   HorizontalAlignment="Right"
-                                   VerticalAlignment="Center"
-                                   FontSize="13"/>
-
-                        <Button Grid.Column="2"
-                                Content="Logout"
-                                Style="{StaticResource SoftButton}"
-                                Click="Logout_Click"
-                                Margin="14,0,0,0"/>
-                    </Grid>
-                </Border>
-
-                <!-- CONTENT -->
-                <Grid Grid.Row="1" Margin="24,10,24,14" x:Name="ContentRoot">
-
-                    <!-- DASHBOARD -->
-                    <Grid x:Name="PageDashboard">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel>
-
-                                <Grid Margin="0,0,0,18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="330"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <Border Style="{StaticResource CardBorder}" Padding="28" Margin="0,0,18,0">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="180"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <StackPanel>
-                                                <TextBlock Text="Welcome back 👋" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                                <TextBlock Text="Your flashcard workspace is ready. Create decks, generate cards, and review due cards."
-                                                           Foreground="{StaticResource MutedBrush}"
-                                                           FontSize="15"
-                                                           TextWrapping="Wrap"
-                                                           Margin="0,10,0,20"/>
-
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Button Content="Generate Cards" Style="{StaticResource PremiumButton}" Click="GeneratePage_Click" Width="150"/>
-                                                    <Button Content="Study Now" Style="{StaticResource SoftButton}" Click="StudyPage_Click" Width="120"/>
-                                                </StackPanel>
-                                            </StackPanel>
-
-                                            <Image Grid.Column="1"
-                                                   Source="/Assets/Animations/Study.gif"
-                                                   Width="150"
-                                                   Height="150"
-                                                   Stretch="Uniform"
-                                                   HorizontalAlignment="Right"/>
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Grid.Column="1" Style="{StaticResource CardBorder}" Padding="22">
-                                        <StackPanel>
-                                            <TextBlock Text="Study streak" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                                <Image Source="/Assets/Animations/streakfire.gif" Width="64" Height="64" Stretch="Uniform" Margin="0,0,14,0"/>
-                                                <StackPanel VerticalAlignment="Center">
-                                                    <TextBlock x:Name="StatsStreak" Text="0 days" Foreground="{StaticResource WarningBrush}" FontSize="28" FontWeight="Bold"/>
-                                                    <TextBlock Text="Keep reviewing daily" Foreground="{StaticResource MutedBrush}"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-
-                                <UniformGrid Columns="4" Margin="0,0,0,18">
-                                    <Border Style="{StaticResource CardBorder}" Margin="0,0,14,0">
-                                        <StackPanel>
-                                            <Border Background="{StaticResource PrimarySoftBrush}" Width="42" Height="42" CornerRadius="10" HorizontalAlignment="Left">
-                                                <TextBlock Text="🗂️" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <TextBlock x:Name="StatsDecks" Text="0" Foreground="{StaticResource TextBrush}" FontSize="32" FontWeight="Bold" Margin="0,12,0,0"/>
-                                            <TextBlock Text="Decks" Foreground="{StaticResource MutedBrush}"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource CardBorder}" Margin="0,0,14,0">
-                                        <StackPanel>
-                                            <Border Background="{StaticResource InfoSoftBrush}" Width="42" Height="42" CornerRadius="10" HorizontalAlignment="Left">
-                                                <TextBlock Text="🃏" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <TextBlock x:Name="StatsTotalCards" Text="0" Foreground="{StaticResource TextBrush}" FontSize="32" FontWeight="Bold" Margin="0,12,0,0"/>
-                                            <TextBlock Text="Total cards" Foreground="{StaticResource MutedBrush}"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource CardBorder}" Margin="0,0,14,0">
-                                        <StackPanel>
-                                            <Border Background="{StaticResource SuccessSoftBrush}" Width="42" Height="42" CornerRadius="10" HorizontalAlignment="Left">
-                                                <TextBlock Text="✅" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <TextBlock x:Name="StatsDueCards" Text="0" Foreground="{StaticResource SuccessBrush}" FontSize="32" FontWeight="Bold" Margin="0,12,0,0"/>
-                                            <TextBlock Text="Due today" Foreground="{StaticResource MutedBrush}"/>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Style="{StaticResource CardBorder}">
-                                        <StackPanel>
-                                            <Border Background="{StaticResource WarningSoftBrush}" Width="42" Height="42" CornerRadius="10" HorizontalAlignment="Left">
-                                                <TextBlock Text="📚" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <TextBlock x:Name="StatsStudiedToday" Text="0" Foreground="{StaticResource PrimaryBrush}" FontSize="32" FontWeight="Bold" Margin="0,12,0,0"/>
-                                            <TextBlock Text="Studied today" Foreground="{StaticResource MutedBrush}"/>
-                                        </StackPanel>
-                                    </Border>
-                                </UniformGrid>
-
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="0.58*"/>
-                                        <ColumnDefinition Width="0.42*"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <Border Style="{StaticResource CardBorder}" Margin="0,0,18,0">
-                                        <StackPanel>
-                                            <TextBlock Text="Study performance" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                            <TextBlock Text="Your progress summary across all local decks."
-                                                       Foreground="{StaticResource MutedBrush}"
-                                                       Margin="0,4,0,18"/>
-
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-
-                                                <Border Grid.Column="0" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Padding="18" Margin="0,0,12,0">
-                                                    <StackPanel>
-                                                        <TextBlock Text="Accuracy" Foreground="{StaticResource MutedBrush}"/>
-                                                        <TextBlock x:Name="StatsAccuracy" Text="0%" Foreground="{StaticResource PrimaryBrush}" FontSize="30" FontWeight="Bold"/>
-                                                    </StackPanel>
-                                                </Border>
-
-                                                <Border Grid.Column="1" Background="{StaticResource DangerSoftBrush}" CornerRadius="12" Padding="18" Margin="0,0,12,0">
-                                                    <StackPanel>
-                                                        <TextBlock Text="Weak cards" Foreground="{StaticResource MutedBrush}"/>
-                                                        <TextBlock x:Name="StatsWeak" Text="0" Foreground="{StaticResource DangerBrush}" FontSize="30" FontWeight="Bold"/>
-                                                    </StackPanel>
-                                                </Border>
-
-                                                <Border Grid.Column="2" Background="{StaticResource SuccessSoftBrush}" CornerRadius="12" Padding="18">
-                                                    <StackPanel>
-                                                        <TextBlock Text="Mode" Foreground="{StaticResource MutedBrush}"/>
-                                                        <TextBlock Text="SRS" Foreground="{StaticResource SuccessBrush}" FontSize="30" FontWeight="Bold"/>
-                                                    </StackPanel>
-                                                </Border>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Grid.Column="1" Style="{StaticResource CardBorder}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="92"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <Image Source="/Assets/Animations/Success.gif" Width="74" Height="74" Stretch="Uniform"/>
-
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="Recommended next step" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                                <TextBlock Text="Create a topic deck, paste your notes, then generate cards with Z.ai."
-                                                           Foreground="{StaticResource MutedBrush}"
-                                                           TextWrapping="Wrap"
-                                                           Margin="0,8,0,14"/>
-                                                <Button Content="Go to Generate" Style="{StaticResource PremiumButton}" Click="GeneratePage_Click" Width="140"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </Grid>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Grid>
-
-                    <!-- GENERATE -->
-                    <Grid x:Name="PageGenerate" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="70"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="Generate Flashcards" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Choose a deck, paste notes, and generate high-yield flashcards with Z.ai."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <WrapPanel Grid.Row="1" VerticalAlignment="Center">
-                            <TextBlock Text="Deck" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="GenerateDeckCombo" Width="190" Margin="0,0,14,0" SelectionChanged="DeckSelector_SelectionChanged"/>
-
-                            <TextBlock Text="Mode" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="ModeCombo" Width="170" Margin="0,0,14,0"/>
-
-                            <TextBlock Text="Difficulty" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="DifficultyCombo" Width="130" Margin="0,0,14,0"/>
-
-                            <TextBlock Text="Answer" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="AnswerLengthCombo" Width="120" Margin="0,0,14,0"/>
-
-                            <TextBlock Text="Count" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="CountCombo" Width="90" Margin="0,0,14,0"/>
-
-                            <TextBlock Text="Language" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox x:Name="LanguageCombo" Width="210"/>
-                        </WrapPanel>
-
-                        <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="0.66*"/>
-                                <ColumnDefinition Width="0.34*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <Border Style="{StaticResource CardBorder}" Margin="0,0,18,0">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="42"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="60"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Text="Source Material" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                    <TextBox x:Name="SourceBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-
-                                    <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Bottom">
-                                        <Button Content="Generate with Z.ai" Style="{StaticResource PremiumButton}" Click="GenerateAutomatic_Click" Width="170"/>
-                                        <Button Content="Create Manual Prompt" Style="{StaticResource SoftButton}" Click="CreatePrompt_Click" Width="190"/>
-                                        <Button Content="Clear" Style="{StaticResource SoftButton}" Background="#ECEEF1" Foreground="{StaticResource MutedBrush}" Click="ClearSource_Click" Width="90"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Border Grid.Column="1" Style="{StaticResource CardBorder}">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="42"/>
-                                        <RowDefinition Height="96"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="60"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Text="Manual Prompt Backup" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-
-                                    <Border Grid.Row="1" Background="{StaticResource PrimarySoftBrush}" CornerRadius="14" Padding="12" Margin="0,0,0,12">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="70"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <Image Source="/Assets/Animations/Loading.gif" Width="58" Height="58" Stretch="Uniform"/>
-                                            <TextBlock Grid.Column="1"
-                                                       Text="Automatic generation is best. Manual prompt is only a backup."
-                                                       Foreground="{StaticResource PrimaryBrush}"
-                                                       TextWrapping="Wrap"
-                                                       VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Border>
-
-                                    <TextBox x:Name="PromptBox" Grid.Row="2" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                                    <Button Grid.Row="3" Content="Copy Prompt" Style="{StaticResource PremiumButton}" Click="CopyPrompt_Click" Width="140" VerticalAlignment="Bottom"/>
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </Grid>
-
-                    <!-- IMPORT -->
-                    <Grid x:Name="PageImport" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="62"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="Import AI JSON" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Paste JSON generated by any AI model. Cards will be added to the selected deck."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="Import into deck:" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="ImportDeckCombo" Width="280" SelectionChanged="DeckSelector_SelectionChanged"/>
-                        </StackPanel>
-
-                        <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="0.66*"/>
-                                <ColumnDefinition Width="0.34*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <Border Style="{StaticResource CardBorder}" Margin="0,0,18,0">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="42"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="60"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Text="Paste JSON" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                    <TextBox x:Name="ImportBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-
-                                    <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Bottom">
-                                        <Button Content="Import Cards" Style="{StaticResource PremiumButton}" Click="ImportCards_Click" Width="140"/>
-                                        <Button Content="Clear" Style="{StaticResource SoftButton}" Background="#ECEEF1" Foreground="{StaticResource MutedBrush}" Click="ClearImport_Click" Width="90"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Border Grid.Column="1" Style="{StaticResource CardBorder}">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="42"/>
-                                        <RowDefinition Height="86"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="34"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Text="Current Deck Cards" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-
-                                    <Border Grid.Row="1" Background="{StaticResource InfoSoftBrush}" CornerRadius="14" Padding="12" Margin="0,0,0,12">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="60"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <Image Source="/Assets/Animations/Upload.gif" Width="50" Height="50" Stretch="Uniform"/>
-                                            <TextBlock Grid.Column="1"
-                                                       Text="Import cards into the active deck."
-                                                       Foreground="{StaticResource MutedBrush}"
-                                                       TextWrapping="Wrap"
-                                                       VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Border>
-
-                                    <ListBox x:Name="ImportedList" Grid.Row="2" SelectionChanged="ImportedList_SelectionChanged"/>
-                                    <TextBlock x:Name="ImportSummaryText" Grid.Row="3" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </Grid>
-
-                    <!-- DECKS -->
-                    <Grid x:Name="PageDecks" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="74"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="My Decks" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Create decks, search cards, move cards, and start focused study sessions."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <WrapPanel Grid.Row="1" VerticalAlignment="Center">
-                            <TextBox x:Name="DeckNameBox" Width="250" Height="40" Margin="0,0,10,0"/>
-                            <Button Content="Create Deck" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="CreateDeck_Click" Width="130"/>
-                            <Button Content="Rename" Style="{StaticResource SoftButton}" Click="RenameDeck_Click" Width="110"/>
-                            <Button Content="Delete Deck" Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Click="DeleteDeck_Click" Width="130"/>
-
-                            <TextBlock Text="Search" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="24,0,8,0"/>
-                            <TextBox x:Name="SearchBox" Width="220" Height="40" TextChanged="SearchFilter_Changed"/>
-
-                            <TextBlock Text="Tag" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="16,0,8,0"/>
-                            <TextBox x:Name="TagFilterBox" Width="160" Height="40" TextChanged="SearchFilter_Changed"/>
-
-                            <CheckBox x:Name="DueOnlyCheck" Content="Due only" VerticalAlignment="Center" Margin="16,0,0,0" Checked="DueOnly_Checked" Unchecked="DueOnly_Checked"/>
-                        </WrapPanel>
-
-                        <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="0.32*"/>
-                                <ColumnDefinition Width="0.68*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <Border Style="{StaticResource CardBorder}" Margin="0,0,18,0">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="42"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="72"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock Text="Deck Library" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                    <ListBox x:Name="DeckList" Grid.Row="1" SelectionChanged="DeckList_SelectionChanged"/>
-
-                                    <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button Content="Study" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="StudySelectedDeck_Click" Width="95"/>
-                                        <Button Content="Export" Style="{StaticResource SoftButton}" Click="ExportSelectedDeck_Click" Width="95"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Border Grid.Column="1" Style="{StaticResource CardBorder}">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="42"/>
-                                        <RowDefinition Height="*"/>
-                                        <RowDefinition Height="76"/>
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock x:Name="DeckSummaryText" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                    <ListBox x:Name="CardsList" Grid.Row="1" SelectionChanged="CardsList_SelectionChanged"/>
-
-                                    <WrapPanel Grid.Row="2" VerticalAlignment="Center">
-                                        <Button Content="Preview Selected" Style="{StaticResource SoftButton}" Click="PreviewSelected_Click" Width="160"/>
-                                        <Button Content="Delete Selected" Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Click="DeleteSelected_Click" Width="150"/>
-
-                                        <TextBlock Text="Move to" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="18,0,8,0"/>
-                                        <ComboBox x:Name="MoveDeckCombo" Width="210"/>
-                                        <Button Content="Move" Style="{StaticResource SoftButton}" Click="MoveSelected_Click" Width="90"/>
-                                    </WrapPanel>
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </Grid>
-
-                    <!-- STUDY -->
-                    <Grid x:Name="PageStudy" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="62"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="Study Mode" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Reveal the answer, then rate your memory with Again / Hard / Good / Easy."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="Study deck:" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="StudyDeckCombo" Width="280" SelectionChanged="DeckSelector_SelectionChanged"/>
-                            <Button Content="Restart Session" Style="{StaticResource SoftButton}" Click="StudySelectedDeck_Click" Width="155" Margin="16,0,0,0"/>
-                        </StackPanel>
-
-                        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Margin="70,12" Padding="34">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="44"/>
-                                    <RowDefinition Height="*"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="82"/>
-                                </Grid.RowDefinitions>
-
-                                <TextBlock x:Name="StudyProgressText" Text="No cards" Foreground="{StaticResource MutedBrush}" FontSize="15"/>
-
-                                <Border Grid.Row="1" Background="{StaticResource SoftCardBrush}" CornerRadius="18" Padding="36">
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock x:Name="StudyFrontText"
-                                                   Text="No card selected."
-                                                   TextWrapping="Wrap"
-                                                   Foreground="{StaticResource TextBrush}"
-                                                   FontSize="28"
-                                                   FontWeight="SemiBold"
-                                                   TextAlignment="Center"/>
-
-                                        <Border x:Name="StudyAnswerPanel"
-                                                Visibility="Collapsed"
-                                                Background="{StaticResource CardBrush}"
-                                                CornerRadius="16"
-                                                Padding="26"
-                                                Margin="0,34,0,0">
-                                            <TextBlock x:Name="StudyBackText"
-                                                       TextWrapping="Wrap"
-                                                       Foreground="{StaticResource SuccessBrush}"
-                                                       FontSize="22"
-                                                       TextAlignment="Center"/>
-                                        </Border>
-                                    </StackPanel>
-                                </Border>
-
-                                <TextBlock x:Name="StudyHintText" Grid.Row="2" Foreground="{StaticResource MutedBrush}" FontSize="13" Margin="0,16,0,0" TextAlignment="Center"/>
-
-                                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Button Content="Show Answer" Style="{StaticResource PremiumButton}" Click="ShowAnswer_Click" Width="150"/>
-                                    <Button Content="Again" Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Click="Again_Click" Width="100"/>
-                                    <Button Content="Hard" Style="{StaticResource PremiumButton}" Background="{StaticResource WarningBrush}" Click="Hard_Click" Width="100"/>
-                                    <Button Content="Good" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="Good_Click" Width="100"/>
-                                    <Button Content="Easy" Style="{StaticResource PremiumButton}" Background="{StaticResource InfoBrush}" Click="Easy_Click" Width="100"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <!-- PREVIEW -->
-                    <Grid x:Name="PagePreview" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="Preview / Edit" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Edit the selected card’s front, back, and tags."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <Border Grid.Row="1" Style="{StaticResource CardBorder}">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="42"/>
-                                    <RowDefinition Height="0.42*"/>
-                                    <RowDefinition Height="0.42*"/>
-                                    <RowDefinition Height="70"/>
-                                    <RowDefinition Height="74"/>
-                                    <RowDefinition Height="58"/>
-                                </Grid.RowDefinitions>
-
-                                <TextBlock x:Name="CardCounterText" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-
-                                <GroupBox Grid.Row="1" Header="Front" Margin="0,0,0,10">
-                                    <TextBox x:Name="FrontBox" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                                </GroupBox>
-
-                                <GroupBox Grid.Row="2" Header="Back" Margin="0,0,0,10">
-                                    <TextBox x:Name="BackBox" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                                </GroupBox>
-
-                                <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="Previous" Style="{StaticResource SoftButton}" Click="Previous_Click" Width="110"/>
-                                    <Button Content="Next" Style="{StaticResource SoftButton}" Click="Next_Click" Width="90"/>
-                                    <Button Content="Save" Style="{StaticResource PremiumButton}" Click="SaveCard_Click" Width="90"/>
-                                    <Button Content="Delete" Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Click="DeleteCard_Click" Width="100"/>
-                                    <Button Content="Copy Current" Style="{StaticResource SoftButton}" Click="CopyCurrent_Click" Width="150"/>
-                                </StackPanel>
-
-                                <GroupBox Grid.Row="4" Header="Tags" Margin="0,0,0,10">
-                                    <TextBox x:Name="TagsBox"/>
-                                </GroupBox>
-
-                                <StackPanel Grid.Row="5" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="Copy All For Anki" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="CopyAll_Click" Width="180"/>
-                                    <Button Content="Export Selected Deck" Style="{StaticResource SoftButton}" Click="ExportSelectedDeck_Click" Width="180"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </Grid>
-
-                    <!-- EXPORT -->
-                    <Grid x:Name="PageExport" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="62"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="70"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="Export" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Export selected deck or all decks as tab-separated fields for Anki."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="Export deck:" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <ComboBox x:Name="ExportDeckCombo" Width="280" SelectionChanged="DeckSelector_SelectionChanged"/>
-                        </StackPanel>
-
-                        <Border Grid.Row="2" Style="{StaticResource CardBorder}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="220"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBox x:Name="ExportPreviewBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-
-                                <Border Grid.Column="1" Background="{StaticResource SuccessSoftBrush}" CornerRadius="14" Padding="16" Margin="18,0,0,0">
-                                    <StackPanel VerticalAlignment="Center">
-                                        <Image Source="/Assets/Animations/exportdownload.gif" Width="90" Height="90" Stretch="Uniform" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Export ready" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextAlignment="Center" Margin="0,10,0,4"/>
-                                        <TextBlock Text="Copy or save your cards for Anki."
-                                                   Foreground="{StaticResource MutedBrush}"
-                                                   TextWrapping="Wrap"
-                                                   TextAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </Border>
-
-                        <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Content="Refresh Preview" Style="{StaticResource SoftButton}" Click="RefreshExport_Click" Width="150"/>
-                            <Button Content="Copy Selected Deck" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="CopySelectedDeck_Click" Width="180"/>
-                            <Button Content="Copy All Decks" Style="{StaticResource SoftButton}" Click="CopyAll_Click" Width="150"/>
-                            <Button Content="Export Selected" Style="{StaticResource PremiumButton}" Click="ExportSelectedDeck_Click" Width="155"/>
-                            <Button Content="Export All" Style="{StaticResource SoftButton}" Click="ExportAllDecks_Click" Width="120"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- SETTINGS -->
-                    <Grid x:Name="PageSettings" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="AI Settings" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Configure Z.ai generation for local testing."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <StackPanel>
-                                <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,0,0,18">
-                                    <StackPanel MaxWidth="900" HorizontalAlignment="Left">
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                            <Border Width="50" Height="50" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
-                                                <TextBlock Text="🔑" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Z.ai API" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                                <TextBlock Text="Saved locally on this computer." Foreground="{StaticResource MutedBrush}"/>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <TextBlock Text="API Key" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                        <PasswordBox x:Name="ApiKeyBox" Height="44" Margin="0,8,0,16"/>
-
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                                <TextBlock Text="Model" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                                <TextBox x:Name="ModelBox" Height="44" Margin="0,8,0,16"/>
-                                            </StackPanel>
-
-                                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                                <TextBlock Text="Base URL" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                                <TextBox x:Name="BaseUrlBox" Height="44" Margin="0,8,0,16"/>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button Content="Save Settings" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="SaveSettings_Click" Width="150"/>
-                                            <Button Content="Clear Key" Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Click="ClearKey_Click" Width="120"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="18">
-                                    <TextBlock Text="Important: this local API key setup is for testing. The final paid app should use a backend so the API key is hidden from users."
-                                               Foreground="{StaticResource WarningBrush}"
-                                               TextWrapping="Wrap"
-                                               FontWeight="SemiBold"/>
-                                </Border>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Grid>
-
-                    <!-- ACCOUNT -->
-                    <Grid x:Name="PageAccount" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="76"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="Account" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Local demo account and subscription information."
-                                       Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <StackPanel>
-                                <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,0,0,18">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,22">
-                                            <Border Width="64" Height="64" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Margin="0,0,16,0">
-                                                <TextBlock Text="👤" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Subscription Details" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                                <TextBlock Text="Local demo activation. Backend comes later." Foreground="{StaticResource MutedBrush}"/>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <Grid Margin="0,0,0,22">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <Border Grid.Column="0" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Padding="16" Margin="0,0,12,0">
-                                                <TextBlock x:Name="AccountEmailText" Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap"/>
-                                            </Border>
-
-                                            <Border Grid.Column="1" Background="{StaticResource SuccessSoftBrush}" CornerRadius="12" Padding="16" Margin="0,0,12,0">
-                                                <TextBlock x:Name="AccountPlanText" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap"/>
-                                            </Border>
-
-                                            <Border Grid.Column="2" Background="{StaticResource InfoSoftBrush}" CornerRadius="12" Padding="16">
-                                                <TextBlock x:Name="AccountExpiryText" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                                            </Border>
-                                        </Grid>
-
-                                        <TextBlock Text="Apply new activation code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold"/>
-                                        <TextBox x:Name="ApplyCodeBox" Height="44" Margin="0,8,0,16"/>
-
-                                        <Button Content="Apply Code" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="ApplyCode_Click" Width="130"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Background="{StaticResource DangerSoftBrush}" CornerRadius="12" Padding="18">
-                                    <TextBlock Text="This is not a real online subscription system yet. V8 will include backend login, real activation codes, and secure payment/subscription checks."
-                                               Foreground="{StaticResource DangerBrush}"
-                                               TextWrapping="Wrap"
-                                               FontWeight="SemiBold"/>
-                                </Border>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Grid>
-
-                </Grid>
-
-                <!-- STATUS BAR -->
-                <Border Grid.Row="2" Background="{StaticResource CardBrush}" Padding="16,0">
-                    <TextBlock x:Name="StatusText" Text="Ready." Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
-                </Border>
-            </Grid>
-        </Grid>
-
-        <!-- LOADING OVERLAY -->
-        <Grid x:Name="LoadingOverlay" Background="#88000000" Visibility="Collapsed">
-            <Border Background="{StaticResource CardBrush}"
-                    CornerRadius="18"
-                    Padding="34"
-                    Width="410"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center">
-                <StackPanel HorizontalAlignment="Center">
-                    <Image Source="/Assets/Animations/Loading.gif"
-                           Width="112"
-                           Height="112"
-                           Stretch="Uniform"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,14"/>
-
-                    <TextBlock x:Name="LoadingMessageText"
-                               Text="Working..."
-                               Foreground="{StaticResource TextBrush}"
-                               FontSize="23"
-                               FontWeight="Bold"
-                               HorizontalAlignment="Center"/>
-
-                    <TextBlock Text="Please wait while the app processes your request."
-                               Foreground="{StaticResource MutedBrush}"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="0,12,0,0"/>
-                </StackPanel>
-            </Border>
-        </Grid>
-
-    </Grid>
-</Window>
+using Microsoft.Win32;
+using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media.Animation;
+
+namespace AIFlashcardMaker;
+
+public sealed class Flashcard
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Front { get; set; } = "";
+    public string Back { get; set; } = "";
+    public string Tags { get; set; } = "";
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime DueAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastStudiedAt { get; set; } = DateTime.MinValue;
+
+    public int Repetitions { get; set; }
+    public int AgainCount { get; set; }
+    public int HardCount { get; set; }
+    public int GoodCount { get; set; }
+    public int EasyCount { get; set; }
+
+    public int ReviewCount => AgainCount + HardCount + GoodCount + EasyCount;
+
+    public override string ToString()
+    {
+        string preview = Front.Replace("\r", " ").Replace("\n", " ");
+        return preview.Length > 95 ? preview[..95] + "..." : preview;
+    }
+}
+
+public sealed class StudyDeck
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = "Default Deck";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastStudiedAt { get; set; } = DateTime.MinValue;
+    public List<Flashcard> Cards { get; set; } = new();
+
+    public override string ToString()
+    {
+        int due = Cards.Count(c => c.DueAt <= DateTime.UtcNow);
+        return $"{Name}   ({Cards.Count} cards, {due} due)";
+    }
+}
+
+public sealed class StudyStats
+{
+    public DateTime LastStudyDate { get; set; } = DateTime.MinValue;
+    public int CurrentStreak { get; set; }
+    public int StudiedToday { get; set; }
+    public int TotalReviews { get; set; }
+    public int SuccessfulReviews { get; set; }
+}
+
+public sealed class DeckStore
+{
+    public string ActiveDeckId { get; set; } = "";
+    public List<StudyDeck> Decks { get; set; } = new();
+    public StudyStats Stats { get; set; } = new();
+}
+
+public sealed class LocalAccount
+{
+    public string Email { get; set; } = "";
+    public string PasswordHash { get; set; } = "";
+    public string Plan { get; set; } = "";
+    public DateTime SubscriptionExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public sealed class UsedActivationCode
+{
+    public string Code { get; set; } = "";
+    public string UsedByEmail { get; set; } = "";
+    public string Plan { get; set; } = "";
+    public DateTime UsedAt { get; set; }
+}
+
+public sealed class LocalStore
+{
+    public List<LocalAccount> Accounts { get; set; } = new();
+    public List<UsedActivationCode> UsedCodes { get; set; } = new();
+}
+
+public sealed class AppSettings
+{
+    public string ApiProvider { get; set; } = "Z.ai";
+    public string ApiKey { get; set; } = "";
+    public string Model { get; set; } = "GLM-4.7-FlashX";
+    public string BaseUrl { get; set; } = "https://api.z.ai/api/paas/v4";
+}
+
+public sealed partial class MainWindow : Window
+{
+    private readonly string dataDir =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AIFlashcardMaker");
+
+    private string StorePath => Path.Combine(dataDir, "accounts.json");
+    private string SettingsPath => Path.Combine(dataDir, "settings.json");
+    private string DecksPath => Path.Combine(dataDir, "decks.json");
+
+    private LocalStore _store = new();
+    private AppSettings _settings = new();
+    private DeckStore _deckStore = new();
+
+    private LocalAccount? _currentUser;
+    private string _activeDeckId = "";
+    private string _currentCardId = "";
+
+    private readonly List<Flashcard> _studyQueue = new();
+    private int _studyIndex = -1;
+    private bool _answerShown;
+    private bool _suppressSelection;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        Directory.CreateDirectory(dataDir);
+
+        LoadStore();
+        LoadSettings();
+        LoadDecks();
+        EnsureDefaultDeck();
+        SetupCombos();
+
+        ShowAuth();
+        RefreshAll();
+    }
+
+    private void SetupCombos()
+    {
+        ModeCombo.ItemsSource = new[] { "Step 1 High-Yield", "Basic Q/A", "Cloze Deletion", "Image/OCR", "English + Arabic Explanation" };
+        DifficultyCombo.ItemsSource = new[] { "Easy", "Medium", "Hard", "Exam Style" };
+        AnswerLengthCombo.ItemsSource = new[] { "Very Short", "Normal", "Detailed" };
+        CountCombo.ItemsSource = new[] { "Auto", "5", "10", "20", "30", "40" };
+        LanguageCombo.ItemsSource = new[] { "English", "Arabic", "English with Arabic explanation" };
+
+        ModeCombo.SelectedIndex = 0;
+        DifficultyCombo.SelectedIndex = 3;
+        AnswerLengthCombo.SelectedIndex = 0;
+        CountCombo.SelectedIndex = 0;
+        LanguageCombo.SelectedIndex = 0;
+    }
+
+    private void ShowAuth()
+    {
+        AuthGrid.Visibility = Visibility.Visible;
+        AppGrid.Visibility = Visibility.Collapsed;
+        HideLoading();
+    }
+
+    private void ShowApp()
+    {
+        AuthGrid.Visibility = Visibility.Collapsed;
+        AppGrid.Visibility = Visibility.Visible;
+
+        UserSummaryText.Text = GetAccountSummary();
+
+        RefreshAll();
+        ShowPage(PageDashboard);
+        SetStatus("Logged in successfully.");
+    }
+
+    private void ShowPage(UIElement page)
+    {
+        foreach (var child in ContentRoot.Children.OfType<UIElement>())
+            child.Visibility = Visibility.Collapsed;
+
+        page.Visibility = Visibility.Visible;
+        page.Opacity = 0;
+
+        var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180));
+        page.BeginAnimation(OpacityProperty, fade);
+
+        RefreshAll();
+    }
+
+    private void Login_Click(object sender, RoutedEventArgs e)
+    {
+        string email = NormalizeEmail(LoginEmailBox.Text);
+        string password = LoginPasswordBox.Password;
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            MessageBox.Show("Enter email and password.");
+            return;
+        }
+
+        var user = _store.Accounts.FirstOrDefault(x =>
+            string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase));
+
+        if (user is null)
+        {
+            MessageBox.Show("Account not found.");
+            return;
+        }
+
+        if (user.PasswordHash != HashPassword(email, password))
+        {
+            MessageBox.Show("Wrong password.");
+            return;
+        }
+
+        if (DateTime.UtcNow > user.SubscriptionExpiresAt)
+        {
+            MessageBox.Show("Your activation expired.");
+            return;
+        }
+
+        _currentUser = user;
+        ShowApp();
+    }
+
+    private void Signup_Click(object sender, RoutedEventArgs e)
+    {
+        string email = NormalizeEmail(SignupEmailBox.Text);
+        string password = SignupPasswordBox.Password;
+        string code = NormalizeCode(SignupCodeBox.Text);
+
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
+        {
+            MessageBox.Show("Enter a valid email.");
+            return;
+        }
+
+        if (password.Length < 4)
+        {
+            MessageBox.Show("Password must be at least 4 characters for this demo.");
+            return;
+        }
+
+        if (_store.Accounts.Any(x => string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show("This email already has an account.");
+            return;
+        }
+
+        var activation = GetActivationInfo(code);
+
+        if (activation is null)
+        {
+            MessageBox.Show("Invalid activation code.");
+            return;
+        }
+
+        if (IsCodeUsed(code))
+        {
+            MessageBox.Show("This activation code was already used.");
+            return;
+        }
+
+        var user = new LocalAccount
+        {
+            Email = email,
+            PasswordHash = HashPassword(email, password),
+            Plan = activation.Value.Plan,
+            CreatedAt = DateTime.UtcNow,
+            SubscriptionExpiresAt = activation.Value.Lifetime
+                ? DateTime.MaxValue
+                : DateTime.UtcNow.AddDays(activation.Value.Days)
+        };
+
+        _store.Accounts.Add(user);
+        _store.UsedCodes.Add(new UsedActivationCode
+        {
+            Code = code,
+            UsedByEmail = email,
+            Plan = activation.Value.Plan,
+            UsedAt = DateTime.UtcNow
+        });
+
+        SaveStore();
+
+        _currentUser = user;
+        ShowApp();
+    }
+
+    private void Logout_Click(object sender, RoutedEventArgs e)
+    {
+        _currentUser = null;
+        ShowAuth();
+    }
+
+    private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowPage(PageDashboard);
+    private void GeneratePage_Click(object sender, RoutedEventArgs e) => ShowPage(PageGenerate);
+    private void ImportPage_Click(object sender, RoutedEventArgs e) => ShowPage(PageImport);
+    private void DecksPage_Click(object sender, RoutedEventArgs e) => ShowPage(PageDecks);
+
+    private void StudyPage_Click(object sender, RoutedEventArgs e)
+    {
+        StartStudySession(GetSelectedDeckIdFromCombo(StudyDeckCombo));
+        ShowPage(PageStudy);
+    }
+
+    private void PreviewPage_Click(object sender, RoutedEventArgs e)
+    {
+        UpdatePreview();
+        ShowPage(PagePreview);
+    }
+
+    private void ExportPage_Click(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentEdits();
+        ExportPreviewBox.Text = GetSelectedDeckAnkiText();
+        ShowPage(PageExport);
+    }
+
+    private void SettingsPage_Click(object sender, RoutedEventArgs e)
+    {
+        ApiKeyBox.Password = _settings.ApiKey;
+        ModelBox.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "GLM-4.7-FlashX" : _settings.Model;
+        BaseUrlBox.Text = string.IsNullOrWhiteSpace(_settings.BaseUrl) ? "https://api.z.ai/api/paas/v4" : _settings.BaseUrl;
+        ShowPage(PageSettings);
+    }
+
+    private void AccountPage_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshAccountPage();
+        ShowPage(PageAccount);
+    }
+
+    private async void GenerateAutomatic_Click(object sender, RoutedEventArgs e)
+    {
+        string source = SourceBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            MessageBox.Show("Paste notes first.");
+            return;
+        }
+
+        var deck = GetActiveDeck();
+
+        if (deck is null)
+        {
+            MessageBox.Show("Create or select a deck first.");
+            ShowPage(PageDecks);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_settings.ApiKey))
+        {
+            MessageBox.Show("Add your Z.ai API key in AI Settings first.");
+            SettingsPage_Click(sender, e);
+            return;
+        }
+
+        try
+        {
+            ShowLoading("Generating with Z.ai...");
+            SetStatus("Generating flashcards with Z.ai...");
+            IsEnabled = false;
+
+            string prompt = BuildPrompt(source);
+            string aiText = await CallZaiAsync(prompt);
+            var parsed = ParseFlashcards(aiText);
+
+            if (parsed.Count == 0)
+            {
+                ImportBox.Text = aiText;
+                MessageBox.Show("Z.ai replied, but no cards were parsed. Response placed in Import JSON.");
+                ShowPage(PageImport);
+                return;
+            }
+
+            foreach (var card in parsed)
+            {
+                card.Id = Guid.NewGuid().ToString("N");
+                card.CreatedAt = DateTime.UtcNow;
+                card.DueAt = DateTime.UtcNow;
+            }
+
+            deck.Cards.AddRange(parsed);
+            _currentCardId = parsed.First().Id;
+
+            SaveDecks();
+            RefreshAll();
+            UpdatePreview();
+
+            MessageBox.Show($"Generated {parsed.Count} cards into deck: {deck.Name}");
+            ShowPage(PagePreview);
+            SetStatus($"Generated {parsed.Count} cards into {deck.Name}.");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Generation failed:\n\n" + ex.Message);
+            SetStatus("Generation failed.");
+        }
+        finally
+        {
+            IsEnabled = true;
+            HideLoading();
+        }
+    }
+
+    private void CreatePrompt_Click(object sender, RoutedEventArgs e)
+    {
+        string source = SourceBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            MessageBox.Show("Paste notes first.");
+            return;
+        }
+
+        PromptBox.Text = BuildPrompt(source);
+        Clipboard.SetText(PromptBox.Text);
+        SetStatus("Manual prompt created and copied.");
+    }
+
+    private void CopyPrompt_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(PromptBox.Text))
+        {
+            MessageBox.Show("Create a prompt first.");
+            return;
+        }
+
+        Clipboard.SetText(PromptBox.Text);
+        SetStatus("Prompt copied.");
+    }
+
+    private void ClearSource_Click(object sender, RoutedEventArgs e) => SourceBox.Clear();
+
+    private void ImportCards_Click(object sender, RoutedEventArgs e)
+    {
+        string text = ImportBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            MessageBox.Show("Paste JSON first.");
+            return;
+        }
+
+        var deck = GetActiveDeck();
+
+        if (deck is null)
+        {
+            MessageBox.Show("Create or select a deck first.");
+            ShowPage(PageDecks);
+            return;
+        }
+
+        var parsed = ParseFlashcards(text);
+
+        if (parsed.Count == 0)
+        {
+            MessageBox.Show("No cards found. Make sure the AI returned valid JSON with front/back/tags.");
+            return;
+        }
+
+        foreach (var card in parsed)
+        {
+            card.Id = Guid.NewGuid().ToString("N");
+            card.CreatedAt = DateTime.UtcNow;
+            card.DueAt = DateTime.UtcNow;
+        }
+
+        deck.Cards.AddRange(parsed);
+        _currentCardId = parsed.First().Id;
+
+        SaveDecks();
+        RefreshAll();
+        UpdatePreview();
+
+        MessageBox.Show($"Imported {parsed.Count} cards into deck: {deck.Name}");
+        ShowPage(PagePreview);
+        SetStatus($"Imported {parsed.Count} cards into {deck.Name}.");
+    }
+
+    private void ClearImport_Click(object sender, RoutedEventArgs e) => ImportBox.Clear();
+
+    private void DeckSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelection)
+            return;
+
+        string deckId = "";
+
+        if (sender is ComboBox cb)
+            deckId = GetSelectedDeckIdFromCombo(cb);
+
+        if (!string.IsNullOrWhiteSpace(deckId))
+        {
+            _activeDeckId = deckId;
+            _deckStore.ActiveDeckId = deckId;
+            SaveDecks();
+            RefreshAll();
+        }
+    }
+
+    private void ImportedList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelection) return;
+
+        if (ImportedList.SelectedItem is Flashcard card)
+        {
+            SaveCurrentEdits();
+            _currentCardId = card.Id;
+            UpdatePreview();
+        }
+    }
+
+    private void DeckList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelection) return;
+
+        if (DeckList.SelectedItem is StudyDeck deck)
+        {
+            _activeDeckId = deck.Id;
+            _deckStore.ActiveDeckId = deck.Id;
+            SaveDecks();
+            RefreshAll();
+        }
+    }
+
+    private void CardsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSelection) return;
+
+        if (CardsList.SelectedItem is Flashcard card)
+        {
+            SaveCurrentEdits();
+            _currentCardId = card.Id;
+            UpdatePreview();
+        }
+    }
+
+    private void CreateDeck_Click(object sender, RoutedEventArgs e)
+    {
+        string name = DeckNameBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            MessageBox.Show("Enter a deck name first.");
+            return;
+        }
+
+        if (_deckStore.Decks.Any(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show("A deck with this name already exists.");
+            return;
+        }
+
+        var deck = new StudyDeck
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = name,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _deckStore.Decks.Add(deck);
+        _activeDeckId = deck.Id;
+        _deckStore.ActiveDeckId = deck.Id;
+        DeckNameBox.Clear();
+
+        SaveDecks();
+        RefreshAll();
+
+        MessageBox.Show($"Deck created: {deck.Name}");
+    }
+
+    private void RenameDeck_Click(object sender, RoutedEventArgs e)
+    {
+        var deck = GetActiveDeck();
+
+        if (deck is null)
+        {
+            MessageBox.Show("Select a deck first.");
+            return;
+        }
+
+        string name = DeckNameBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            MessageBox.Show("Type the new deck name in the box.");
+            return;
+        }
+
+        if (_deckStore.Decks.Any(d => d.Id != deck.Id && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show("Another deck already has this name.");
+            return;
+        }
+
+        deck.Name = name;
+        DeckNameBox.Clear();
+
+        SaveDecks();
+        RefreshAll();
+
+        MessageBox.Show("Deck renamed.");
+    }
+
+    private void DeleteDeck_Click(object sender, RoutedEventArgs e)
+    {
+        var deck = GetActiveDeck();
+
+        if (deck is null)
+        {
+            MessageBox.Show("Select a deck first.");
+            return;
+        }
+
+        if (_deckStore.Decks.Count <= 1)
+        {
+            MessageBox.Show("You must keep at least one deck.");
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"Delete deck '{deck.Name}' and all its cards?",
+            "Delete deck",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        _deckStore.Decks.Remove(deck);
+        _activeDeckId = _deckStore.Decks.First().Id;
+        _deckStore.ActiveDeckId = _activeDeckId;
+        _currentCardId = "";
+
+        SaveDecks();
+        RefreshAll();
+
+        MessageBox.Show("Deck deleted.");
+    }
+
+    private void SearchFilter_Changed(object sender, RoutedEventArgs e)
+    {
+        RefreshCardLists();
+    }
+
+    private void DueOnly_Checked(object sender, RoutedEventArgs e)
+    {
+        RefreshCardLists();
+    }
+
+    private void StudySelectedDeck_Click(object sender, RoutedEventArgs e)
+    {
+        StartStudySession(_activeDeckId);
+        ShowPage(PageStudy);
+    }
+
+    private void PreviewSelected_Click(object sender, RoutedEventArgs e)
+    {
+        if (CardsList.SelectedItem is Flashcard card)
+        {
+            _currentCardId = card.Id;
+            UpdatePreview();
+            ShowPage(PagePreview);
+            return;
+        }
+
+        MessageBox.Show("Select a card first.");
+    }
+
+    private void DeleteSelected_Click(object sender, RoutedEventArgs e)
+    {
+        if (CardsList.SelectedItem is Flashcard card)
+        {
+            _currentCardId = card.Id;
+            DeleteCurrentCard();
+            return;
+        }
+
+        MessageBox.Show("Select a card first.");
+    }
+
+    private void MoveSelected_Click(object sender, RoutedEventArgs e)
+    {
+        var sourceDeck = GetActiveDeck();
+
+        if (sourceDeck is null)
+        {
+            MessageBox.Show("Select a source deck first.");
+            return;
+        }
+
+        if (CardsList.SelectedItem is not Flashcard card)
+        {
+            MessageBox.Show("Select a card first.");
+            return;
+        }
+
+        if (MoveDeckCombo.SelectedItem is not StudyDeck targetDeck)
+        {
+            MessageBox.Show("Select target deck.");
+            return;
+        }
+
+        if (targetDeck.Id == sourceDeck.Id)
+        {
+            MessageBox.Show("This card is already in that deck.");
+            return;
+        }
+
+        sourceDeck.Cards.Remove(card);
+        targetDeck.Cards.Add(card);
+
+        _activeDeckId = targetDeck.Id;
+        _deckStore.ActiveDeckId = targetDeck.Id;
+        _currentCardId = card.Id;
+
+        SaveDecks();
+        RefreshAll();
+        UpdatePreview();
+
+        MessageBox.Show($"Moved card to {targetDeck.Name}.");
+    }
+
+    private void Previous_Click(object sender, RoutedEventArgs e) => NavigateCard(-1);
+    private void Next_Click(object sender, RoutedEventArgs e) => NavigateCard(1);
+    private void SaveCard_Click(object sender, RoutedEventArgs e) => SaveCard();
+    private void DeleteCard_Click(object sender, RoutedEventArgs e) => DeleteCurrentCard();
+    private void CopyCurrent_Click(object sender, RoutedEventArgs e) => CopyCurrent();
+    private void CopyAll_Click(object sender, RoutedEventArgs e) => CopyAllDecksToClipboard();
+
+    private void RefreshExport_Click(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentEdits();
+        ExportPreviewBox.Text = GetSelectedDeckAnkiText();
+        SetStatus("Export preview refreshed.");
+    }
+
+    private void CopySelectedDeck_Click(object sender, RoutedEventArgs e)
+    {
+        string text = GetSelectedDeckAnkiText();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            MessageBox.Show("Selected deck has no cards.");
+            return;
+        }
+
+        Clipboard.SetText(text);
+        SetStatus("Selected deck copied.");
+        MessageBox.Show("Selected deck copied for Anki.");
+    }
+
+    private void CopyAllDecksToClipboard()
+    {
+        string text = GetAllDecksAnkiText();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            MessageBox.Show("No cards to copy.");
+            return;
+        }
+
+        Clipboard.SetText(text);
+        SetStatus("All decks copied.");
+        MessageBox.Show("All decks copied for Anki.");
+    }
+
+    private void ExportSelectedDeck_Click(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentEdits();
+
+        var deck = GetActiveDeck();
+
+        if (deck is null || deck.Cards.Count == 0)
+        {
+            MessageBox.Show("Selected deck has no cards.");
+            return;
+        }
+
+        var sfd = new SaveFileDialog
+        {
+            Title = "Export selected deck",
+            Filter = "Text file|*.txt",
+            FileName = CleanFileName(deck.Name) + "_anki.txt"
+        };
+
+        if (sfd.ShowDialog() == true)
+        {
+            File.WriteAllText(sfd.FileName, GetDeckAnkiText(deck), Encoding.UTF8);
+            MessageBox.Show("Selected deck exported.");
+        }
+    }
+
+    private void ExportAllDecks_Click(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentEdits();
+
+        string text = GetAllDecksAnkiText();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            MessageBox.Show("No cards to export.");
+            return;
+        }
+
+        var sfd = new SaveFileDialog
+        {
+            Title = "Export all decks",
+            Filter = "Text file|*.txt",
+            FileName = "all_flashcards_anki.txt"
+        };
+
+        if (sfd.ShowDialog() == true)
+        {
+            File.WriteAllText(sfd.FileName, text, Encoding.UTF8);
+            MessageBox.Show("All decks exported.");
+        }
+    }
+
+    private void StartStudySession(string deckId)
+    {
+        var deck = GetDeckById(deckId) ?? GetActiveDeck();
+
+        if (deck is null || deck.Cards.Count == 0)
+        {
+            _studyQueue.Clear();
+            _studyIndex = -1;
+            StudyProgressText.Text = "No cards available.";
+            StudyFrontText.Text = "Generate or import cards first.";
+            StudyBackText.Text = "";
+            StudyAnswerPanel.Visibility = Visibility.Collapsed;
+            StudyHintText.Text = "";
+            return;
+        }
+
+        _activeDeckId = deck.Id;
+        _deckStore.ActiveDeckId = deck.Id;
+
+        _studyQueue.Clear();
+
+        var due = deck.Cards
+            .Where(c => c.DueAt <= DateTime.UtcNow)
+            .OrderBy(c => c.DueAt)
+            .ToList();
+
+        if (due.Count > 0)
+            _studyQueue.AddRange(due);
+        else
+            _studyQueue.AddRange(deck.Cards.OrderBy(c => c.CreatedAt));
+
+        _studyIndex = 0;
+        _answerShown = false;
+
+        SaveDecks();
+        RefreshAll();
+        ShowStudyCard();
+    }
+
+    private void ShowStudyCard()
+    {
+        if (_studyIndex < 0 || _studyIndex >= _studyQueue.Count)
+        {
+            StudyProgressText.Text = "No cards.";
+            StudyFrontText.Text = "No card selected.";
+            StudyBackText.Text = "";
+            StudyAnswerPanel.Visibility = Visibility.Collapsed;
+            StudyHintText.Text = "";
+            return;
+        }
+
+        var card = _studyQueue[_studyIndex];
+        var deck = GetActiveDeck();
+
+        StudyProgressText.Text = deck is null
+            ? $"Card {_studyIndex + 1} / {_studyQueue.Count}"
+            : $"{deck.Name} • Card {_studyIndex + 1} / {_studyQueue.Count}";
+
+        StudyFrontText.Text = card.Front;
+        StudyBackText.Text = card.Back;
+        StudyAnswerPanel.Visibility = _answerShown ? Visibility.Visible : Visibility.Collapsed;
+
+        StudyHintText.Text = _answerShown
+            ? "Choose how well you knew it."
+            : "Try to answer before showing the back.";
+    }
+
+    private void ShowAnswer_Click(object sender, RoutedEventArgs e)
+    {
+        if (_studyIndex < 0 || _studyIndex >= _studyQueue.Count)
+            return;
+
+        _answerShown = true;
+        ShowStudyCard();
+    }
+
+    private void Again_Click(object sender, RoutedEventArgs e) => RateStudyCard("Again", TimeSpan.FromMinutes(10));
+    private void Hard_Click(object sender, RoutedEventArgs e) => RateStudyCard("Hard", TimeSpan.FromDays(1));
+    private void Good_Click(object sender, RoutedEventArgs e) => RateStudyCard("Good", TimeSpan.FromDays(3));
+    private void Easy_Click(object sender, RoutedEventArgs e) => RateStudyCard("Easy", TimeSpan.FromDays(7));
+
+    private void RateStudyCard(string rating, TimeSpan interval)
+    {
+        if (_studyIndex < 0 || _studyIndex >= _studyQueue.Count)
+            return;
+
+        var card = _studyQueue[_studyIndex];
+
+        switch (rating)
+        {
+            case "Again":
+                card.AgainCount++;
+                break;
+            case "Hard":
+                card.HardCount++;
+                break;
+            case "Good":
+                card.GoodCount++;
+                _deckStore.Stats.SuccessfulReviews++;
+                break;
+            case "Easy":
+                card.EasyCount++;
+                _deckStore.Stats.SuccessfulReviews++;
+                break;
+        }
+
+        card.DueAt = DateTime.UtcNow.Add(interval);
+        card.Repetitions++;
+        card.LastStudiedAt = DateTime.UtcNow;
+
+        var deck = GetActiveDeck();
+
+        if (deck is not null)
+            deck.LastStudiedAt = DateTime.UtcNow;
+
+        RegisterStudyToday();
+
+        _deckStore.Stats.TotalReviews++;
+
+        SaveDecks();
+
+        _studyQueue.RemoveAt(_studyIndex);
+
+        if (_studyQueue.Count == 0)
+        {
+            StudyProgressText.Text = "Session complete.";
+            StudyFrontText.Text = "Great work. No more due cards in this session.";
+            StudyBackText.Text = "";
+            StudyAnswerPanel.Visibility = Visibility.Collapsed;
+            StudyHintText.Text = "Go to Dashboard or Decks to continue.";
+            _studyIndex = -1;
+            RefreshAll();
+            return;
+        }
+
+        if (_studyIndex >= _studyQueue.Count)
+            _studyIndex = 0;
+
+        _answerShown = false;
+        ShowStudyCard();
+        RefreshAll();
+    }
+
+    private void RegisterStudyToday()
+    {
+        DateTime today = DateTime.Today;
+        DateTime last = _deckStore.Stats.LastStudyDate.ToLocalTime().Date;
+
+        if (last != today)
+        {
+            if (last == today.AddDays(-1))
+                _deckStore.Stats.CurrentStreak++;
+            else
+                _deckStore.Stats.CurrentStreak = 1;
+
+            _deckStore.Stats.StudiedToday = 0;
+            _deckStore.Stats.LastStudyDate = DateTime.UtcNow;
+        }
+
+        _deckStore.Stats.StudiedToday++;
+    }
+
+    private void SaveSettings_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.ApiKey = ApiKeyBox.Password.Trim();
+        _settings.Model = string.IsNullOrWhiteSpace(ModelBox.Text) ? "GLM-4.7-FlashX" : ModelBox.Text.Trim();
+        _settings.BaseUrl = string.IsNullOrWhiteSpace(BaseUrlBox.Text)
+            ? "https://api.z.ai/api/paas/v4"
+            : BaseUrlBox.Text.Trim().TrimEnd('/');
+
+        SaveSettings();
+        MessageBox.Show("AI settings saved locally.");
+        SetStatus("AI settings saved.");
+    }
+
+    private void ClearKey_Click(object sender, RoutedEventArgs e)
+    {
+        ApiKeyBox.Clear();
+        _settings.ApiKey = "";
+        SaveSettings();
+        SetStatus("API key cleared.");
+    }
+
+    private void ApplyCode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentUser is null) return;
+
+        string code = NormalizeCode(ApplyCodeBox.Text);
+        var activation = GetActivationInfo(code);
+
+        if (activation is null)
+        {
+            MessageBox.Show("Invalid activation code.");
+            return;
+        }
+
+        if (IsCodeUsed(code))
+        {
+            MessageBox.Show("This activation code was already used.");
+            return;
+        }
+
+        if (activation.Value.Lifetime)
+        {
+            _currentUser.SubscriptionExpiresAt = DateTime.MaxValue;
+        }
+        else
+        {
+            DateTime start = _currentUser.SubscriptionExpiresAt > DateTime.UtcNow
+                ? _currentUser.SubscriptionExpiresAt
+                : DateTime.UtcNow;
+
+            _currentUser.SubscriptionExpiresAt = start.AddDays(activation.Value.Days);
+        }
+
+        _currentUser.Plan = activation.Value.Plan;
+
+        _store.UsedCodes.Add(new UsedActivationCode
+        {
+            Code = code,
+            UsedByEmail = _currentUser.Email,
+            Plan = activation.Value.Plan,
+            UsedAt = DateTime.UtcNow
+        });
+
+        SaveStore();
+        RefreshAccountPage();
+        UserSummaryText.Text = GetAccountSummary();
+
+        MessageBox.Show("Activation applied.");
+    }
+
+    private string BuildPrompt(string source)
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "You are an expert Anki flashcard creator for medical students.",
+            "",
+            "Create high-yield flashcards from the source material I provide.",
+            "",
+            "IMPORTANT OUTPUT RULES:",
+            "- Return ONLY valid JSON.",
+            "- Do not use markdown.",
+            "- Do not use code fences.",
+            "- Do not explain anything outside the JSON.",
+            "- Use this exact JSON structure:",
+            "[",
+            "  {",
+            "    \"front\": \"question or cloze text\",",
+            "    \"back\": \"answer\",",
+            "    \"tags\": \"Step1::Topic\"",
+            "  }",
+            "]",
+            "",
+            "FLASHCARD RULES:",
+            "- One concept per card.",
+            "- Make cards exam-focused and high-yield.",
+            "- Avoid long paragraphs.",
+            "- Use simple wording.",
+            "- Do not copy long passages from the source.",
+            "- If the mode is Cloze Deletion, put the cloze deletion in the front field.",
+            "- Keep tags short and useful without spaces.",
+            "",
+            "OPTIONS:",
+            "- Mode: " + SafeComboText(ModeCombo),
+            "- Difficulty: " + SafeComboText(DifficultyCombo),
+            "- Answer length: " + SafeComboText(AnswerLengthCombo),
+            "- Number of cards: " + SafeComboText(CountCombo),
+            "- Language: " + SafeComboText(LanguageCombo),
+            "",
+            "SOURCE MATERIAL:",
+            source
+        });
+    }
+
+    private async Task<string> CallZaiAsync(string prompt)
+    {
+        string baseUrl = string.IsNullOrWhiteSpace(_settings.BaseUrl)
+            ? "https://api.z.ai/api/paas/v4"
+            : _settings.BaseUrl.Trim().TrimEnd('/');
+
+        string model = string.IsNullOrWhiteSpace(_settings.Model)
+            ? "GLM-4.7-FlashX"
+            : _settings.Model.Trim();
+
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["role"] = "system",
+                    ["content"] = "You create JSON flashcards only. Return valid JSON only."
+                },
+                new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = prompt
+                }
+            },
+            ["temperature"] = 0.2,
+            ["max_tokens"] = 6000,
+            ["stream"] = false
+        };
+
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(3)
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey.Trim());
+        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+
+        using var response = await client.SendAsync(request);
+        string json = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new Exception("Z.ai API error:\n\n" + TrimForMessage(json));
+
+        string text = ExtractChatCompletionText(json);
+
+        if (string.IsNullOrWhiteSpace(text))
+            throw new Exception("Z.ai returned no usable text:\n\n" + TrimForMessage(json));
+
+        return text;
+    }
+
+    private static string ExtractChatCompletionText(string json)
+    {
+        var root = JsonNode.Parse(json);
+        var choices = root?["choices"]?.AsArray();
+
+        if (choices is null || choices.Count == 0)
+            return "";
+
+        string? content = choices[0]?["message"]?["content"]?.GetValue<string>();
+
+        return content?.Trim() ?? "";
+    }
+
+    private static List<Flashcard> ParseFlashcards(string aiText)
+    {
+        string cleaned = aiText.Trim();
+
+        cleaned = cleaned.Replace("```json", "", StringComparison.OrdinalIgnoreCase)
+                         .Replace("```", "")
+                         .Trim();
+
+        int start = cleaned.IndexOf('[');
+        int end = cleaned.LastIndexOf(']');
+
+        if (start >= 0 && end > start)
+            cleaned = cleaned.Substring(start, end - start + 1);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(cleaned);
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (string possible in new[] { "cards", "flashcards", "data", "items" })
+                {
+                    if (doc.RootElement.TryGetProperty(possible, out var arr) &&
+                        arr.ValueKind == JsonValueKind.Array)
+                    {
+                        return ParseJsonArray(arr);
+                    }
+                }
+
+                return TryParseTabSeparated(aiText);
+            }
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                return ParseJsonArray(doc.RootElement);
+
+            return TryParseTabSeparated(aiText);
+        }
+        catch
+        {
+            return TryParseTabSeparated(aiText);
+        }
+    }
+
+    private static List<Flashcard> ParseJsonArray(JsonElement array)
+    {
+        var list = new List<Flashcard>();
+
+        foreach (var el in array.EnumerateArray())
+        {
+            string front = GetPropertyText(el, "front", "Front", "question", "Question", "q");
+            string back = GetPropertyText(el, "back", "Back", "answer", "Answer", "a");
+            string tags = GetPropertyText(el, "tags", "Tags", "tag", "Tag");
+
+            if (!string.IsNullOrWhiteSpace(front) && !string.IsNullOrWhiteSpace(back))
+            {
+                list.Add(new Flashcard
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Front = front.Trim(),
+                    Back = back.Trim(),
+                    Tags = string.IsNullOrWhiteSpace(tags) ? "AIFlashcards" : tags.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    DueAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        return list;
+    }
+
+    private static string GetPropertyText(JsonElement el, params string[] names)
+    {
+        if (el.ValueKind != JsonValueKind.Object)
+            return "";
+
+        foreach (var prop in el.EnumerateObject())
+        {
+            foreach (string name in names)
+            {
+                if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                        return prop.Value.GetString() ?? "";
+
+                    if (prop.Value.ValueKind == JsonValueKind.Array)
+                        return string.Join(" ", prop.Value.EnumerateArray().Select(x => x.ToString()));
+
+                    return prop.Value.ToString();
+                }
+            }
+        }
+
+        return "";
+    }
+
+    private static List<Flashcard> TryParseTabSeparated(string text)
+    {
+        var list = new List<Flashcard>();
+
+        var lines = text.Replace("\r\n", "\n")
+                        .Replace("\r", "\n")
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (string rawLine in lines)
+        {
+            string line = rawLine.Trim();
+
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            if (line.StartsWith("Front", StringComparison.OrdinalIgnoreCase) &&
+                line.Contains("Back", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string[] parts = line.Split('\t');
+
+            if (parts.Length >= 2)
+            {
+                list.Add(new Flashcard
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Front = parts[0].Trim(),
+                    Back = parts[1].Trim(),
+                    Tags = parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2])
+                        ? parts[2].Trim()
+                        : "AIFlashcards",
+                    CreatedAt = DateTime.UtcNow,
+                    DueAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        return list;
+    }
+
+    private void RefreshAll()
+    {
+        EnsureDefaultDeck();
+        RefreshDeckCombos();
+        RefreshDeckLists();
+        RefreshCardLists();
+        RefreshStats();
+        RefreshStudyPage();
+        RefreshAccountPage();
+        RefreshExportPreview();
+    }
+
+    private void RefreshDeckCombos()
+    {
+        _suppressSelection = true;
+
+        var decks = _deckStore.Decks.ToList();
+
+        SetComboDecks(GenerateDeckCombo, decks);
+        SetComboDecks(ImportDeckCombo, decks);
+        SetComboDecks(StudyDeckCombo, decks);
+        SetComboDecks(ExportDeckCombo, decks);
+        SetComboDecks(MoveDeckCombo, decks);
+
+        _suppressSelection = false;
+    }
+
+    private void SetComboDecks(ComboBox combo, List<StudyDeck> decks)
+    {
+        combo.ItemsSource = null;
+        combo.ItemsSource = decks;
+
+        int index = decks.FindIndex(d => d.Id == _activeDeckId);
+
+        if (index < 0 && decks.Count > 0)
+            index = 0;
+
+        combo.SelectedIndex = index;
+    }
+
+    private void RefreshDeckLists()
+    {
+        _suppressSelection = true;
+
+        DeckList.ItemsSource = null;
+        DeckList.ItemsSource = _deckStore.Decks;
+
+        int index = _deckStore.Decks.FindIndex(d => d.Id == _activeDeckId);
+
+        if (index >= 0)
+            DeckList.SelectedIndex = index;
+
+        _suppressSelection = false;
+    }
+
+    private void RefreshCardLists()
+    {
+        _suppressSelection = true;
+
+        var deck = GetActiveDeck();
+        var filtered = GetFilteredCards(deck);
+
+        ImportedList.ItemsSource = null;
+        ImportedList.ItemsSource = deck?.Cards ?? new List<Flashcard>();
+
+        CardsList.ItemsSource = null;
+        CardsList.ItemsSource = filtered;
+
+        ImportSummaryText.Text = deck is null
+            ? "No deck selected."
+            : $"{deck.Cards.Count} cards in {deck.Name}.";
+
+        DeckSummaryText.Text = deck is null
+            ? "No deck selected."
+            : $"{deck.Name}: {deck.Cards.Count} cards • {deck.Cards.Count(c => c.DueAt <= DateTime.UtcNow)} due";
+
+        SelectCurrentCardInLists();
+
+        _suppressSelection = false;
+    }
+
+    private List<Flashcard> GetFilteredCards(StudyDeck? deck)
+    {
+        if (deck is null)
+            return new List<Flashcard>();
+
+        IEnumerable<Flashcard> query = deck.Cards;
+
+        string search = SearchBox.Text.Trim();
+        string tag = TagFilterBox.Text.Trim();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(c =>
+                c.Front.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                c.Back.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                c.Tags.Contains(search, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            query = query.Where(c =>
+                c.Tags.Contains(tag, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (DueOnlyCheck.IsChecked == true)
+        {
+            query = query.Where(c => c.DueAt <= DateTime.UtcNow);
+        }
+
+        return query.ToList();
+    }
+
+    private void SelectCurrentCardInLists()
+    {
+        var deck = GetActiveDeck();
+
+        if (deck is null || string.IsNullOrWhiteSpace(_currentCardId))
+            return;
+
+        var card = deck.Cards.FirstOrDefault(c => c.Id == _currentCardId);
+
+        if (card is null)
+            return;
+
+        ImportedList.SelectedItem = card;
+        CardsList.SelectedItem = card;
+    }
+
+    private void RefreshStats()
+    {
+        int totalDecks = _deckStore.Decks.Count;
+        int totalCards = _deckStore.Decks.Sum(d => d.Cards.Count);
+        int due = _deckStore.Decks.Sum(d => d.Cards.Count(c => c.DueAt <= DateTime.UtcNow));
+        int weak = _deckStore.Decks.Sum(d => d.Cards.Count(c => c.AgainCount > c.GoodCount + c.EasyCount && c.ReviewCount > 0));
+
+        double accuracy = _deckStore.Stats.TotalReviews == 0
+            ? 0
+            : (_deckStore.Stats.SuccessfulReviews * 100.0 / _deckStore.Stats.TotalReviews);
+
+        ResetStudiedTodayIfNeeded();
+
+        StatsDecks.Text = totalDecks.ToString();
+        StatsTotalCards.Text = totalCards.ToString();
+        StatsDueCards.Text = due.ToString();
+        StatsStudiedToday.Text = _deckStore.Stats.StudiedToday.ToString();
+        StatsStreak.Text = _deckStore.Stats.CurrentStreak + " days";
+        StatsAccuracy.Text = Math.Round(accuracy).ToString("0") + "%";
+        StatsWeak.Text = weak.ToString();
+    }
+
+    private void ResetStudiedTodayIfNeeded()
+    {
+        if (_deckStore.Stats.LastStudyDate == DateTime.MinValue)
+            return;
+
+        DateTime today = DateTime.Today;
+        DateTime last = _deckStore.Stats.LastStudyDate.ToLocalTime().Date;
+
+        if (last != today)
+        {
+            _deckStore.Stats.StudiedToday = 0;
+            SaveDecks();
+        }
+    }
+
+    private void RefreshStudyPage()
+    {
+        if (_studyIndex >= 0 && _studyIndex < _studyQueue.Count)
+            ShowStudyCard();
+    }
+
+    private void RefreshAccountPage()
+    {
+        AccountEmailText.Text = "Email: " + (_currentUser?.Email ?? "");
+        AccountPlanText.Text = "Plan: " + (_currentUser?.Plan ?? "");
+        AccountExpiryText.Text = "Expires: " + FormatExpiry(_currentUser?.SubscriptionExpiresAt ?? DateTime.UtcNow);
+    }
+
+    private void RefreshExportPreview()
+    {
+        ExportPreviewBox.Text = GetSelectedDeckAnkiText();
+    }
+
+    private void UpdatePreview()
+    {
+        var card = FindCurrentCard();
+
+        if (card is null)
+        {
+            CardCounterText.Text = "No card selected.";
+            FrontBox.Text = "";
+            BackBox.Text = "";
+            TagsBox.Text = "";
+            return;
+        }
+
+        var deck = GetActiveDeck();
+        int index = deck?.Cards.FindIndex(c => c.Id == card.Id) ?? -1;
+        int count = deck?.Cards.Count ?? 0;
+
+        CardCounterText.Text = index >= 0
+            ? $"Card {index + 1} / {count} • {deck?.Name}"
+            : "Card selected";
+
+        FrontBox.Text = card.Front;
+        BackBox.Text = card.Back;
+        TagsBox.Text = card.Tags;
+    }
+
+    private void NavigateCard(int direction)
+    {
+        var deck = GetActiveDeck();
+
+        if (deck is null || deck.Cards.Count == 0)
+        {
+            MessageBox.Show("No cards in selected deck.");
+            return;
+        }
+
+        SaveCurrentEdits();
+
+        int index = deck.Cards.FindIndex(c => c.Id == _currentCardId);
+
+        if (index < 0)
+            index = 0;
+        else
+            index += direction;
+
+        if (index < 0)
+            index = 0;
+
+        if (index >= deck.Cards.Count)
+            index = deck.Cards.Count - 1;
+
+        _currentCardId = deck.Cards[index].Id;
+
+        UpdatePreview();
+        RefreshCardLists();
+    }
+
+    private void SaveCurrentEdits()
+    {
+        var card = FindCurrentCard();
+
+        if (card is null)
+            return;
+
+        card.Front = FrontBox.Text.Trim();
+        card.Back = BackBox.Text.Trim();
+        card.Tags = TagsBox.Text.Trim();
+
+        SaveDecks();
+    }
+
+    private void SaveCard()
+    {
+        SaveCurrentEdits();
+        RefreshAll();
+        SetStatus("Card saved.");
+    }
+
+    private void DeleteCurrentCard()
+    {
+        var deck = GetActiveDeck();
+        var card = FindCurrentCard();
+
+        if (deck is null || card is null)
+        {
+            MessageBox.Show("No card selected.");
+            return;
+        }
+
+        if (MessageBox.Show("Delete this card?", "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+
+        int index = deck.Cards.FindIndex(c => c.Id == card.Id);
+        deck.Cards.Remove(card);
+
+        if (deck.Cards.Count == 0)
+        {
+            _currentCardId = "";
+        }
+        else
+        {
+            if (index >= deck.Cards.Count)
+                index = deck.Cards.Count - 1;
+
+            _currentCardId = deck.Cards[index].Id;
+        }
+
+        SaveDecks();
+        RefreshAll();
+        UpdatePreview();
+    }
+
+    private void CopyCurrent()
+    {
+        SaveCurrentEdits();
+
+        var card = FindCurrentCard();
+
+        if (card is null)
+        {
+            MessageBox.Show("No card selected.");
+            return;
+        }
+
+        Clipboard.SetText(ToAnkiLine(card));
+        SetStatus("Current card copied.");
+    }
+
+    private string GetSelectedDeckAnkiText()
+    {
+        var deck = GetDeckById(GetSelectedDeckIdFromCombo(ExportDeckCombo)) ?? GetActiveDeck();
+
+        if (deck is null)
+            return "";
+
+        return GetDeckAnkiText(deck);
+    }
+
+    private string GetDeckAnkiText(StudyDeck deck)
+    {
+        return string.Join(Environment.NewLine, deck.Cards.Select(ToAnkiLine));
+    }
+
+    private string GetAllDecksAnkiText()
+    {
+        var lines = new List<string>();
+
+        foreach (var deck in _deckStore.Decks)
+        {
+            lines.AddRange(deck.Cards.Select(ToAnkiLine));
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string ToAnkiLine(Flashcard card)
+    {
+        return CleanField(card.Front) + "\t" + CleanField(card.Back) + "\t" + CleanField(card.Tags);
+    }
+
+    private static string CleanField(string value)
+    {
+        return value.Replace("\t", " ")
+                    .Replace("\r\n", "<br>")
+                    .Replace("\n", "<br>")
+                    .Replace("\r", "<br>")
+                    .Trim();
+    }
+
+    private StudyDeck? GetActiveDeck()
+    {
+        return GetDeckById(_activeDeckId) ?? _deckStore.Decks.FirstOrDefault();
+    }
+
+    private StudyDeck? GetDeckById(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return null;
+
+        return _deckStore.Decks.FirstOrDefault(d => d.Id == id);
+    }
+
+    private Flashcard? FindCurrentCard()
+    {
+        var deck = GetActiveDeck();
+
+        if (deck is null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(_currentCardId))
+        {
+            var first = deck.Cards.FirstOrDefault();
+
+            if (first is not null)
+                _currentCardId = first.Id;
+
+            return first;
+        }
+
+        return deck.Cards.FirstOrDefault(c => c.Id == _currentCardId);
+    }
+
+    private string GetSelectedDeckIdFromCombo(ComboBox combo)
+    {
+        return combo.SelectedItem is StudyDeck deck ? deck.Id : "";
+    }
+
+    private void EnsureDefaultDeck()
+    {
+        if (_deckStore.Decks.Count == 0)
+        {
+            var deck = new StudyDeck
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = "Default Deck",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _deckStore.Decks.Add(deck);
+            _deckStore.ActiveDeckId = deck.Id;
+        }
+
+        if (string.IsNullOrWhiteSpace(_deckStore.ActiveDeckId) ||
+            _deckStore.Decks.All(d => d.Id != _deckStore.ActiveDeckId))
+        {
+            _deckStore.ActiveDeckId = _deckStore.Decks.First().Id;
+        }
+
+        _activeDeckId = _deckStore.ActiveDeckId;
+    }
+
+    private void LoadStore()
+    {
+        try
+        {
+            if (!File.Exists(StorePath))
+            {
+                _store = new LocalStore();
+                return;
+            }
+
+            string json = File.ReadAllText(StorePath);
+            _store = JsonSerializer.Deserialize<LocalStore>(json) ?? new LocalStore();
+        }
+        catch
+        {
+            _store = new LocalStore();
+        }
+    }
+
+    private void SaveStore()
+    {
+        File.WriteAllText(StorePath, JsonSerializer.Serialize(_store, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        }));
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            if (!File.Exists(SettingsPath))
+            {
+                _settings = new AppSettings();
+                return;
+            }
+
+            string json = File.ReadAllText(SettingsPath);
+            _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+
+            if (string.Equals(_settings.Model, "gpt-4o-mini", StringComparison.OrdinalIgnoreCase))
+                _settings.Model = "GLM-4.7-FlashX";
+
+            if (string.IsNullOrWhiteSpace(_settings.Model))
+                _settings.Model = "GLM-4.7-FlashX";
+
+            if (string.IsNullOrWhiteSpace(_settings.BaseUrl))
+                _settings.BaseUrl = "https://api.z.ai/api/paas/v4";
+        }
+        catch
+        {
+            _settings = new AppSettings();
+        }
+    }
+
+    private void SaveSettings()
+    {
+        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(_settings, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        }));
+    }
+
+    private void LoadDecks()
+    {
+        try
+        {
+            if (!File.Exists(DecksPath))
+            {
+                _deckStore = new DeckStore();
+                return;
+            }
+
+            string json = File.ReadAllText(DecksPath);
+            _deckStore = JsonSerializer.Deserialize<DeckStore>(json) ?? new DeckStore();
+        }
+        catch
+        {
+            _deckStore = new DeckStore();
+        }
+    }
+
+    private void SaveDecks()
+    {
+        _deckStore.ActiveDeckId = _activeDeckId;
+
+        File.WriteAllText(DecksPath, JsonSerializer.Serialize(_deckStore, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        }));
+    }
+
+    private readonly struct ActivationInfo
+    {
+        public ActivationInfo(string plan, int days, bool lifetime)
+        {
+            Plan = plan;
+            Days = days;
+            Lifetime = lifetime;
+        }
+
+        public string Plan { get; }
+        public int Days { get; }
+        public bool Lifetime { get; }
+    }
+
+    private ActivationInfo? GetActivationInfo(string code)
+    {
+        return code switch
+        {
+            "FLASH-MONTH-2026" => new ActivationInfo("Monthly", 30, false),
+            "FLASH-YEAR-2026" => new ActivationInfo("Yearly", 365, false),
+            "FLASH-LIFE-2026" => new ActivationInfo("Lifetime", 0, true),
+            _ => null
+        };
+    }
+
+    private bool IsCodeUsed(string code)
+    {
+        return _store.UsedCodes.Any(x =>
+            string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetAccountSummary()
+    {
+        if (_currentUser is null)
+            return "";
+
+        return $"{_currentUser.Email}  •  {_currentUser.Plan}  •  {FormatExpiry(_currentUser.SubscriptionExpiresAt)}";
+    }
+
+    private static string FormatExpiry(DateTime expiry)
+    {
+        if (expiry.Year > 9000)
+            return "Lifetime";
+
+        return expiry.ToLocalTime().ToString("yyyy-MM-dd");
+    }
+
+    private static string NormalizeEmail(string email)
+    {
+        return email.Trim().ToLowerInvariant();
+    }
+
+    private static string NormalizeCode(string code)
+    {
+        return code.Trim().ToUpperInvariant().Replace(" ", "");
+    }
+
+    private static string HashPassword(string email, string password)
+    {
+        using var sha = SHA256.Create();
+        byte[] bytes = Encoding.UTF8.GetBytes(email + "::" + password + "::AIFlashcardMakerLocalDemo");
+        return Convert.ToHexString(sha.ComputeHash(bytes));
+    }
+
+    private static string SafeComboText(ComboBox combo)
+    {
+        return combo.SelectedItem?.ToString() ?? "";
+    }
+
+    private static string TrimForMessage(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        return text.Length <= 1600 ? text : text[..1600] + "...";
+    }
+
+    private static string CleanFileName(string value)
+    {
+        foreach (char c in Path.GetInvalidFileNameChars())
+            value = value.Replace(c, '_');
+
+        return string.IsNullOrWhiteSpace(value) ? "deck" : value.Trim();
+    }
+
+    private void ShowLoading(string message)
+    {
+        LoadingMessageText.Text = message;
+        LoadingOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideLoading()
+    {
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void SetStatus(string message)
+    {
+        StatusText.Text = message;
+    }
+}
