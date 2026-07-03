@@ -71,17 +71,16 @@ public sealed class ResearchProject
 // ---------------------------------------------------------------------------
 // Phase 2 models — AI recommendations, research plan, and proposal draft.
 //
-// These are *local* data holders only. Nothing here calls a network API. They
-// are populated either from a manual copy/paste Claude workflow or from the
-// offline draft service. Source is always recorded so the UI can be honest
-// about where the content came from.
+// These are *local* data holders only. They are populated by the in-app
+// Research AI service (a configurable backend endpoint or a development mock).
+// Source is always recorded so the UI can be honest about where content came from.
 // ---------------------------------------------------------------------------
 
 public enum ResearchSourceMode
 {
-    ManualClaude,
-    OfflineMock,
-    FutureApi
+    AiGenerated,
+    DevelopmentMock,
+    Unknown
 }
 
 public sealed class ResearchRecommendations
@@ -90,7 +89,7 @@ public sealed class ResearchRecommendations
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    public ResearchSourceMode SourceMode { get; set; } = ResearchSourceMode.ManualClaude;
+    public ResearchSourceMode SourceMode { get; set; } = ResearchSourceMode.AiGenerated;
 
     public string RecommendedStudyDesign { get; set; } = "";
     public string RefinedResearchTitle { get; set; } = "";
@@ -108,8 +107,8 @@ public sealed class ResearchRecommendations
     public List<string> EthicsNotes { get; set; } = new();
     public List<string> NextSteps { get; set; } = new();
 
-    // When the pasted text was not structured JSON we keep it verbatim so the
-    // student never loses what Claude wrote.
+    // If the service returned unstructured text (not JSON) we keep it verbatim
+    // so nothing is lost.
     public string RawAiText { get; set; } = "";
 
     public bool AcceptedIntoPlan { get; set; }
@@ -135,10 +134,9 @@ public sealed class ResearchRecommendations
     [JsonIgnore]
     public string SourceLabel => SourceMode switch
     {
-        ResearchSourceMode.ManualClaude => "Imported from Claude (manual)",
-        ResearchSourceMode.OfflineMock => "Offline draft — not AI generated",
-        ResearchSourceMode.FutureApi => "Generated via API",
-        _ => "Imported"
+        ResearchSourceMode.AiGenerated => "AI-generated draft — review before use",
+        ResearchSourceMode.DevelopmentMock => "Draft (development mode) — review before use",
+        _ => "Draft — review before use"
     };
 }
 
@@ -249,7 +247,7 @@ public sealed class ResearchProposalDraft
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    public ResearchSourceMode SourceMode { get; set; } = ResearchSourceMode.OfflineMock;
+    public ResearchSourceMode SourceMode { get; set; } = ResearchSourceMode.Unknown;
     public bool IsTemplateGenerated { get; set; }
 
     public string Title { get; set; } = "";

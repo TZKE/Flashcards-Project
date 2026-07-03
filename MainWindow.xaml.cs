@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -135,12 +136,13 @@ public sealed partial class MainWindow : Window
     private string _openResearchId = "";
     private string _pendingDeleteResearchId = "";
 
-    // Research Lab (Phase 2) — service abstractions. These are local-only: no
-    // network calls and no API keys. A real backend/proxy can replace the
-    // offline service later without touching the UI.
-    private readonly IResearchPromptBuilder _researchPromptBuilder = new ResearchPromptBuilder();
-    private readonly IResearchRecommendationParser _researchParser = new ResearchRecommendationParser();
-    private readonly IResearchAiService _offlineResearchAi = new OfflineResearchAiService();
+    // Research Lab (Phase 2B) — in-app Research AI. Provider-neutral: the app
+    // talks only to a configurable backend endpoint and NEVER stores provider
+    // API keys. A development mock (behind a settings toggle) lets the flow run
+    // before a real backend exists.
+    private ResearchAiOptions _researchAiOptions = new();
+    private IResearchAiService _researchAi = null!;   // built in the constructor
+    private string ResearchAiConfigPath => Path.Combine(dataDir, "research_ai_config.json");
 
     private LocalAccount? _currentUser;
     private string _activeDeckId = "";
@@ -176,6 +178,9 @@ public sealed partial class MainWindow : Window
         LoadSettings();
         LoadDecks();
         LoadResearch();
+        LoadResearchAiConfig();
+        _researchAi = new ResearchAiService(() => _researchAiOptions);
+        PopulateResearchAiSettings();
         EnsureDefaultDeck();
         SetupCombos();
 
@@ -2263,10 +2268,8 @@ public sealed partial class MainWindow : Window
         PopulatePlanEditor(project);
         PopulateProposalEditor(project);
         UpdateOverviewProgress(project);
-
-        // Clear paste boxes so one project's paste never leaks into another.
-        AiPasteBox.Text = "";
-        ProposalPasteBox.Text = "";
+        UpdateGenerateRecButton(project);
+        UpdateResearchAiAvailability();
 
         // Always land on Overview when a project opens.
         SwitchResearchTab(SegOverview);
@@ -2378,81 +2381,84 @@ public sealed partial class MainWindow : Window
     }
 
     // =====================================================================
-    // Research Lab (Phase 2) — AI recommendations, research plan, proposal.
+    // Research Lab (Phase 2B) — in-app Research AI.
     //
-    // Everything here is local. There are NO network calls and NO API keys.
-    // The two supported modes are:
-    //   • Manual Claude — build a prompt, the user pastes it into Claude, then
-    //     pastes the reply back for local parsing.
-    //   • Offline draft — a clearly-labelled deterministic starting point built
-    //     only from the project's own fields (never presented as real AI).
+    // The app calls a provider-neutral service that talks to a configurable
+    // backend endpoint (or a development mock). There is NO copy/paste, no
+    // provider branding, and no provider API keys anywhere in the app.
     // =====================================================================
 
-    // ---- AI Recommendations: prompt / generate / import -------------------
+    // ---- AI Recommendations: generate in-app ------------------------------
 
-    private void CopyClaudePrompt_Click(object sender, RoutedEventArgs e)
+    private async void GenerateRecommendations_Click(object sender, RoutedEventArgs e)
     {
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
 
-        string prompt = _researchPromptBuilder.BuildRecommendationsPrompt(p);
-        if (CopyToClipboardSafe(prompt))
-            ShowToast("Research prompt copied. Paste it into Claude, then paste the response back here.");
-    }
-
-    private async void GenerateOfflineRec_Click(object sender, RoutedEventArgs e)
-    {
-        var p = CurrentResearchProject();
-        if (p is null) { ShowToast("Open a project first."); return; }
-
-        var rec = await _offlineResearchAi.GenerateRecommendationsAsync(p);
-        p.Recommendations = rec;   // fresh offline draft; not yet accepted
-        p.UpdatedAt = DateTime.UtcNow;
-        SaveResearch();
-
-        RenderRecommendations(rec);
-        PopulatePlanEditor(p);
-        UpdateOverviewProgress(p);
-        ShowToast("Offline draft created from your project details. Review it, then accept it into your plan. This is not AI-generated.");
-    }
-
-    private void ImportRecommendations_Click(object sender, RoutedEventArgs e)
-    {
-        var p = CurrentResearchProject();
-        if (p is null) { ShowToast("Open a project first."); return; }
-
-        string text = AiPasteBox.Text.Trim();
-        if (text.Length == 0) { ShowToast("Paste the Claude response first, then import."); return; }
-
-        if (_researchParser.TryParseRecommendations(text, out var rec))
+        if (!_researchAi.IsConfigured)
         {
+            ShowResearchAiNotConfigured();
+            ShowToast("Research AI service is not configured yet.");
+            return;
+        }
+
+        AiRecError.Visibility = Visibility.Collapsed;
+        AiRecNotConfigured.Visibility = Visibility.Collapsed;
+        GenerateRecBtn.IsEnabled = false;
+        ShowLoading("Research AI is analyzing your project…");
+
+        try
+        {
+            var rec = await _researchAi.GenerateRecommendationsAsync(p, CancellationToken.None);
             p.Recommendations = rec;
             p.UpdatedAt = DateTime.UtcNow;
             SaveResearch();
+
             RenderRecommendations(rec);
             PopulatePlanEditor(p);
             UpdateOverviewProgress(p);
-            ShowToast("Recommendations imported from the JSON block.");
+            UpdateGenerateRecButton(p);
+            ShowToast("AI recommendations generated. Review them below.");
         }
-        else
+        catch (ResearchAiNotConfiguredException)
         {
-            // No usable JSON — keep the text verbatim so nothing is lost.
-            var raw = new ResearchRecommendations
-            {
-                SourceMode = ResearchSourceMode.ManualClaude,
-                RawAiText = text
-            };
-            p.Recommendations = raw;
-            p.UpdatedAt = DateTime.UtcNow;
-            SaveResearch();
-            RenderRecommendations(raw);
-            PopulatePlanEditor(p);
-            UpdateOverviewProgress(p);
-            ShowToast("No structured JSON found — saved the response as raw text you can read below.");
+            ShowResearchAiNotConfigured();
+            ShowToast("Research AI service is not configured yet.");
+        }
+        catch (ResearchAiException ex)
+        {
+            ShowAiRecError(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            ShowAiRecError("Something went wrong while generating recommendations: " + ex.Message);
+        }
+        finally
+        {
+            HideLoading();
+            GenerateRecBtn.IsEnabled = true;
         }
     }
 
-    private void ClearAiPaste_Click(object sender, RoutedEventArgs e) => AiPasteBox.Text = "";
+    private void ShowResearchAiNotConfigured()
+    {
+        AiRecNotConfigured.Visibility = Visibility.Visible;
+        AiRecError.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowAiRecError(string message)
+    {
+        AiRecErrorText.Text = message;
+        AiRecError.Visibility = Visibility.Visible;
+        AiRecNotConfigured.Visibility = Visibility.Collapsed;
+    }
+
+    private void UpdateGenerateRecButton(ResearchProject p)
+    {
+        bool has = p.Recommendations is not null &&
+                   (p.Recommendations.HasStructuredContent || !string.IsNullOrWhiteSpace(p.Recommendations.RawAiText));
+        GenerateRecBtnText.Text = has ? "Regenerate recommendations" : "Generate AI Recommendations";
+    }
 
     private void AcceptRecommendations_Click(object sender, RoutedEventArgs e)
     {
@@ -2462,7 +2468,7 @@ public sealed partial class MainWindow : Window
         var rec = p.Recommendations;
         if (rec is null || (!rec.HasStructuredContent && string.IsNullOrWhiteSpace(rec.RawAiText)))
         {
-            ShowToast("Generate or import recommendations first.");
+            ShowToast("Generate AI recommendations first.");
             return;
         }
 
@@ -2557,77 +2563,78 @@ public sealed partial class MainWindow : Window
         ShowToast("Research plan saved.");
     }
 
-    // ---- Proposal ---------------------------------------------------------
+    // ---- Proposal: generate in-app ----------------------------------------
 
     private async void GenerateProposalDraft_Click(object sender, RoutedEventArgs e)
     {
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
 
-        var draft = await _offlineResearchAi.GenerateProposalDraftAsync(p, p.Recommendations);
-        p.ProposalDraft = draft;
-        p.CurrentStage = "Proposal drafted";
-        p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
-        p.UpdatedAt = DateTime.UtcNow;
-        SaveResearch();
-
-        PopulateProposalEditor(p);
-        PopulateOverview(p);
-        UpdateOverviewProgress(p);
-        ShowToast("Template draft created. Review and expand it with real references — this is not AI-generated.");
-    }
-
-    private void CopyProposalPrompt_Click(object sender, RoutedEventArgs e)
-    {
-        var p = CurrentResearchProject();
-        if (p is null) { ShowToast("Open a project first."); return; }
-
-        string prompt = _researchPromptBuilder.BuildProposalPrompt(p, p.Recommendations);
-        if (CopyToClipboardSafe(prompt))
-            ShowToast("Proposal prompt copied. Paste it into Claude, then paste the response back here.");
-    }
-
-    private void ImportProposalDraft_Click(object sender, RoutedEventArgs e)
-    {
-        var p = CurrentResearchProject();
-        if (p is null) { ShowToast("Open a project first."); return; }
-
-        string text = ProposalPasteBox.Text.Trim();
-        if (text.Length == 0) { ShowToast("Paste the Claude proposal response first, then import."); return; }
-
-        if (_researchParser.TryParseProposal(text, out var draft))
+        if (!_researchAi.IsConfigured)
         {
+            ShowProposalNotConfigured();
+            ShowToast("Research AI service is not configured yet.");
+            return;
+        }
+
+        ProposalError.Visibility = Visibility.Collapsed;
+        ProposalNotConfigured.Visibility = Visibility.Collapsed;
+        GenerateProposalBtn.IsEnabled = false;
+        ShowLoading("Research AI is drafting your proposal…");
+
+        try
+        {
+            var draft = await _researchAi.GenerateProposalDraftAsync(p, p.Recommendations, CancellationToken.None);
             p.ProposalDraft = draft;
-            ShowToast("Proposal draft imported from the JSON block.");
+            p.CurrentStage = "Proposal drafted";
+            p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
+            p.UpdatedAt = DateTime.UtcNow;
+            SaveResearch();
+
+            PopulateProposalEditor(p);
+            PopulateOverview(p);
+            UpdateOverviewProgress(p);
+            ShowToast("Proposal draft generated. Review and edit it below.");
         }
-        else
+        catch (ResearchAiNotConfiguredException)
         {
-            var raw = p.ProposalDraft ?? new ResearchProposalDraft();
-            raw.RawText = text;
-            raw.SourceMode = ResearchSourceMode.ManualClaude;
-            raw.IsTemplateGenerated = false;
-            p.ProposalDraft = raw;
-            ShowToast("No structured JSON found — saved the response as raw text you can read below.");
+            ShowProposalNotConfigured();
+            ShowToast("Research AI service is not configured yet.");
         }
-
-        p.CurrentStage = "Proposal drafted";
-        p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
-        p.UpdatedAt = DateTime.UtcNow;
-        SaveResearch();
-
-        PopulateProposalEditor(p);
-        PopulateOverview(p);
-        UpdateOverviewProgress(p);
+        catch (ResearchAiException ex)
+        {
+            ShowProposalError(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            ShowProposalError("Something went wrong while drafting the proposal: " + ex.Message);
+        }
+        finally
+        {
+            HideLoading();
+            GenerateProposalBtn.IsEnabled = true;
+        }
     }
 
-    private void ClearProposalPaste_Click(object sender, RoutedEventArgs e) => ProposalPasteBox.Text = "";
+    private void ShowProposalNotConfigured()
+    {
+        ProposalNotConfigured.Visibility = Visibility.Visible;
+        ProposalError.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowProposalError(string message)
+    {
+        ProposalErrorText.Text = message;
+        ProposalError.Visibility = Visibility.Visible;
+        ProposalNotConfigured.Visibility = Visibility.Collapsed;
+    }
 
     private void SaveProposal_Click(object sender, RoutedEventArgs e)
     {
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
 
-        var d = p.ProposalDraft ??= new ResearchProposalDraft { SourceMode = ResearchSourceMode.ManualClaude };
+        var d = p.ProposalDraft ??= new ResearchProposalDraft { SourceMode = ResearchSourceMode.Unknown };
         d.Title = PropTitle.Text.Trim();
         d.Background = PropBackground.Text.Trim();
         d.Rationale = PropRationale.Text.Trim();
@@ -2811,21 +2818,90 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ---- Small helpers ----------------------------------------------------
+    // ---- Research AI configuration ----------------------------------------
 
-    private bool CopyToClipboardSafe(string text)
+    private void LoadResearchAiConfig()
     {
         try
         {
-            Clipboard.SetText(text ?? "");
-            return true;
+            if (!File.Exists(ResearchAiConfigPath))
+            {
+                _researchAiOptions = new ResearchAiOptions();
+                return;
+            }
+
+            string json = File.ReadAllText(ResearchAiConfigPath);
+            _researchAiOptions = JsonSerializer.Deserialize<ResearchAiOptions>(json) ?? new ResearchAiOptions();
+        }
+        catch
+        {
+            // Never let a bad config file block the app.
+            _researchAiOptions = new ResearchAiOptions();
+        }
+    }
+
+    private void SaveResearchAiConfig()
+    {
+        try
+        {
+            File.WriteAllText(ResearchAiConfigPath, JsonSerializer.Serialize(_researchAiOptions, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            }));
         }
         catch (Exception ex)
         {
-            ShowToast("Could not access the clipboard: " + ex.Message);
-            return false;
+            ShowToast("Could not save Research AI settings: " + ex.Message);
         }
     }
+
+    private void PopulateResearchAiSettings()
+    {
+        RaiEndpointBox.Text = _researchAiOptions.EndpointBaseUrl;
+        RaiTimeoutBox.Text = _researchAiOptions.TimeoutSeconds.ToString();
+        RaiMockToggle.IsChecked = _researchAiOptions.UseDevelopmentMock;
+    }
+
+    private void SaveResearchAiConfig_Click(object sender, RoutedEventArgs e)
+    {
+        _researchAiOptions.EndpointBaseUrl = RaiEndpointBox.Text.Trim();
+
+        if (int.TryParse(RaiTimeoutBox.Text.Trim(), out int seconds))
+            _researchAiOptions.TimeoutSeconds = Math.Clamp(seconds, 5, 300);
+        else
+            _researchAiOptions.TimeoutSeconds = 60;
+
+        _researchAiOptions.UseDevelopmentMock = RaiMockToggle.IsChecked == true;
+
+        SaveResearchAiConfig();
+        PopulateResearchAiSettings();
+
+        // Reflect the new configuration if a project is currently open.
+        if (CurrentResearchProject() is not null)
+            UpdateResearchAiAvailability();
+
+        ShowToast(_researchAiOptions.IsConfigured
+            ? "Research AI settings saved."
+            : "Research AI settings saved. Add an endpoint or enable development mock to generate inside the app.");
+    }
+
+    private void OpenResearchAiSettings_Click(object sender, RoutedEventArgs e)
+    {
+        PopulateResearchAiSettings();
+        ShowPage(PageSettings);
+    }
+
+    // Shows/hides the "not configured" panels for the open project's AI tabs.
+    private void UpdateResearchAiAvailability()
+    {
+        bool configured = _researchAi.IsConfigured;
+        AiRecNotConfigured.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
+        ProposalNotConfigured.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
+        AiRecError.Visibility = Visibility.Collapsed;
+        ProposalError.Visibility = Visibility.Collapsed;
+    }
+
+    // ---- Small helpers ----------------------------------------------------
 
     private static string JoinLines(List<string> items)
         => items is { Count: > 0 } ? string.Join(Environment.NewLine, items) : "";

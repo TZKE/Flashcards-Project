@@ -1371,6 +1371,50 @@
                                                    FontWeight="SemiBold"/>
                                     </Grid>
                                 </Border>
+
+                                <!-- Research AI (separate from flashcard AI; no provider keys here) -->
+                                <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,16,0,0">
+                                    <StackPanel MaxWidth="920" HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                            <Border Width="50" Height="50" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconResearch}" Fill="{StaticResource PrimaryBrush}" Width="24" Height="24" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Research AI" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Used by the Research Lab. Connects to your own backend endpoint — no provider keys are stored in this app." Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <TextBlock Text="Research AI endpoint URL" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox x:Name="RaiEndpointBox" Height="48" local:Watermark.Text="https://your-backend.example.com"/>
+                                        <TextBlock Text="Your backend/proxy base URL. The app calls /api/research-ai/recommendations and /api/research-ai/proposal. Leave blank if you don't have one yet."
+                                                   Style="{StaticResource Caption}" Margin="2,6,0,18"/>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="220"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                <TextBlock Text="Timeout (seconds)" Style="{StaticResource FieldLabel}"/>
+                                                <TextBox x:Name="RaiTimeoutBox" Height="48" Text="60"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Bottom">
+                                                <CheckBox x:Name="RaiMockToggle" Content="Use development mock (generate sample drafts offline, no backend)"
+                                                          VerticalAlignment="Center" Margin="0,0,0,12"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Content="Save Research AI Settings" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="SaveResearchAiConfig_Click" Width="230"/>
+                                        </StackPanel>
+
+                                        <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="16" Margin="0,18,0,0">
+                                            <TextBlock Text="Do not enter any AI provider API keys here. Provider secrets belong only on your backend. This app only sends structured project data to the endpoint above."
+                                                       Foreground="{StaticResource WarningBrush}" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
@@ -1742,7 +1786,8 @@
                                         <ColumnDefinition Width="340"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="26" VerticalAlignment="Top">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                                    <Border Style="{StaticResource CardBorder}" Padding="26">
                                         <StackPanel>
                                             <TextBlock Text="Project details" Style="{StaticResource SectionHeader}" Margin="0,0,0,18"/>
 
@@ -1788,6 +1833,24 @@
                                             </Grid>
                                         </StackPanel>
                                     </Border>
+
+                                    <!-- Recommended workflow -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,16,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Recommended workflow" Style="{StaticResource SectionHeader}" Margin="0,0,0,4"/>
+                                            <TextBlock Text="Everything happens inside the app." Style="{StaticResource Caption}" Margin="0,0,0,14"/>
+                                            <StackPanel>
+                                                <TextBlock Margin="0,0,0,9"><Run Text="1." FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/><Run Text="  Complete project details" Foreground="{StaticResource TextBrush}"/></TextBlock>
+                                                <TextBlock Margin="0,0,0,9"><Run Text="2." FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/><Run Text="  Generate AI recommendations" Foreground="{StaticResource TextBrush}"/></TextBlock>
+                                                <TextBlock Margin="0,0,0,9"><Run Text="3." FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/><Run Text="  Accept research plan" Foreground="{StaticResource TextBrush}"/></TextBlock>
+                                                <TextBlock Margin="0,0,0,9"><Run Text="4." FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/><Run Text="  Generate proposal draft" Foreground="{StaticResource TextBrush}"/></TextBlock>
+                                                <TextBlock Margin="0,0,0,9"><Run Text="5." FontWeight="Bold" Foreground="{StaticResource MutedBrush}"/><Run Text="  Build data extraction sheet" Foreground="{StaticResource MutedBrush}"/></TextBlock>
+                                                <TextBlock Margin="0,0,0,9"><Run Text="6." FontWeight="Bold" Foreground="{StaticResource MutedBrush}"/><Run Text="  Run statistics" Foreground="{StaticResource MutedBrush}"/></TextBlock>
+                                                <TextBlock><Run Text="7." FontWeight="Bold" Foreground="{StaticResource MutedBrush}"/><Run Text="  Write manuscript" Foreground="{StaticResource MutedBrush}"/></TextBlock>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    </StackPanel>
 
                                     <StackPanel Grid.Column="2">
                                         <!-- Phase status -->
@@ -1873,35 +1936,41 @@
 
                                     <!-- Safety notice -->
                                     <Border Background="#FFF7ED" BorderBrush="#F5C98A" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,0,0,16">
-                                        <TextBlock Text="Do not submit AI-generated text without supervisor review. Verify all references, ethics requirements, methods, and statistical plans. This tool does not write Results or Discussion, and never adds citations."
+                                        <TextBlock Text="AI-generated research text must be reviewed by you and your supervisor. Verify methods, ethics requirements, statistics, and references before use. The assistant does not write Results or Discussion and does not add citations."
                                                    Foreground="#9A5B12" FontSize="12.5" TextWrapping="Wrap"/>
                                     </Border>
 
-                                    <!-- Generate / manual workflow -->
+                                    <!-- Generate (fully in-app) -->
                                     <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
                                         <StackPanel>
                                             <TextBlock Text="Create a draft" Style="{StaticResource SectionHeader}"/>
-                                            <TextBlock Text="Option A — build an offline template from your project. Option B — copy a Claude prompt, then paste the response back to import."
+                                            <TextBlock Text="Generate a structured proposal draft from your project details and accepted recommendations — right here in the app."
                                                        Style="{StaticResource Caption}" Margin="0,4,0,14" TextWrapping="Wrap"/>
 
-                                            <StackPanel Orientation="Horizontal">
-                                                <Button Content="Generate Proposal Draft" Style="{StaticResource PremiumButton}" Click="GenerateProposalDraft_Click"/>
-                                                <Button Style="{StaticResource SoftButton}" Margin="10,0,0,0" Click="CopyProposalPrompt_Click">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Path Data="{StaticResource IconCopy}" Fill="{StaticResource PrimaryBrush}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                        <TextBlock Text="Copy Proposal Prompt" VerticalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </Button>
-                                            </StackPanel>
+                                            <Button x:Name="GenerateProposalBtn" Style="{StaticResource PremiumButton}" HorizontalAlignment="Left" Click="GenerateProposalDraft_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconGenerate}" Fill="White" Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                    <TextBlock x:Name="GenerateProposalBtnText" Text="Generate Proposal Draft" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
 
-                                            <TextBlock Text="Paste Claude proposal response here" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,6"/>
-                                            <TextBox x:Name="ProposalPasteBox" Style="{StaticResource EditorTextBox}" MinHeight="120" MaxHeight="220"
-                                                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"
-                                                     local:Watermark.Text="Paste Claude's proposal response (including the JSON block) here, then click Import Proposal Draft."/>
-                                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                                <Button Content="Import Proposal Draft" Style="{StaticResource PremiumButton}" Click="ImportProposalDraft_Click"/>
-                                                <Button Content="Clear" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="ClearProposalPaste_Click"/>
-                                            </StackPanel>
+                                            <!-- Not-configured state -->
+                                            <Border x:Name="ProposalNotConfigured" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock Text="Research AI service is not configured yet" Foreground="{StaticResource WarningBrush}" FontWeight="Bold" FontSize="13.5"/>
+                                                    <TextBlock Text="Connect a Research AI backend endpoint in Settings to generate proposal drafts inside the app."
+                                                               Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,10"/>
+                                                    <Button Content="Open Research AI settings" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Click="OpenResearchAiSettings_Click"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Error state -->
+                                            <Border x:Name="ProposalError" Background="{StaticResource DangerSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="ProposalErrorText" Foreground="{StaticResource DangerBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                                    <Button Content="Retry" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Margin="0,10,0,0" Click="GenerateProposalDraft_Click"/>
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </Border>
 
@@ -1911,7 +1980,7 @@
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                                 <TextBlock Text="Proposal sections" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
                                                 <Border x:Name="PropTemplateBadge" Background="{StaticResource PrimarySoftBrush}" CornerRadius="8" Padding="10,4" Margin="12,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
-                                                    <TextBlock Text="Template draft — review and expand with real references" Foreground="{StaticResource PrimaryBrush}" FontSize="11.5" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="AI-generated draft — review before use" Foreground="{StaticResource PrimaryBrush}" FontSize="11.5" FontWeight="SemiBold"/>
                                                 </Border>
                                             </StackPanel>
                                             <TextBlock Text="Edit any section, then save. Leave references for you to add and verify." Style="{StaticResource Caption}" Margin="0,2,0,4"/>
@@ -2036,31 +2105,37 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- B + C. Generate prompt / paste response -->
+                                    <!-- B. Generate (fully in-app) -->
                                     <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
                                         <StackPanel>
-                                            <TextBlock Text="Generate with Claude (manual)" Style="{StaticResource SectionHeader}"/>
-                                            <TextBlock Text="Copy a ready-made prompt, paste it into Claude, then paste the response back here. No API key is stored and no data leaves this app on its own."
+                                            <TextBlock Text="AI Research Assistant" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Generate structured recommendations for this project — study design, objectives, variables, analyses, and next steps — right here in the app."
                                                        Style="{StaticResource Caption}" Margin="0,4,0,14" TextWrapping="Wrap"/>
 
-                                            <StackPanel Orientation="Horizontal">
-                                                <Button Style="{StaticResource PremiumButton}" Click="CopyClaudePrompt_Click">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Path Data="{StaticResource IconCopy}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                        <TextBlock Text="Copy Claude Prompt" VerticalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Content="Generate offline draft (no AI)" Style="{StaticResource SoftButton}" Margin="10,0,0,0" Click="GenerateOfflineRec_Click"/>
-                                            </StackPanel>
+                                            <Button x:Name="GenerateRecBtn" Style="{StaticResource PremiumButton}" HorizontalAlignment="Left" Click="GenerateRecommendations_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconGenerate}" Fill="White" Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                    <TextBlock x:Name="GenerateRecBtnText" Text="Generate AI Recommendations" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
 
-                                            <TextBlock Text="Paste Claude recommendations here" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,6"/>
-                                            <TextBox x:Name="AiPasteBox" Style="{StaticResource EditorTextBox}" MinHeight="130" MaxHeight="230"
-                                                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"
-                                                     local:Watermark.Text="Paste the full Claude response (including the JSON block) here, then click Import Recommendations."/>
-                                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                                <Button Content="Import Recommendations" Style="{StaticResource PremiumButton}" Click="ImportRecommendations_Click"/>
-                                                <Button Content="Clear" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="ClearAiPaste_Click"/>
-                                            </StackPanel>
+                                            <!-- Not-configured state -->
+                                            <Border x:Name="AiRecNotConfigured" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock Text="Research AI service is not configured yet" Foreground="{StaticResource WarningBrush}" FontWeight="Bold" FontSize="13.5"/>
+                                                    <TextBlock Text="Connect a Research AI backend endpoint in Settings to generate recommendations inside the app."
+                                                               Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,10"/>
+                                                    <Button Content="Open Research AI settings" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Click="OpenResearchAiSettings_Click"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Error state -->
+                                            <Border x:Name="AiRecError" Background="{StaticResource DangerSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="AiRecErrorText" Foreground="{StaticResource DangerBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                                    <Button Content="Retry" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Margin="0,10,0,0" Click="GenerateRecommendations_Click"/>
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </Border>
 
@@ -2068,7 +2143,7 @@
                                     <Border x:Name="AiRecEmptyHint" Style="{StaticResource SoftCardBorder}" Padding="28" Margin="0,0,0,16">
                                         <StackPanel HorizontalAlignment="Center">
                                             <TextBlock Text="No recommendations yet" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                            <TextBlock Text="Copy the Claude prompt and paste the response above, or generate an offline draft to get started."
+                                            <TextBlock Text="Click Generate AI Recommendations to create structured guidance for this project."
                                                        Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="440" Margin="0,6,0,0"/>
                                         </StackPanel>
                                     </Border>
@@ -2141,7 +2216,7 @@
                                             <Border x:Name="RecRawCard" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}"
                                                     BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,16,0,0" Visibility="Collapsed">
                                                 <StackPanel>
-                                                    <TextBlock Text="Imported text (unstructured)" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                    <TextBlock Text="AI response (unstructured)" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="Bold" Margin="0,0,0,8"/>
                                                     <TextBox x:Name="RecRawText" Style="{StaticResource EditorTextBox}" MinHeight="120" MaxHeight="260"
                                                              IsReadOnly="True" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"/>
                                                 </StackPanel>
@@ -2167,7 +2242,7 @@
 
                                             <Border x:Name="PlanEmptyHint" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}"
                                                     BorderThickness="1" CornerRadius="10" Padding="20" Margin="0,14,0,0">
-                                                <TextBlock Text="Generate or import recommendations first, then accept them to build a structured research plan."
+                                                <TextBlock Text="Generate AI recommendations first, then accept them to build a structured research plan."
                                                            Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" TextAlignment="Center"/>
                                             </Border>
 
@@ -2346,6 +2421,8 @@
                                Foreground="{StaticResource TextBrush}"
                                FontSize="23"
                                FontWeight="Bold"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
                                HorizontalAlignment="Center"/>
 
                     <TextBlock Text="Please wait while the app processes your request."
