@@ -36,7 +36,7 @@ public enum ResearchAiTaskType
 public sealed class ResearchAiOptions
 {
     public string EndpointBaseUrl { get; set; } = "";
-    public int TimeoutSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = 180;
     public bool UseDevelopmentMock { get; set; }
 
     // DEVELOPMENT-ONLY switch. When enabled, the in-app Research AI workflow is
@@ -499,7 +499,11 @@ public sealed class MockResearchAiService : IResearchAiService
 // ---------------------------------------------------------------------------
 public sealed class DevelopmentZaiResearchAiService : IResearchAiService
 {
-    private static readonly HttpClient Http = new();
+    // Disable the HttpClient-level timeout (its default is 100s, which was
+    // cutting off the ~90-100s structured-JSON generations). The real per-request
+    // timeout is enforced by the linked CancellationTokenSource below, mirroring
+    // the generous allowance the working flashcard request uses.
+    private static readonly HttpClient Http = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     private readonly Func<ResearchAiOptions> _options;
     private readonly Func<ZaiDevCredentials> _credentials;
     private readonly ResearchRecommendationParser _parser = new();
@@ -556,12 +560,16 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
                 new { role = "user", content = userPrompt }
             },
             temperature = 0.2,
-            max_tokens = 4000,
+            max_tokens = 8000,   // headroom so the large research JSON is never truncated
             stream = false
         };
 
+        // GLM takes ~90-100s to produce the full structured JSON, so never let a
+        // small configured timeout cut it off. Floor at 180s (matching the proven
+        // flashcard request's 3-minute allowance); users may raise it up to 300s.
+        int timeoutSeconds = Math.Clamp(Math.Max(opts.TimeoutSeconds, 180), 30, 300);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(opts.TimeoutSeconds, 5, 300)));
+        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
         // The key is attached only to the outgoing request header — never logged.
@@ -660,13 +668,20 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         "  \"biasAndLimitations\": [\"string\"],\n" +
         "  \"ethicsNotes\": [\"string\"],\n" +
         "  \"nextSteps\": [\"string\"]\n" +
-        "}";
+        "}\n\n" +
+        "Return ONLY the JSON object above, filled in. No markdown, no code fences, " +
+        "no explanation, and no text before or after the JSON.";
 
     private const string ProposalSystemPrompt =
         "You are drafting a research PROPOSAL (protocol) for a medical or " +
         "university student. The study has NOT been conducted yet. " + SafetyRules +
-        " The statisticalAnalysisPlan field must describe planned analyses only " +
-        "and must not contain any results.\n\n" +
+        " Additional rules for the proposal: do NOT invent references, results, " +
+        "p-values, or data; do NOT write a Results or Discussion section and do " +
+        "NOT include any findings; where a citation is needed, insert a bracketed " +
+        "placeholder like [add reference] instead of a real or made-up citation. " +
+        "The statisticalAnalysisPlan field must describe planned analyses only and " +
+        "must not contain any results. The draft is a starting point that the " +
+        "student and their supervisor must review and complete.\n\n" +
         "Use exactly this JSON shape (all values are strings; use \"\" where a " +
         "value genuinely does not apply):\n" +
         "{\n" +
@@ -687,7 +702,9 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         "  \"ethics\": \"string\",\n" +
         "  \"timeline\": \"string\",\n" +
         "  \"limitations\": \"string\"\n" +
-        "}";
+        "}\n\n" +
+        "Return ONLY the JSON object above, filled in. No markdown, no code fences, " +
+        "no explanation, and no text before or after the JSON.";
 
     private static string BuildRecommendationsUserPrompt(ResearchProject p)
     {
@@ -710,15 +727,55 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         if (rec is not null && rec.HasStructuredContent)
         {
             sb.AppendLine();
-            sb.AppendLine("The student has already accepted these recommendations — stay consistent with them:");
+            sb.AppendLine("ACCEPTED RESEARCH PLAN — the student has reviewed and accepted the following. "
+                + "Build the proposal directly from it and stay fully consistent with every item:");
             if (!string.IsNullOrWhiteSpace(rec.RefinedResearchTitle)) sb.AppendLine("- Refined title: " + rec.RefinedResearchTitle);
-            if (!string.IsNullOrWhiteSpace(rec.RecommendedStudyDesign)) sb.AppendLine("- Study design: " + rec.RecommendedStudyDesign);
             if (!string.IsNullOrWhiteSpace(rec.ResearchQuestion)) sb.AppendLine("- Research question: " + rec.ResearchQuestion);
+            if (!string.IsNullOrWhiteSpace(rec.RecommendedStudyDesign)) sb.AppendLine("- Study design: " + rec.RecommendedStudyDesign);
             if (!string.IsNullOrWhiteSpace(rec.PrimaryObjective)) sb.AppendLine("- Primary objective: " + rec.PrimaryObjective);
             if (rec.SecondaryObjectives.Count > 0) sb.AppendLine("- Secondary objectives: " + string.Join("; ", rec.SecondaryObjectives));
+
+            if (rec.SuggestedVariables.Count > 0)
+            {
+                sb.AppendLine("- Variables:");
+                foreach (var v in rec.SuggestedVariables)
+                {
+                    var meta = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(v.VariableType)) meta.Add(v.VariableType.Trim());
+                    if (!string.IsNullOrWhiteSpace(v.Role)) meta.Add(v.Role.Trim());
+                    if (!string.IsNullOrWhiteSpace(v.SuggestedCoding)) meta.Add("coded as " + v.SuggestedCoding.Trim());
+                    sb.AppendLine("    • " + v.HeaderDisplay + (meta.Count > 0 ? " (" + string.Join(", ", meta) + ")" : ""));
+                }
+            }
+
+            if (rec.SuggestedAnalyses.Count > 0)
+            {
+                sb.AppendLine("- Suggested analyses:");
+                foreach (var a in rec.SuggestedAnalyses)
+                {
+                    string when = string.IsNullOrWhiteSpace(a.WhenToUse) ? "" : " — " + a.WhenToUse.Trim();
+                    sb.AppendLine("    • " + a.HeaderDisplay + when);
+                }
+            }
+
+            AppendPlanList(sb, "Inclusion criteria", rec.InclusionCriteria);
+            AppendPlanList(sb, "Exclusion criteria", rec.ExclusionCriteria);
+            AppendPlanList(sb, "Data collection suggestions", rec.DataCollectionSuggestions);
+            AppendPlanList(sb, "Ethics notes", rec.EthicsNotes);
+            AppendPlanList(sb, "Bias and limitations", rec.BiasAndLimitations);
+            AppendPlanList(sb, "Next steps", rec.NextSteps);
         }
 
         return sb.ToString();
+    }
+
+    private static void AppendPlanList(StringBuilder sb, string label, List<string> items)
+    {
+        if (items is null || items.Count == 0) return;
+        sb.AppendLine("- " + label + ":");
+        foreach (var item in items)
+            if (!string.IsNullOrWhiteSpace(item))
+                sb.AppendLine("    • " + item.Trim());
     }
 
     private static void AppendProjectDetails(StringBuilder sb, ResearchProject p)
@@ -762,61 +819,75 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
     {
         recommendations = new ResearchRecommendations { SourceMode = ResearchSourceMode.AiGenerated };
 
-        if (!TryExtractJson(text, out string json)) return false;
-
-        try
+        // The model may wrap the JSON in prose or code fences, or emit more than
+        // one object. Try every balanced object (largest first) and keep the first
+        // that yields real structured content.
+        foreach (string json in ExtractJsonCandidates(text))
         {
-            var dto = JsonSerializer.Deserialize<RecDto>(json, Opts);
-            if (dto is null) return false;
+            try
+            {
+                var dto = JsonSerializer.Deserialize<RecDto>(json, Opts);
+                if (dto is null) continue;
 
-            recommendations.RefinedResearchTitle = Clean(dto.RefinedTitle);
-            recommendations.RecommendedStudyDesign = Clean(dto.StudyDesign);
-            recommendations.ResearchQuestion = Clean(dto.ResearchQuestion);
-            recommendations.PrimaryObjective = Clean(dto.PrimaryObjective);
-            recommendations.SecondaryObjectives = CleanList(dto.SecondaryObjectives);
-            recommendations.InclusionCriteria = CleanList(dto.InclusionCriteria);
-            recommendations.ExclusionCriteria = CleanList(dto.ExclusionCriteria);
-            recommendations.DataCollectionSuggestions = CleanList(dto.DataCollection);
-            recommendations.BiasAndLimitations = CleanList(dto.BiasAndLimitations);
-            recommendations.EthicsNotes = CleanList(dto.EthicsNotes);
-            recommendations.NextSteps = CleanList(dto.NextSteps);
-
-            if (dto.Variables is not null)
-                foreach (var v in dto.Variables)
+                var r = new ResearchRecommendations
                 {
-                    if (v is null) continue;
-                    recommendations.SuggestedVariables.Add(new ResearchVariableSuggestion
-                    {
-                        VariableName = Clean(v.Name),
-                        VariableLabel = Clean(v.Label),
-                        VariableType = Clean(v.Type),
-                        Role = Clean(v.Role),
-                        SuggestedCoding = Clean(v.Coding),
-                        Notes = Clean(v.Notes)
-                    });
-                }
+                    SourceMode = ResearchSourceMode.AiGenerated,
+                    RefinedResearchTitle = Clean(dto.RefinedTitle),
+                    RecommendedStudyDesign = Clean(dto.StudyDesign),
+                    ResearchQuestion = Clean(dto.ResearchQuestion),
+                    PrimaryObjective = Clean(dto.PrimaryObjective),
+                    SecondaryObjectives = CleanList(dto.SecondaryObjectives),
+                    InclusionCriteria = CleanList(dto.InclusionCriteria),
+                    ExclusionCriteria = CleanList(dto.ExclusionCriteria),
+                    DataCollectionSuggestions = CleanList(dto.DataCollection),
+                    BiasAndLimitations = CleanList(dto.BiasAndLimitations),
+                    EthicsNotes = CleanList(dto.EthicsNotes),
+                    NextSteps = CleanList(dto.NextSteps),
+                    RawAiText = text.Trim()
+                };
 
-            if (dto.Analyses is not null)
-                foreach (var a in dto.Analyses)
+                if (dto.Variables is not null)
+                    foreach (var v in dto.Variables)
+                    {
+                        if (v is null) continue;
+                        r.SuggestedVariables.Add(new ResearchVariableSuggestion
+                        {
+                            VariableName = Clean(v.Name),
+                            VariableLabel = Clean(v.Label),
+                            VariableType = Clean(v.Type),
+                            Role = Clean(v.Role),
+                            SuggestedCoding = Clean(v.Coding),
+                            Notes = Clean(v.Notes)
+                        });
+                    }
+
+                if (dto.Analyses is not null)
+                    foreach (var a in dto.Analyses)
+                    {
+                        if (a is null) continue;
+                        r.SuggestedAnalyses.Add(new ResearchAnalysisSuggestion
+                        {
+                            AnalysisName = Clean(a.Name),
+                            WhenToUse = Clean(a.WhenToUse),
+                            VariablesNeeded = Clean(a.VariablesNeeded),
+                            OutputExpected = Clean(a.OutputExpected),
+                            Notes = Clean(a.Notes)
+                        });
+                    }
+
+                if (r.HasStructuredContent)
                 {
-                    if (a is null) continue;
-                    recommendations.SuggestedAnalyses.Add(new ResearchAnalysisSuggestion
-                    {
-                        AnalysisName = Clean(a.Name),
-                        WhenToUse = Clean(a.WhenToUse),
-                        VariablesNeeded = Clean(a.VariablesNeeded),
-                        OutputExpected = Clean(a.OutputExpected),
-                        Notes = Clean(a.Notes)
-                    });
+                    recommendations = r;
+                    return true;
                 }
+            }
+            catch
+            {
+                // Not this candidate — try the next one.
+            }
+        }
 
-            recommendations.RawAiText = text.Trim();
-            return recommendations.HasStructuredContent;
-        }
-        catch
-        {
-            return false;
-        }
+        return false;
     }
 
     public bool TryParseProposal(string text, out ResearchProposalDraft proposal)
@@ -827,73 +898,104 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
             IsTemplateGenerated = false
         };
 
-        if (!TryExtractJson(text, out string json)) return false;
-
-        try
+        foreach (string json in ExtractJsonCandidates(text))
         {
-            var dto = JsonSerializer.Deserialize<ProposalDto>(json, Opts);
-            if (dto is null) return false;
+            try
+            {
+                var dto = JsonSerializer.Deserialize<ProposalDto>(json, Opts);
+                if (dto is null) continue;
 
-            proposal.Title = Clean(dto.Title);
-            proposal.Background = Clean(dto.Background);
-            proposal.Rationale = Clean(dto.Rationale);
-            proposal.Aim = Clean(dto.Aim);
-            proposal.Objectives = Clean(dto.Objectives);
-            proposal.Methods = Clean(dto.Methods);
-            proposal.StudyDesign = Clean(dto.StudyDesign);
-            proposal.Setting = Clean(dto.Setting);
-            proposal.Population = Clean(dto.Population);
-            proposal.InclusionCriteria = Clean(dto.InclusionCriteria);
-            proposal.ExclusionCriteria = Clean(dto.ExclusionCriteria);
-            proposal.Variables = Clean(dto.Variables);
-            proposal.DataCollection = Clean(dto.DataCollection);
-            proposal.StatisticalAnalysisPlan = Clean(dto.StatisticalAnalysisPlan);
-            proposal.Ethics = Clean(dto.Ethics);
-            proposal.Timeline = Clean(dto.Timeline);
-            proposal.Limitations = Clean(dto.Limitations);
+                var d = new ResearchProposalDraft
+                {
+                    SourceMode = ResearchSourceMode.AiGenerated,
+                    IsTemplateGenerated = false,
+                    Title = Clean(dto.Title),
+                    Background = Clean(dto.Background),
+                    Rationale = Clean(dto.Rationale),
+                    Aim = Clean(dto.Aim),
+                    Objectives = Clean(dto.Objectives),
+                    Methods = Clean(dto.Methods),
+                    StudyDesign = Clean(dto.StudyDesign),
+                    Setting = Clean(dto.Setting),
+                    Population = Clean(dto.Population),
+                    InclusionCriteria = Clean(dto.InclusionCriteria),
+                    ExclusionCriteria = Clean(dto.ExclusionCriteria),
+                    Variables = Clean(dto.Variables),
+                    DataCollection = Clean(dto.DataCollection),
+                    StatisticalAnalysisPlan = Clean(dto.StatisticalAnalysisPlan),
+                    Ethics = Clean(dto.Ethics),
+                    Timeline = Clean(dto.Timeline),
+                    Limitations = Clean(dto.Limitations)
+                };
 
-            return !string.IsNullOrWhiteSpace(proposal.Title)
-                || !string.IsNullOrWhiteSpace(proposal.Background)
-                || !string.IsNullOrWhiteSpace(proposal.Aim)
-                || !string.IsNullOrWhiteSpace(proposal.Methods)
-                || !string.IsNullOrWhiteSpace(proposal.Objectives)
-                || !string.IsNullOrWhiteSpace(proposal.StudyDesign);
+                bool hasContent = !string.IsNullOrWhiteSpace(d.Title)
+                    || !string.IsNullOrWhiteSpace(d.Background)
+                    || !string.IsNullOrWhiteSpace(d.Aim)
+                    || !string.IsNullOrWhiteSpace(d.Methods)
+                    || !string.IsNullOrWhiteSpace(d.Objectives)
+                    || !string.IsNullOrWhiteSpace(d.StudyDesign);
+
+                if (hasContent)
+                {
+                    proposal = d;
+                    return true;
+                }
+            }
+            catch
+            {
+                // Not this candidate — try the next one.
+            }
         }
-        catch
-        {
-            return false;
-        }
+
+        return false;
     }
 
-    private static bool TryExtractJson(string text, out string json)
+    // Returns every balanced top-level JSON object found in the text, largest
+    // first (the real payload is almost always the biggest object). Markdown code
+    // fences are stripped first, so ```json ... ``` and prose-wrapped replies both
+    // work. Never throws.
+    private static List<string> ExtractJsonCandidates(string text)
     {
-        json = "";
-        if (string.IsNullOrWhiteSpace(text)) return false;
+        var results = new List<string>();
+        if (string.IsNullOrWhiteSpace(text)) return results;
 
-        int start = text.IndexOf('{');
-        if (start < 0) return false;
+        string cleaned = text.Replace("```json", " ", StringComparison.OrdinalIgnoreCase)
+                             .Replace("```", " ");
 
-        int depth = 0;
-        bool inString = false, escape = false;
-        for (int i = start; i < text.Length; i++)
+        int i = 0;
+        while (i < cleaned.Length)
         {
-            char c = text[i];
-            if (inString)
+            if (cleaned[i] != '{') { i++; continue; }
+
+            int depth = 0;
+            bool inString = false, escape = false;
+            int end = -1;
+            for (int j = i; j < cleaned.Length; j++)
             {
-                if (escape) escape = false;
-                else if (c == '\\') escape = true;
-                else if (c == '"') inString = false;
-                continue;
+                char c = cleaned[j];
+                if (inString)
+                {
+                    if (escape) escape = false;
+                    else if (c == '\\') escape = true;
+                    else if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c == '{') depth++;
+                else if (c == '}')
+                {
+                    depth--;
+                    if (depth == 0) { end = j; break; }
+                }
             }
-            if (c == '"') { inString = true; continue; }
-            if (c == '{') depth++;
-            else if (c == '}')
-            {
-                depth--;
-                if (depth == 0) { json = text.Substring(start, i - start + 1); return true; }
-            }
+
+            if (end < 0) break;   // no complete object from here on
+            results.Add(cleaned.Substring(i, end - i + 1));
+            i = end + 1;          // continue scanning after this top-level object
         }
-        return false;
+
+        results.Sort((a, b) => b.Length.CompareTo(a.Length));
+        return results;
     }
 
     private static string Clean(string? s) => (s ?? "").Trim();

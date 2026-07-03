@@ -1397,7 +1397,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
                                                 <TextBlock Text="Timeout (seconds)" Style="{StaticResource FieldLabel}"/>
-                                                <TextBox x:Name="RaiTimeoutBox" Height="48" Text="60"/>
+                                                <TextBox x:Name="RaiTimeoutBox" Height="48" Text="180"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Bottom">
                                                 <CheckBox x:Name="RaiMockToggle" Content="Use development mock (generate sample drafts offline, no backend)"
@@ -1775,8 +1775,8 @@
                                 BorderThickness="1" CornerRadius="11" Padding="4" Margin="0,0,0,18" SnapsToDevicePixels="True">
                             <WrapPanel>
                                 <Button x:Name="SegOverview" Content="Overview" Style="{StaticResource SegTabActive}" Tag="Overview" Click="ResearchTab_Click"/>
-                                <Button x:Name="SegProposal" Content="Proposal" Style="{StaticResource SegTab}" Tag="Proposal" Click="ResearchTab_Click"/>
                                 <Button x:Name="SegAiRec" Content="AI Recommendations" Style="{StaticResource SegTab}" Tag="AiRec" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegProposal" Content="Proposal" Style="{StaticResource SegTab}" Tag="Proposal" Click="ResearchTab_Click"/>
                                 <Button x:Name="SegDataExt" Content="Data Extraction" Style="{StaticResource SegTab}" Tag="DataExt" Click="ResearchTab_Click"/>
                                 <Button x:Name="SegStats" Content="Statistics" Style="{StaticResource SegTab}" Tag="Stats" Click="ResearchTab_Click"/>
                                 <Button x:Name="SegResults" Content="Results" Style="{StaticResource SegTab}" Tag="Results" Click="ResearchTab_Click"/>
@@ -1944,6 +1944,32 @@
                                             <TextBlock Text="Build a structured proposal draft from your project and accepted recommendations." Style="{StaticResource Caption}"/>
                                         </StackPanel>
                                     </StackPanel>
+
+                                    <!-- Research Plan Source: accepted state -->
+                                    <Border x:Name="ProposalPlanSourceAccepted" Background="{StaticResource SuccessSoftBrush}" CornerRadius="12" Padding="18" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="42" Height="42" Background="{StaticResource SuccessBrush}" CornerRadius="10" Margin="0,0,14,0" VerticalAlignment="Center">
+                                                <Path Data="{StaticResource IconCheck}" Fill="White" Width="20" Height="20" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Research Plan Source" Foreground="{StaticResource SuccessBrush}" FontSize="12" FontWeight="Bold"/>
+                                                <TextBlock Text="Using accepted AI research plan" Foreground="{StaticResource TextBrush}" FontSize="14.5" FontWeight="SemiBold" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Research Plan Source: missing state -->
+                                    <Border x:Name="ProposalPlanSourceMissing" Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="18" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <TextBlock Text="Research Plan Source" Foreground="{StaticResource WarningBrush}" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text="No accepted research plan yet" Foreground="{StaticResource TextBrush}" FontSize="14.5" FontWeight="SemiBold" Margin="0,2,0,6"/>
+                                            <TextBlock Text="Generate and accept AI recommendations first for the best proposal draft." Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Content="Go to AI Recommendations" Style="{StaticResource SoftButton}" Click="GoToAiRecommendations_Click" Margin="0,0,10,0"/>
+                                                <Button x:Name="GenerateBasicProposalBtn" Content="Generate basic proposal from project details anyway" Style="{StaticResource SoftButton}" Click="GenerateBasicProposal_Click"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
 
                                     <!-- Safety notice -->
                                     <Border Background="#FFF7ED" BorderBrush="#F5C98A" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,0,0,16">

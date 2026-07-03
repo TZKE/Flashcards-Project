@@ -2075,8 +2075,8 @@ public sealed partial class MainWindow : Window
     {
         _researchTabs.Clear();
         _researchTabs.Add((SegOverview, TabOverview));
-        _researchTabs.Add((SegProposal, TabProposal));
         _researchTabs.Add((SegAiRec, TabAiRec));
+        _researchTabs.Add((SegProposal, TabProposal));
         _researchTabs.Add((SegDataExt, TabDataExt));
         _researchTabs.Add((SegStats, TabStats));
         _researchTabs.Add((SegResults, TabResults));
@@ -2277,6 +2277,7 @@ public sealed partial class MainWindow : Window
         RenderRecommendations(project.Recommendations);
         PopulatePlanEditor(project);
         PopulateProposalEditor(project);
+        UpdateProposalPlanSource(project);
         UpdateOverviewProgress(project);
         UpdateGenerateRecButton(project);
         UpdateResearchAiAvailability();
@@ -2367,6 +2368,10 @@ public sealed partial class MainWindow : Window
             button.Style = isActive ? activeStyle : normal;
             panel.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
         }
+
+        // Keep the Proposal tab's plan-source status current whenever it opens.
+        if (ReferenceEquals(active, SegProposal) && CurrentResearchProject() is { } proj)
+            UpdateProposalPlanSource(proj);
     }
 
     private void SaveDashNotes_Click(object sender, RoutedEventArgs e)
@@ -2496,6 +2501,7 @@ public sealed partial class MainWindow : Window
         PopulateOverview(p);
         PopulatePlanEditor(p);
         UpdateOverviewProgress(p);
+        UpdateProposalPlanSource(p);
         ShowToast("Recommendations accepted. Your research plan is ready to edit below.");
     }
 
@@ -2575,11 +2581,40 @@ public sealed partial class MainWindow : Window
 
     // ---- Proposal: generate in-app ----------------------------------------
 
+    // Primary path: the proposal should be built from the accepted research
+    // plan. If the student has not accepted recommendations yet, we do NOT
+    // silently produce a weak draft from raw details — we surface the plan-source
+    // status and point them at the AI Recommendations tab instead.
     private async void GenerateProposalDraft_Click(object sender, RoutedEventArgs e)
     {
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
 
+        if (!HasAcceptedResearchPlan(p))
+        {
+            UpdateProposalPlanSource(p);
+            ShowToast("Generate and accept AI recommendations first for the best proposal draft.");
+            return;
+        }
+
+        await GenerateProposalCore(p);
+    }
+
+    // Explicit secondary opt-in: build a basic proposal from project details even
+    // without an accepted plan. Only reachable from the labelled button in the
+    // "no accepted research plan" status card.
+    private async void GenerateBasicProposal_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+        await GenerateProposalCore(p);
+    }
+
+    private void GoToAiRecommendations_Click(object sender, RoutedEventArgs e)
+        => SwitchResearchTab(SegAiRec);
+
+    private async Task GenerateProposalCore(ResearchProject p)
+    {
         if (!_researchAi.IsConfigured)
         {
             ShowProposalNotConfigured();
@@ -2594,7 +2629,11 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var draft = await _researchAi.GenerateProposalDraftAsync(p, p.Recommendations, CancellationToken.None);
+            // Pass the accepted recommendations so the draft is built from the
+            // accepted research plan (title, question, design, objectives,
+            // variables, analyses, criteria, ethics, limitations, next steps).
+            var accepted = HasAcceptedResearchPlan(p) ? p.Recommendations : null;
+            var draft = await _researchAi.GenerateProposalDraftAsync(p, accepted, CancellationToken.None);
             p.ProposalDraft = draft;
             p.CurrentStage = "Proposal drafted";
             p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
@@ -2622,8 +2661,26 @@ public sealed partial class MainWindow : Window
         finally
         {
             HideLoading();
-            GenerateProposalBtn.IsEnabled = true;
+            // Restore the button to the correct state for the current plan status
+            // (enabled only when an accepted research plan exists).
+            UpdateProposalPlanSource(p);
         }
+    }
+
+    private static bool HasAcceptedResearchPlan(ResearchProject p)
+        => p.Recommendations?.AcceptedIntoPlan == true;
+
+    // Shows the correct "Research Plan Source" status card in the Proposal tab
+    // and toggles the primary Generate button accordingly.
+    private void UpdateProposalPlanSource(ResearchProject p)
+    {
+        bool accepted = HasAcceptedResearchPlan(p);
+        ProposalPlanSourceAccepted.Visibility = accepted ? Visibility.Visible : Visibility.Collapsed;
+        ProposalPlanSourceMissing.Visibility = accepted ? Visibility.Collapsed : Visibility.Visible;
+        GenerateProposalBtn.IsEnabled = accepted;
+        GenerateProposalBtnText.Text = accepted
+            ? "Generate Proposal Draft"
+            : "Accept a research plan first";
     }
 
     private void ShowProposalNotConfigured()
@@ -2783,9 +2840,9 @@ public sealed partial class MainWindow : Window
         SetStatusText(OvProposalStatus, hasProposal, hasProposal ? "Created" : "Not started");
 
         string next;
-        if (!hasRec) next = "Next: generate or import AI recommendations.";
-        else if (!planAccepted) next = "Next: review and accept recommendations into your research plan.";
-        else if (!hasProposal) next = "Next: create a proposal draft.";
+        if (!hasRec) next = "Next: generate AI recommendations.";
+        else if (!planAccepted) next = "Next: review and accept the research plan.";
+        else if (!hasProposal) next = "Next: generate a proposal draft.";
         else next = "Next: prepare your data extraction sheet in the next phase.";
         DashNextStepText.Text = next;
     }
@@ -2880,7 +2937,7 @@ public sealed partial class MainWindow : Window
         if (int.TryParse(RaiTimeoutBox.Text.Trim(), out int seconds))
             _researchAiOptions.TimeoutSeconds = Math.Clamp(seconds, 5, 300);
         else
-            _researchAiOptions.TimeoutSeconds = 60;
+            _researchAiOptions.TimeoutSeconds = 180;
 
         _researchAiOptions.UseDevelopmentMock = RaiMockToggle.IsChecked == true;
         _researchAiOptions.UseDevelopmentZaiProvider = RaiDevProviderToggle.IsChecked == true;
