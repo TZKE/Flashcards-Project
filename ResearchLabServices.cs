@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -30,7 +31,7 @@ public enum ResearchAiTaskType
     ProposalDraft
 }
 
-// Persisted to research_ai_config.json (separate from the Z.ai flashcard
+// Persisted to research_ai_config.json (separate from the flashcard AI
 // settings, which are never touched by the Research Lab).
 public sealed class ResearchAiOptions
 {
@@ -38,16 +39,40 @@ public sealed class ResearchAiOptions
     public int TimeoutSeconds { get; set; } = 60;
     public bool UseDevelopmentMock { get; set; }
 
+    // DEVELOPMENT-ONLY switch. When enabled, the in-app Research AI workflow is
+    // routed to a direct chat-completions provider (see
+    // DevelopmentZaiResearchAiService) using the API key the user already saved
+    // for flashcard generation. This is for local testing before the backend
+    // proxy exists; production must use EndpointBaseUrl. The provider name is
+    // never shown in the UI — the corresponding checkbox is provider-neutral.
+    public bool UseDevelopmentZaiProvider { get; set; }
+
     [JsonIgnore]
     public bool IsConfigured =>
-        UseDevelopmentMock || !string.IsNullOrWhiteSpace(EndpointBaseUrl);
+        UseDevelopmentMock || UseDevelopmentZaiProvider || !string.IsNullOrWhiteSpace(EndpointBaseUrl);
 
     public ResearchAiOptions Clone() => new()
     {
         EndpointBaseUrl = EndpointBaseUrl,
         TimeoutSeconds = TimeoutSeconds,
-        UseDevelopmentMock = UseDevelopmentMock
+        UseDevelopmentMock = UseDevelopmentMock,
+        UseDevelopmentZaiProvider = UseDevelopmentZaiProvider
     };
+}
+
+// Read-only credentials supplied by the host so the development provider can
+// reuse the API key the user already configured for flashcards. This object is
+// only ever read — the development service never writes it back, never logs it,
+// and never surfaces the key in any message or in the UI. No key is stored in
+// this file or hardcoded anywhere.
+public sealed class ZaiDevCredentials
+{
+    public string ApiKey { get; set; } = "";
+    public string BaseUrl { get; set; } = "https://api.z.ai/api/paas/v4";
+    public string Model { get; set; } = "GLM-4.7-FlashX";
+
+    [JsonIgnore]
+    public bool HasKey => !string.IsNullOrWhiteSpace(ApiKey);
 }
 
 // ---- Provider-neutral request/response DTOs -------------------------------
@@ -122,39 +147,43 @@ public interface IResearchAiService
     Task<ResearchProposalDraft> GenerateProposalDraftAsync(ResearchProject project, ResearchRecommendations? recommendations, CancellationToken cancellationToken);
 }
 
-// Facade that reads live options and dispatches to the HTTP client or the
-// development mock. It never contains provider keys.
+// Facade that reads live options and dispatches to the backend HTTP client, the
+// development mock, or the development provider. It never contains provider keys
+// itself — the development provider receives credentials through a read-only
+// callback supplied by the host.
 public sealed class ResearchAiService : IResearchAiService
 {
     private readonly Func<ResearchAiOptions> _options;
     private readonly MockResearchAiService _mock = new();
     private readonly ResearchAiHttpClient _http;
+    private readonly DevelopmentZaiResearchAiService? _devProvider;
 
-    public ResearchAiService(Func<ResearchAiOptions> optionsProvider)
+    public ResearchAiService(Func<ResearchAiOptions> optionsProvider, Func<ZaiDevCredentials>? devCredentials = null)
     {
         _options = optionsProvider;
         _http = new ResearchAiHttpClient(optionsProvider);
+        if (devCredentials is not null)
+            _devProvider = new DevelopmentZaiResearchAiService(optionsProvider, devCredentials);
     }
 
     public bool IsConfigured => _options().IsConfigured;
 
-    public Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
+    // Chooses the active implementation for the current options. The development
+    // provider takes precedence when explicitly enabled (real provider testing),
+    // then the offline mock, then the production backend endpoint.
+    private IResearchAiService Route(ResearchAiOptions o)
     {
-        var o = _options();
         if (!o.IsConfigured) throw new ResearchAiNotConfiguredException();
-        return o.UseDevelopmentMock
-            ? _mock.GenerateRecommendationsAsync(project, cancellationToken)
-            : _http.GenerateRecommendationsAsync(project, cancellationToken);
+        if (o.UseDevelopmentZaiProvider && _devProvider is not null) return _devProvider;
+        if (o.UseDevelopmentMock) return _mock;
+        return _http;
     }
 
+    public Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
+        => Route(_options()).GenerateRecommendationsAsync(project, cancellationToken);
+
     public Task<ResearchProposalDraft> GenerateProposalDraftAsync(ResearchProject project, ResearchRecommendations? recommendations, CancellationToken cancellationToken)
-    {
-        var o = _options();
-        if (!o.IsConfigured) throw new ResearchAiNotConfiguredException();
-        return o.UseDevelopmentMock
-            ? _mock.GenerateProposalDraftAsync(project, recommendations, cancellationToken)
-            : _http.GenerateProposalDraftAsync(project, recommendations, cancellationToken);
-    }
+        => Route(_options()).GenerateProposalDraftAsync(project, recommendations, cancellationToken);
 }
 
 // ---- Backend/proxy HTTP client --------------------------------------------
@@ -444,6 +473,268 @@ public sealed class MockResearchAiService : IResearchAiService
         if (st.Contains("review") || st.Contains("meta")) return "Systematic review";
         if (st.Contains("qualitative")) return "Qualitative study";
         return "Cross-sectional (descriptive) study — confirm with your supervisor";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DEVELOPMENT-ONLY provider.
+//
+// Connects the in-app Research AI workflow directly to a chat-completions
+// provider so the flow can be tested locally before the backend proxy exists.
+// It is NOT the production path: in production the app must call the backend
+// (ResearchAiHttpClient) so provider secrets never live in the desktop client.
+//
+// SECURITY / SAFETY:
+//   * The API key is READ (never written) from credentials the host supplies,
+//     reusing the key the user already saved for flashcard generation. No key
+//     is hardcoded here, and the key is never printed, logged, or included in
+//     any exception message or UI text.
+//   * The provider name is never surfaced to the user; the Research Lab UI and
+//     every message here stay provider-neutral ("Research AI").
+//   * The prompts require strict JSON and forbid fabricating data, p-values,
+//     results, or references.
+//   * All failure modes (missing key, invalid key, timeout, network error,
+//     rate limit, non-JSON, empty response) are mapped to friendly, key-free
+//     ResearchAiException messages — the service never crashes the app.
+// ---------------------------------------------------------------------------
+public sealed class DevelopmentZaiResearchAiService : IResearchAiService
+{
+    private static readonly HttpClient Http = new();
+    private readonly Func<ResearchAiOptions> _options;
+    private readonly Func<ZaiDevCredentials> _credentials;
+    private readonly ResearchRecommendationParser _parser = new();
+
+    public DevelopmentZaiResearchAiService(Func<ResearchAiOptions> options, Func<ZaiDevCredentials> credentials)
+    {
+        _options = options;
+        _credentials = credentials;
+    }
+
+    public bool IsConfigured => _credentials().HasKey;
+
+    public async Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
+    {
+        string text = await CompleteAsync(RecommendationsSystemPrompt, BuildRecommendationsUserPrompt(project), cancellationToken);
+
+        if (!_parser.TryParseRecommendations(text, out var rec) || !rec.HasStructuredContent)
+            throw new ResearchAiException("The Research AI response could not be read as recommendations.");
+
+        rec.SourceMode = ResearchSourceMode.AiGenerated;
+        return rec;
+    }
+
+    public async Task<ResearchProposalDraft> GenerateProposalDraftAsync(ResearchProject project, ResearchRecommendations? recommendations, CancellationToken cancellationToken)
+    {
+        string text = await CompleteAsync(ProposalSystemPrompt, BuildProposalUserPrompt(project, recommendations), cancellationToken);
+
+        if (!_parser.TryParseProposal(text, out var draft))
+            throw new ResearchAiException("The Research AI response could not be read as a proposal draft.");
+
+        draft.SourceMode = ResearchSourceMode.AiGenerated;
+        draft.IsTemplateGenerated = false;
+        return draft;
+    }
+
+    private async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken)
+    {
+        var creds = _credentials();
+        if (!creds.HasKey)
+            throw new ResearchAiException("No AI provider key is available. Add your API key in AI Settings, then try again.");
+
+        var opts = _options();
+        string baseUrl = string.IsNullOrWhiteSpace(creds.BaseUrl)
+            ? "https://api.z.ai/api/paas/v4"
+            : creds.BaseUrl.Trim().TrimEnd('/');
+        string model = string.IsNullOrWhiteSpace(creds.Model) ? "GLM-4.7-FlashX" : creds.Model.Trim();
+
+        var body = new
+        {
+            model,
+            messages = new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            temperature = 0.2,
+            max_tokens = 4000,
+            stream = false
+        };
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(opts.TimeoutSeconds, 5, 300)));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
+        // The key is attached only to the outgoing request header — never logged.
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", creds.ApiKey.Trim());
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        string json;
+        try
+        {
+            response = await Http.SendAsync(request, cts.Token);
+            json = await response.Content.ReadAsStringAsync(cts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new ResearchAiException("The Research AI request timed out. Please try again.");
+        }
+        catch (HttpRequestException)
+        {
+            throw new ResearchAiException("Could not reach the Research AI service. Check your connection and try again.");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // Map common statuses to friendly, key-free messages. The raw
+            // provider body is intentionally NOT included (it can echo details).
+            throw new ResearchAiException((int)response.StatusCode switch
+            {
+                401 or 403 => "The Research AI provider rejected the request. Check your API key in AI Settings.",
+                429 => "The Research AI provider is busy (rate limited). Wait a moment and try again.",
+                >= 500 => "The Research AI provider had a server error. Please try again shortly.",
+                _ => "The Research AI provider returned an error. Please try again."
+            });
+        }
+
+        string content = ExtractContent(json);
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ResearchAiException("The Research AI service returned an empty response. Please try again.");
+
+        return content;
+    }
+
+    // Reads choices[0].message.content from a standard chat-completions body.
+    private static string ExtractContent(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("choices", out var choices)
+                && choices.ValueKind == JsonValueKind.Array
+                && choices.GetArrayLength() > 0)
+            {
+                var first = choices[0];
+                if (first.TryGetProperty("message", out var message)
+                    && message.TryGetProperty("content", out var contentEl)
+                    && contentEl.ValueKind == JsonValueKind.String)
+                {
+                    return contentEl.GetString()?.Trim() ?? "";
+                }
+            }
+        }
+        catch
+        {
+            // Non-JSON / unexpected envelope — nothing usable.
+        }
+        return "";
+    }
+
+    // ---- Prompts: strict JSON only, no fabricated data/results/references ----
+
+    private const string SafetyRules =
+        "Safety rules you must follow: do NOT fabricate data, results, numbers, " +
+        "p-values, sample sizes, or statistics; do NOT invent references or " +
+        "citations; do NOT report findings for a study that has not been run. " +
+        "This is methodological guidance only. If required information is " +
+        "missing, state what the student needs to provide in the relevant field " +
+        "instead of guessing. Return ONLY one valid JSON object — no markdown, " +
+        "no code fences, no commentary before or after the JSON.";
+
+    private const string RecommendationsSystemPrompt =
+        "You are a research methodology assistant for medical and university " +
+        "students. " + SafetyRules + "\n\n" +
+        "Use exactly this JSON shape (include every field; use empty strings or " +
+        "empty arrays where a value genuinely does not apply):\n" +
+        "{\n" +
+        "  \"refinedTitle\": \"string\",\n" +
+        "  \"studyDesign\": \"string\",\n" +
+        "  \"researchQuestion\": \"string\",\n" +
+        "  \"primaryObjective\": \"string\",\n" +
+        "  \"secondaryObjectives\": [\"string\"],\n" +
+        "  \"variables\": [{\"name\":\"string\",\"label\":\"string\",\"type\":\"string\",\"role\":\"string\",\"coding\":\"string\",\"notes\":\"string\"}],\n" +
+        "  \"analyses\": [{\"name\":\"string\",\"whenToUse\":\"string\",\"variablesNeeded\":\"string\",\"outputExpected\":\"string\",\"notes\":\"string\"}],\n" +
+        "  \"inclusionCriteria\": [\"string\"],\n" +
+        "  \"exclusionCriteria\": [\"string\"],\n" +
+        "  \"dataCollection\": [\"string\"],\n" +
+        "  \"biasAndLimitations\": [\"string\"],\n" +
+        "  \"ethicsNotes\": [\"string\"],\n" +
+        "  \"nextSteps\": [\"string\"]\n" +
+        "}";
+
+    private const string ProposalSystemPrompt =
+        "You are drafting a research PROPOSAL (protocol) for a medical or " +
+        "university student. The study has NOT been conducted yet. " + SafetyRules +
+        " The statisticalAnalysisPlan field must describe planned analyses only " +
+        "and must not contain any results.\n\n" +
+        "Use exactly this JSON shape (all values are strings; use \"\" where a " +
+        "value genuinely does not apply):\n" +
+        "{\n" +
+        "  \"title\": \"string\",\n" +
+        "  \"background\": \"string\",\n" +
+        "  \"rationale\": \"string\",\n" +
+        "  \"aim\": \"string\",\n" +
+        "  \"objectives\": \"string\",\n" +
+        "  \"methods\": \"string\",\n" +
+        "  \"studyDesign\": \"string\",\n" +
+        "  \"setting\": \"string\",\n" +
+        "  \"population\": \"string\",\n" +
+        "  \"inclusionCriteria\": \"string\",\n" +
+        "  \"exclusionCriteria\": \"string\",\n" +
+        "  \"variables\": \"string\",\n" +
+        "  \"dataCollection\": \"string\",\n" +
+        "  \"statisticalAnalysisPlan\": \"string\",\n" +
+        "  \"ethics\": \"string\",\n" +
+        "  \"timeline\": \"string\",\n" +
+        "  \"limitations\": \"string\"\n" +
+        "}";
+
+    private static string BuildRecommendationsUserPrompt(ResearchProject p)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Produce methodological recommendations for this student research project.");
+        sb.AppendLine("Base everything only on the details below; where a detail is missing, say what is needed rather than inventing it.");
+        sb.AppendLine();
+        AppendProjectDetails(sb, p);
+        return sb.ToString();
+    }
+
+    private static string BuildProposalUserPrompt(ResearchProject p, ResearchRecommendations? rec)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Draft a research proposal (protocol) for this student research project.");
+        sb.AppendLine("Base everything only on the details below; where a detail is missing, say what is needed rather than inventing it.");
+        sb.AppendLine();
+        AppendProjectDetails(sb, p);
+
+        if (rec is not null && rec.HasStructuredContent)
+        {
+            sb.AppendLine();
+            sb.AppendLine("The student has already accepted these recommendations — stay consistent with them:");
+            if (!string.IsNullOrWhiteSpace(rec.RefinedResearchTitle)) sb.AppendLine("- Refined title: " + rec.RefinedResearchTitle);
+            if (!string.IsNullOrWhiteSpace(rec.RecommendedStudyDesign)) sb.AppendLine("- Study design: " + rec.RecommendedStudyDesign);
+            if (!string.IsNullOrWhiteSpace(rec.ResearchQuestion)) sb.AppendLine("- Research question: " + rec.ResearchQuestion);
+            if (!string.IsNullOrWhiteSpace(rec.PrimaryObjective)) sb.AppendLine("- Primary objective: " + rec.PrimaryObjective);
+            if (rec.SecondaryObjectives.Count > 0) sb.AppendLine("- Secondary objectives: " + string.Join("; ", rec.SecondaryObjectives));
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendProjectDetails(StringBuilder sb, ResearchProject p)
+    {
+        string V(string s) => string.IsNullOrWhiteSpace(s) ? "(not provided)" : s.Trim();
+        sb.AppendLine("Project details:");
+        sb.AppendLine("- Title: " + V(p.Title));
+        sb.AppendLine("- Specialty / field: " + V(p.Specialty));
+        sb.AppendLine("- Study type (student's idea): " + V(p.StudyType));
+        sb.AppendLine("- Aim: " + V(p.Aim));
+        sb.AppendLine("- Population: " + V(p.Population));
+        sb.AppendLine("- Setting: " + V(p.Setting));
+        sb.AppendLine("- Time period: " + V(p.TimePeriod));
+        sb.AppendLine("- Available data type: " + V(p.AvailableDataType));
+        sb.AppendLine("- Desired outputs: " + (p.DesiredOutputs.Count > 0 ? string.Join(", ", p.DesiredOutputs) : "(not provided)"));
+        sb.AppendLine("- Notes: " + V(p.Notes));
     }
 }
 

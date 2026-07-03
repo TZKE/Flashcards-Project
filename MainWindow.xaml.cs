@@ -179,7 +179,17 @@ public sealed partial class MainWindow : Window
         LoadDecks();
         LoadResearch();
         LoadResearchAiConfig();
-        _researchAi = new ResearchAiService(() => _researchAiOptions);
+        // The development provider (dev-only) reuses the API key the user already
+        // saved for flashcards. It is read live and never modified, logged, or
+        // shown. In production the app uses the backend endpoint instead.
+        _researchAi = new ResearchAiService(
+            () => _researchAiOptions,
+            () => new ZaiDevCredentials
+            {
+                ApiKey = _settings.ApiKey,
+                BaseUrl = _settings.BaseUrl,
+                Model = _settings.Model
+            });
         PopulateResearchAiSettings();
         EnsureDefaultDeck();
         SetupCombos();
@@ -2405,7 +2415,7 @@ public sealed partial class MainWindow : Window
         AiRecError.Visibility = Visibility.Collapsed;
         AiRecNotConfigured.Visibility = Visibility.Collapsed;
         GenerateRecBtn.IsEnabled = false;
-        ShowLoading("Research AI is analyzing your project…");
+        ShowLoading("Research AI is analyzing your project...");
 
         try
         {
@@ -2418,20 +2428,20 @@ public sealed partial class MainWindow : Window
             PopulatePlanEditor(p);
             UpdateOverviewProgress(p);
             UpdateGenerateRecButton(p);
-            ShowToast("AI recommendations generated. Review them below.");
+            ShowToast("Recommendations generated successfully.");
         }
         catch (ResearchAiNotConfiguredException)
         {
             ShowResearchAiNotConfigured();
             ShowToast("Research AI service is not configured yet.");
         }
-        catch (ResearchAiException ex)
+        catch (ResearchAiException)
         {
-            ShowAiRecError(ex.Message);
+            ShowAiRecError("Research AI could not generate recommendations. Check your Research AI settings and try again.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowAiRecError("Something went wrong while generating recommendations: " + ex.Message);
+            ShowAiRecError("Research AI could not generate recommendations. Check your Research AI settings and try again.");
         }
         finally
         {
@@ -2580,7 +2590,7 @@ public sealed partial class MainWindow : Window
         ProposalError.Visibility = Visibility.Collapsed;
         ProposalNotConfigured.Visibility = Visibility.Collapsed;
         GenerateProposalBtn.IsEnabled = false;
-        ShowLoading("Research AI is drafting your proposal…");
+        ShowLoading("Research AI is drafting your proposal...");
 
         try
         {
@@ -2594,20 +2604,20 @@ public sealed partial class MainWindow : Window
             PopulateProposalEditor(p);
             PopulateOverview(p);
             UpdateOverviewProgress(p);
-            ShowToast("Proposal draft generated. Review and edit it below.");
+            ShowToast("Proposal draft generated successfully.");
         }
         catch (ResearchAiNotConfiguredException)
         {
             ShowProposalNotConfigured();
             ShowToast("Research AI service is not configured yet.");
         }
-        catch (ResearchAiException ex)
+        catch (ResearchAiException)
         {
-            ShowProposalError(ex.Message);
+            ShowProposalError("Research AI could not generate the proposal draft. Check your Research AI settings and try again.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ShowProposalError("Something went wrong while drafting the proposal: " + ex.Message);
+            ShowProposalError("Research AI could not generate the proposal draft. Check your Research AI settings and try again.");
         }
         finally
         {
@@ -2860,6 +2870,7 @@ public sealed partial class MainWindow : Window
         RaiEndpointBox.Text = _researchAiOptions.EndpointBaseUrl;
         RaiTimeoutBox.Text = _researchAiOptions.TimeoutSeconds.ToString();
         RaiMockToggle.IsChecked = _researchAiOptions.UseDevelopmentMock;
+        RaiDevProviderToggle.IsChecked = _researchAiOptions.UseDevelopmentZaiProvider;
     }
 
     private void SaveResearchAiConfig_Click(object sender, RoutedEventArgs e)
@@ -2872,6 +2883,7 @@ public sealed partial class MainWindow : Window
             _researchAiOptions.TimeoutSeconds = 60;
 
         _researchAiOptions.UseDevelopmentMock = RaiMockToggle.IsChecked == true;
+        _researchAiOptions.UseDevelopmentZaiProvider = RaiDevProviderToggle.IsChecked == true;
 
         SaveResearchAiConfig();
         PopulateResearchAiSettings();

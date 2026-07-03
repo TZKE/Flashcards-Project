@@ -1405,7 +1405,18 @@
                                             </StackPanel>
                                         </Grid>
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <!-- Development-only. Provider-neutral by design: no provider name is shown.
+                                             When enabled, in-app generation reuses the API key already saved in the
+                                             flashcard AI Settings; no key is stored in this card. Production uses the
+                                             backend endpoint above instead. -->
+                                        <StackPanel Margin="0,4,0,0">
+                                            <CheckBox x:Name="RaiDevProviderToggle"
+                                                      Content="Use connected AI provider for development testing (uses your saved AI provider key)"/>
+                                            <TextBlock Text="For local development and testing only. Reuses the API key you already saved in AI Settings — no key is stored here. In production, Research AI uses the backend endpoint above."
+                                                       Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="26,4,0,0"/>
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                                             <Button Content="Save Research AI Settings" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="SaveResearchAiConfig_Click" Width="230"/>
                                         </StackPanel>
 
