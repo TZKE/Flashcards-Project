@@ -8,8 +8,11 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace AIFlashcardMaker;
 
@@ -32,6 +35,10 @@ public sealed class Flashcard
 
     public int ReviewCount => AgainCount + HardCount + GoodCount + EasyCount;
 
+    // UI-only display helpers (single-line previews for list templates).
+    public string FrontLine => Front.Replace("\r", " ").Replace("\n", " ").Trim();
+    public string BackLine => Back.Replace("\r", " ").Replace("\n", " ").Trim();
+
     public override string ToString()
     {
         string preview = Front.Replace("\r", " ").Replace("\n", " ");
@@ -46,6 +53,13 @@ public sealed class StudyDeck
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime LastStudiedAt { get; set; } = DateTime.MinValue;
     public List<Flashcard> Cards { get; set; } = new();
+
+    // UI-only display helpers for the deck library list template.
+    public int DueCount => Cards.Count(c => c.DueAt <= DateTime.UtcNow);
+    public string CardsLabel => $"{Cards.Count} cards • {DueCount} due";
+    public string LastStudiedLabel => LastStudiedAt == DateTime.MinValue
+        ? "Not studied yet"
+        : $"Last studied {LastStudiedAt.ToLocalTime():MMM d, HH:mm}";
 
     public override string ToString()
     {
@@ -120,13 +134,22 @@ public sealed partial class MainWindow : Window
 
     private readonly List<Flashcard> _studyQueue = new();
     private int _studyIndex = -1;
+    private int _studySessionTotal;
     private bool _answerShown;
     private bool _suppressSelection;
+
+    private readonly Dictionary<UIElement, Button> _navMap = new();
 
     public MainWindow()
     {
         InitializeComponent();
 
+        // Never open larger than the usable screen area (keeps the window on
+        // small laptops and clear of the taskbar).
+        Width = Math.Min(Width, SystemParameters.WorkArea.Width);
+        Height = Math.Min(Height, SystemParameters.WorkArea.Height);
+
+        BuildNavMap();
         InitializeGifAnimations();
 
         Directory.CreateDirectory(dataDir);
@@ -190,8 +213,34 @@ public sealed partial class MainWindow : Window
         page.Visibility = Visibility.Visible;
 
         FadeIn(page, 180);
+        SetActiveNav(page);
 
         RefreshAll();
+    }
+
+    private void BuildNavMap()
+    {
+        _navMap[PageDashboard] = NavDashboard;
+        _navMap[PageGenerate] = NavGenerate;
+        _navMap[PageImport] = NavImport;
+        _navMap[PageDecks] = NavDecks;
+        _navMap[PageStudy] = NavStudy;
+        _navMap[PagePreview] = NavPreview;
+        _navMap[PageExport] = NavExport;
+        _navMap[PageSettings] = NavSettings;
+        _navMap[PageAccount] = NavAccount;
+    }
+
+    private void SetActiveNav(UIElement page)
+    {
+        var normal = (Style)FindResource("NavButton");
+        var active = (Style)FindResource("NavButtonActive");
+
+        foreach (var button in _navMap.Values)
+            button.Style = normal;
+
+        if (_navMap.TryGetValue(page, out var activeButton))
+            activeButton.Style = active;
     }
 
     private void Login_Click(object sender, RoutedEventArgs e)
@@ -201,7 +250,7 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
         {
-            MessageBox.Show("Enter email and password.");
+            ShowToast("Enter email and password.");
             return;
         }
 
@@ -210,19 +259,19 @@ public sealed partial class MainWindow : Window
 
         if (user is null)
         {
-            MessageBox.Show("Account not found.");
+            ShowToast("Account not found.");
             return;
         }
 
         if (user.PasswordHash != HashPassword(email, password))
         {
-            MessageBox.Show("Wrong password.");
+            ShowToast("Wrong password.");
             return;
         }
 
         if (DateTime.UtcNow > user.SubscriptionExpiresAt)
         {
-            MessageBox.Show("Your activation expired.");
+            ShowToast("Your activation expired.");
             return;
         }
 
@@ -238,19 +287,19 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
         {
-            MessageBox.Show("Enter a valid email.");
+            ShowToast("Enter a valid email.");
             return;
         }
 
         if (password.Length < 4)
         {
-            MessageBox.Show("Password must be at least 4 characters for this demo.");
+            ShowToast("Password must be at least 4 characters for this demo.");
             return;
         }
 
         if (_store.Accounts.Any(x => string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
-            MessageBox.Show("This email already has an account.");
+            ShowToast("This email already has an account.");
             return;
         }
 
@@ -258,13 +307,13 @@ public sealed partial class MainWindow : Window
 
         if (activation is null)
         {
-            MessageBox.Show("Invalid activation code.");
+            ShowToast("Invalid activation code.");
             return;
         }
 
         if (IsCodeUsed(code))
         {
-            MessageBox.Show("This activation code was already used.");
+            ShowToast("This activation code was already used.");
             return;
         }
 
@@ -298,6 +347,55 @@ public sealed partial class MainWindow : Window
     {
         _currentUser = null;
         ShowAuth();
+    }
+
+    // "Need access?" strip on the login tab jumps to the Create Account tab.
+    private void NeedAccess_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        AuthTabs.SelectedIndex = 1;
+        SignupEmailBox.Focus();
+    }
+
+    // Pressing Enter in any login field submits the login form.
+    private void LoginField_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            Login_Click(sender, e);
+        }
+    }
+
+    // Pressing Enter in any Create Account field submits the signup form.
+    private void SignupField_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            Signup_Click(sender, e);
+        }
+    }
+
+    // Left/Right arrow keys flip between cards on Preview/Edit — unless the user
+    // is actively typing in a text field, where arrows should move the caret.
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (PagePreview.Visibility != Visibility.Visible)
+            return;
+
+        if (System.Windows.Input.Keyboard.FocusedElement is TextBox)
+            return;
+
+        if (e.Key == System.Windows.Input.Key.Left)
+        {
+            NavigateCard(-1);
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Right)
+        {
+            NavigateCard(1);
+            e.Handled = true;
+        }
     }
 
     private void Dashboard_Click(object sender, RoutedEventArgs e) => ShowPage(PageDashboard);
@@ -344,7 +442,7 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(source))
         {
-            MessageBox.Show("Paste notes first.");
+            ShowToast("Paste notes first.");
             return;
         }
 
@@ -352,14 +450,14 @@ public sealed partial class MainWindow : Window
 
         if (deck is null)
         {
-            MessageBox.Show("Create or select a deck first.");
+            ShowToast("Create or select a deck first.");
             ShowPage(PageDecks);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(_settings.ApiKey))
         {
-            MessageBox.Show("Add your Z.ai API key in AI Settings first.");
+            ShowToast("Add your Z.ai API key in AI Settings first.");
             SettingsPage_Click(sender, e);
             return;
         }
@@ -377,7 +475,7 @@ public sealed partial class MainWindow : Window
             if (parsed.Count == 0)
             {
                 ImportBox.Text = aiText;
-                MessageBox.Show("Z.ai replied, but no cards were parsed. Response placed in Import JSON.");
+                ShowToast("Z.ai replied, but no cards were parsed. Response placed in Import JSON.");
                 ShowPage(PageImport);
                 return;
             }
@@ -396,13 +494,13 @@ public sealed partial class MainWindow : Window
             RefreshAll();
             UpdatePreview();
 
-            MessageBox.Show($"Generated {parsed.Count} cards into deck: {deck.Name}");
+            ShowToast($"Generated {parsed.Count} cards into deck: {deck.Name}");
             ShowPage(PagePreview);
             SetStatus($"Generated {parsed.Count} cards into {deck.Name}.");
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Generation failed:\n\n" + ex.Message);
+            ShowToast("Generation failed: " + ex.Message);
             SetStatus("Generation failed.");
         }
         finally
@@ -418,7 +516,7 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(source))
         {
-            MessageBox.Show("Paste notes first.");
+            ShowToast("Paste notes first.");
             return;
         }
 
@@ -431,7 +529,7 @@ public sealed partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(PromptBox.Text))
         {
-            MessageBox.Show("Create a prompt first.");
+            ShowToast("Create a prompt first.");
             return;
         }
 
@@ -447,7 +545,7 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            MessageBox.Show("Paste JSON first.");
+            ShowToast("Paste JSON first.");
             return;
         }
 
@@ -455,7 +553,7 @@ public sealed partial class MainWindow : Window
 
         if (deck is null)
         {
-            MessageBox.Show("Create or select a deck first.");
+            ShowToast("Create or select a deck first.");
             ShowPage(PageDecks);
             return;
         }
@@ -464,7 +562,7 @@ public sealed partial class MainWindow : Window
 
         if (parsed.Count == 0)
         {
-            MessageBox.Show("No cards found. Make sure the AI returned valid JSON with front/back/tags.");
+            ShowToast("No cards found. Make sure the AI returned valid JSON with front/back/tags.");
             return;
         }
 
@@ -482,7 +580,7 @@ public sealed partial class MainWindow : Window
         RefreshAll();
         UpdatePreview();
 
-        MessageBox.Show($"Imported {parsed.Count} cards into deck: {deck.Name}");
+        ShowToast($"Imported {parsed.Count} cards into deck: {deck.Name}");
         ShowPage(PagePreview);
         SetStatus($"Imported {parsed.Count} cards into {deck.Name}.");
     }
@@ -551,13 +649,13 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(name))
         {
-            MessageBox.Show("Enter a deck name first.");
+            ShowToast("Enter a deck name first.");
             return;
         }
 
         if (_deckStore.Decks.Any(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
-            MessageBox.Show("A deck with this name already exists.");
+            ShowToast("A deck with this name already exists.");
             return;
         }
 
@@ -576,7 +674,7 @@ public sealed partial class MainWindow : Window
         SaveDecks();
         RefreshAll();
 
-        MessageBox.Show($"Deck created: {deck.Name}");
+        ShowToast($"Deck created: {deck.Name}");
     }
 
     private void RenameDeck_Click(object sender, RoutedEventArgs e)
@@ -585,7 +683,7 @@ public sealed partial class MainWindow : Window
 
         if (deck is null)
         {
-            MessageBox.Show("Select a deck first.");
+            ShowToast("Select a deck first.");
             return;
         }
 
@@ -593,13 +691,13 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(name))
         {
-            MessageBox.Show("Type the new deck name in the box.");
+            ShowToast("Type the new deck name in the box.");
             return;
         }
 
         if (_deckStore.Decks.Any(d => d.Id != deck.Id && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
-            MessageBox.Show("Another deck already has this name.");
+            ShowToast("Another deck already has this name.");
             return;
         }
 
@@ -609,7 +707,7 @@ public sealed partial class MainWindow : Window
         SaveDecks();
         RefreshAll();
 
-        MessageBox.Show("Deck renamed.");
+        ShowToast("Deck renamed.");
     }
 
     private void DeleteDeck_Click(object sender, RoutedEventArgs e)
@@ -618,13 +716,13 @@ public sealed partial class MainWindow : Window
 
         if (deck is null)
         {
-            MessageBox.Show("Select a deck first.");
+            ShowToast("Select a deck first.");
             return;
         }
 
         if (_deckStore.Decks.Count <= 1)
         {
-            MessageBox.Show("You must keep at least one deck.");
+            ShowToast("You must keep at least one deck.");
             return;
         }
 
@@ -645,12 +743,41 @@ public sealed partial class MainWindow : Window
         SaveDecks();
         RefreshAll();
 
-        MessageBox.Show("Deck deleted.");
+        ShowToast("Deck deleted.");
     }
 
     private void SearchFilter_Changed(object sender, RoutedEventArgs e)
     {
         RefreshCardLists();
+    }
+
+    // Global top-bar search: mirror the query into the My Decks card filter so results
+    // are live, and jump to My Decks on Enter. Never mutates data, only filters.
+    private void TopSearch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_currentUser is null)
+            return;
+
+        // Setting SearchBox.Text raises SearchFilter_Changed, which refreshes the lists.
+        if (!string.Equals(SearchBox.Text, TopSearchBox.Text, StringComparison.Ordinal))
+            SearchBox.Text = TopSearchBox.Text;
+    }
+
+    private void TopSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Enter)
+            return;
+
+        if (string.IsNullOrWhiteSpace(TopSearchBox.Text))
+        {
+            ShowToast("Type something to search decks and cards.");
+            return;
+        }
+
+        SearchBox.Text = TopSearchBox.Text;
+        ShowPage(PageDecks);
+        RefreshCardLists();
+        SetStatus($"Showing cards matching “{TopSearchBox.Text.Trim()}”.");
     }
 
     private void DueOnly_Checked(object sender, RoutedEventArgs e)
@@ -674,7 +801,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        MessageBox.Show("Select a card first.");
+        ShowToast("Select a card first.");
     }
 
     private void DeleteSelected_Click(object sender, RoutedEventArgs e)
@@ -686,7 +813,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        MessageBox.Show("Select a card first.");
+        ShowToast("Select a card first.");
     }
 
     private void MoveSelected_Click(object sender, RoutedEventArgs e)
@@ -695,25 +822,25 @@ public sealed partial class MainWindow : Window
 
         if (sourceDeck is null)
         {
-            MessageBox.Show("Select a source deck first.");
+            ShowToast("Select a source deck first.");
             return;
         }
 
         if (CardsList.SelectedItem is not Flashcard card)
         {
-            MessageBox.Show("Select a card first.");
+            ShowToast("Select a card first.");
             return;
         }
 
         if (MoveDeckCombo.SelectedItem is not StudyDeck targetDeck)
         {
-            MessageBox.Show("Select target deck.");
+            ShowToast("Select target deck.");
             return;
         }
 
         if (targetDeck.Id == sourceDeck.Id)
         {
-            MessageBox.Show("This card is already in that deck.");
+            ShowToast("This card is already in that deck.");
             return;
         }
 
@@ -728,7 +855,7 @@ public sealed partial class MainWindow : Window
         RefreshAll();
         UpdatePreview();
 
-        MessageBox.Show($"Moved card to {targetDeck.Name}.");
+        ShowToast($"Moved card to {targetDeck.Name}.");
     }
 
     private void Previous_Click(object sender, RoutedEventArgs e) => NavigateCard(-1);
@@ -751,13 +878,13 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            MessageBox.Show("Selected deck has no cards.");
+            ShowToast("Selected deck has no cards.");
             return;
         }
 
         Clipboard.SetText(text);
         SetStatus("Selected deck copied.");
-        MessageBox.Show("Selected deck copied for Anki.");
+        ShowToast("Selected deck copied for Anki.");
     }
 
     private void CopyAllDecksToClipboard()
@@ -766,13 +893,13 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            MessageBox.Show("No cards to copy.");
+            ShowToast("No cards to copy.");
             return;
         }
 
         Clipboard.SetText(text);
         SetStatus("All decks copied.");
-        MessageBox.Show("All decks copied for Anki.");
+        ShowToast("All decks copied for Anki.");
     }
 
     private void ExportSelectedDeck_Click(object sender, RoutedEventArgs e)
@@ -783,7 +910,7 @@ public sealed partial class MainWindow : Window
 
         if (deck is null || deck.Cards.Count == 0)
         {
-            MessageBox.Show("Selected deck has no cards.");
+            ShowToast("Selected deck has no cards.");
             return;
         }
 
@@ -797,7 +924,7 @@ public sealed partial class MainWindow : Window
         if (sfd.ShowDialog() == true)
         {
             File.WriteAllText(sfd.FileName, GetDeckAnkiText(deck), Encoding.UTF8);
-            MessageBox.Show("Selected deck exported.");
+            ShowToast("Selected deck exported.");
         }
     }
 
@@ -809,7 +936,7 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            MessageBox.Show("No cards to export.");
+            ShowToast("No cards to export.");
             return;
         }
 
@@ -823,7 +950,7 @@ public sealed partial class MainWindow : Window
         if (sfd.ShowDialog() == true)
         {
             File.WriteAllText(sfd.FileName, text, Encoding.UTF8);
-            MessageBox.Show("All decks exported.");
+            ShowToast("All decks exported.");
         }
     }
 
@@ -835,11 +962,15 @@ public sealed partial class MainWindow : Window
         {
             _studyQueue.Clear();
             _studyIndex = -1;
+            _studySessionTotal = 0;
             StudyProgressText.Text = "No cards available.";
             StudyFrontText.Text = "Generate or import cards first.";
             StudyBackText.Text = "";
             StudyAnswerPanel.Visibility = Visibility.Collapsed;
+            StudyCompletePanel.Visibility = Visibility.Collapsed;
             StudyHintText.Text = "";
+            UpdateStudyProgress();
+            UpdateStudyButtons();
             return;
         }
 
@@ -859,7 +990,10 @@ public sealed partial class MainWindow : Window
             _studyQueue.AddRange(deck.Cards.OrderBy(c => c.CreatedAt));
 
         _studyIndex = 0;
+        _studySessionTotal = _studyQueue.Count;
         _answerShown = false;
+
+        StudyCompletePanel.Visibility = Visibility.Collapsed;
 
         SaveDecks();
         RefreshAll();
@@ -875,15 +1009,19 @@ public sealed partial class MainWindow : Window
             StudyBackText.Text = "";
             StudyAnswerPanel.Visibility = Visibility.Collapsed;
             StudyHintText.Text = "";
+            UpdateStudyProgress();
+            UpdateStudyButtons();
             return;
         }
 
         var card = _studyQueue[_studyIndex];
         var deck = GetActiveDeck();
 
+        int position = _studySessionTotal - _studyQueue.Count + 1;
+
         StudyProgressText.Text = deck is null
-            ? $"Card {_studyIndex + 1} / {_studyQueue.Count}"
-            : $"{deck.Name} • Card {_studyIndex + 1} / {_studyQueue.Count}";
+            ? $"Card {position} / {_studySessionTotal}"
+            : $"{deck.Name} • Card {position} / {_studySessionTotal}";
 
         StudyFrontText.Text = card.Front;
         StudyBackText.Text = card.Back;
@@ -892,6 +1030,77 @@ public sealed partial class MainWindow : Window
         StudyHintText.Text = _answerShown
             ? "Choose how well you knew it."
             : "Try to answer before showing the back.";
+
+        UpdateStudyProgress();
+        UpdateStudyButtons();
+
+        // Animate only when a fresh card front appears (start / next / previous),
+        // not when the answer is simply revealed on the same card.
+        if (!_answerShown)
+            AnimateStudyCardIn();
+    }
+
+    // Subtle fade + horizontal slide when moving between study cards.
+    private void AnimateStudyCardIn()
+    {
+        var slide = new TranslateTransform();
+        StudyCardSurface.RenderTransform = slide;
+
+        StudyCardSurface.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(240))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+
+        slide.BeginAnimation(TranslateTransform.XProperty,
+            new DoubleAnimation(24, 0, TimeSpan.FromMilliseconds(280))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+    }
+
+    // Gentle fade + downward slide when the answer is revealed.
+    private void AnimateStudyAnswerIn()
+    {
+        var slide = new TranslateTransform();
+        StudyAnswerPanel.RenderTransform = slide;
+
+        StudyAnswerPanel.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+
+        slide.BeginAnimation(TranslateTransform.YProperty,
+            new DoubleAnimation(14, 0, TimeSpan.FromMilliseconds(240))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+    }
+
+    private void UpdateStudyProgress()
+    {
+        double fraction = _studySessionTotal <= 0
+            ? 0
+            : (double)(_studySessionTotal - _studyQueue.Count) / _studySessionTotal;
+
+        if (fraction < 0) fraction = 0;
+        if (fraction > 1) fraction = 1;
+
+        StudyProgFilledCol.Width = new GridLength(fraction, GridUnitType.Star);
+        StudyProgEmptyCol.Width = new GridLength(1 - fraction, GridUnitType.Star);
+    }
+
+    private void UpdateStudyButtons()
+    {
+        bool hasCard = _studyIndex >= 0 && _studyIndex < _studyQueue.Count;
+        bool canRate = hasCard && _answerShown;
+
+        BtnShowAnswer.IsEnabled = hasCard && !_answerShown;
+        BtnAgain.IsEnabled = canRate;
+        BtnHard.IsEnabled = canRate;
+        BtnGood.IsEnabled = canRate;
+        BtnEasy.IsEnabled = canRate;
     }
 
     private void ShowAnswer_Click(object sender, RoutedEventArgs e)
@@ -901,6 +1110,7 @@ public sealed partial class MainWindow : Window
 
         _answerShown = true;
         ShowStudyCard();
+        AnimateStudyAnswerIn();
     }
 
     private void Again_Click(object sender, RoutedEventArgs e) => RateStudyCard("Again", TimeSpan.FromMinutes(10));
@@ -958,6 +1168,14 @@ public sealed partial class MainWindow : Window
             StudyAnswerPanel.Visibility = Visibility.Collapsed;
             StudyHintText.Text = "Go to Dashboard or Decks to continue.";
             _studyIndex = -1;
+
+            StudyCompleteSubtitle.Text = deck is null
+                ? $"You reviewed all {_studySessionTotal} cards in this session."
+                : $"You reviewed all {_studySessionTotal} due cards in {deck.Name}.";
+            StudyCompletePanel.Visibility = Visibility.Visible;
+
+            UpdateStudyProgress();
+            UpdateStudyButtons();
             RefreshAll();
             return;
         }
@@ -998,7 +1216,7 @@ public sealed partial class MainWindow : Window
             : BaseUrlBox.Text.Trim().TrimEnd('/');
 
         SaveSettings();
-        MessageBox.Show("AI settings saved locally.");
+        ShowToast("AI settings saved locally.");
         SetStatus("AI settings saved.");
     }
 
@@ -1019,13 +1237,13 @@ public sealed partial class MainWindow : Window
 
         if (activation is null)
         {
-            MessageBox.Show("Invalid activation code.");
+            ShowToast("Invalid activation code.");
             return;
         }
 
         if (IsCodeUsed(code))
         {
-            MessageBox.Show("This activation code was already used.");
+            ShowToast("This activation code was already used.");
             return;
         }
 
@@ -1056,7 +1274,7 @@ public sealed partial class MainWindow : Window
         RefreshAccountPage();
         UserSummaryText.Text = GetAccountSummary();
 
-        MessageBox.Show("Activation applied.");
+        ShowToast("Activation applied.");
     }
 
     private string BuildPrompt(string source)
@@ -1478,9 +1696,9 @@ public sealed partial class MainWindow : Window
 
     private void RefreshAccountPage()
     {
-        AccountEmailText.Text = "Email: " + (_currentUser?.Email ?? "");
-        AccountPlanText.Text = "Plan: " + (_currentUser?.Plan ?? "");
-        AccountExpiryText.Text = "Expires: " + FormatExpiry(_currentUser?.SubscriptionExpiresAt ?? DateTime.UtcNow);
+        AccountEmailText.Text = string.IsNullOrWhiteSpace(_currentUser?.Email) ? "—" : _currentUser!.Email;
+        AccountPlanText.Text = string.IsNullOrWhiteSpace(_currentUser?.Plan) ? "—" : _currentUser!.Plan;
+        AccountExpiryText.Text = FormatExpiry(_currentUser?.SubscriptionExpiresAt ?? DateTime.UtcNow);
     }
 
     private void RefreshExportPreview()
@@ -1520,7 +1738,7 @@ public sealed partial class MainWindow : Window
 
         if (deck is null || deck.Cards.Count == 0)
         {
-            MessageBox.Show("No cards in selected deck.");
+            ShowToast("No cards in selected deck.");
             return;
         }
 
@@ -1573,7 +1791,7 @@ public sealed partial class MainWindow : Window
 
         if (deck is null || card is null)
         {
-            MessageBox.Show("No card selected.");
+            ShowToast("No card selected.");
             return;
         }
 
@@ -1608,7 +1826,7 @@ public sealed partial class MainWindow : Window
 
         if (card is null)
         {
-            MessageBox.Show("No card selected.");
+            ShowToast("No card selected.");
             return;
         }
 
@@ -1940,18 +2158,14 @@ public sealed partial class MainWindow : Window
 
     private void InitializeGifAnimations()
     {
-        AnimateGif(AuthStudyGif, "Study.gif", 85);
-        AnimateGif(AuthSuccessGif, "Success.gif", 85);
-
         AnimateGif(SidebarStreakGif, "streakfire.gif", 85);
         AnimateGif(DashboardStudyGif, "Study.gif", 85);
         AnimateGif(DashboardStreakGif, "streakfire.gif", 85);
         AnimateGif(DashboardSuccessGif, "Success.gif", 85);
 
-        AnimateGif(GenerateLoadingGif, "Loading.gif", 75);
         AnimateGif(ImportUploadGif, "Upload.gif", 85);
-        AnimateGif(ExportDownloadGif, "exportdownload.gif", 85);
         AnimateGif(LoadingGifImage, "Loading.gif", 75);
+        AnimateGif(StudyCompleteGif, "Success.gif", 85);
     }
 
     private static void AnimateGif(Image image, string fileName, int frameMilliseconds)
@@ -2001,5 +2215,115 @@ public sealed partial class MainWindow : Window
     private void SetStatus(string message)
     {
         StatusText.Text = message;
+    }
+
+    private enum ToastKind { Info, Success, Error }
+
+    private void ShowToast(string message)
+    {
+        // Keep the status bar in sync so nothing is lost if a toast is missed.
+        SetStatus(message);
+
+        try
+        {
+            ToastKind kind = InferToastKind(message);
+
+            Brush accent = kind switch
+            {
+                ToastKind.Success => (Brush)FindResource("SuccessBrush"),
+                ToastKind.Error => (Brush)FindResource("DangerBrush"),
+                _ => (Brush)FindResource("PrimaryBrush")
+            };
+
+            var accentBar = new Border
+            {
+                Width = 4,
+                CornerRadius = new CornerRadius(2),
+                Background = accent,
+                Margin = new Thickness(0, 0, 12, 0)
+            };
+
+            var text = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("TextBrush"),
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(accentBar);
+            row.Children.Add(text);
+
+            var card = new Border
+            {
+                Background = (Brush)FindResource("CardBrush"),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16, 12, 16, 12),
+                Margin = new Thickness(0, 0, 0, 10),
+                MinWidth = 240,
+                MaxWidth = 380,
+                Child = row,
+                Effect = new DropShadowEffect
+                {
+                    Color = Color.FromRgb(0x56, 0x6A, 0x7F),
+                    BlurRadius = 18,
+                    ShadowDepth = 2,
+                    Opacity = 0.18
+                }
+            };
+
+            ToastHost.Children.Add(card);
+
+            card.Opacity = 0;
+            card.BeginAnimation(UIElement.OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.4) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+
+                var fade = new DoubleAnimation(card.Opacity, 0, TimeSpan.FromMilliseconds(220));
+                fade.Completed += (_, _) => ToastHost.Children.Remove(card);
+                card.BeginAnimation(UIElement.OpacityProperty, fade);
+            };
+            timer.Start();
+        }
+        catch
+        {
+            // Toasts are cosmetic; never let them break a user flow.
+        }
+    }
+
+    private static ToastKind InferToastKind(string message)
+    {
+        string m = message.ToLowerInvariant();
+
+        string[] errorWords =
+        {
+            "invalid", "wrong", "not found", "expired", "failed", "no cards",
+            "no more", "must ", "enter ", "select ", "paste ", "already",
+            " first", "valid email", "at least", "no deck", "no card"
+        };
+
+        foreach (var w in errorWords)
+            if (m.Contains(w))
+                return ToastKind.Error;
+
+        string[] successWords =
+        {
+            "created", "copied", "imported", "generated", "saved",
+            "exported", "renamed", "moved", "applied", "success",
+            "complete", "deleted"
+        };
+
+        foreach (var w in successWords)
+            if (m.Contains(w))
+                return ToastKind.Success;
+
+        return ToastKind.Info;
     }
 }

@@ -8,11 +8,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AI-Flashcard-Maker</AssemblyName>
     <Version>7.4.0</Version>
+    <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <None Remove="Assets\Animations\*.gif" />
     <Resource Include="Assets\Animations\*.gif" />
+    <Resource Include="Assets\appicon.ico" />
   </ItemGroup>
 
 </Project>
