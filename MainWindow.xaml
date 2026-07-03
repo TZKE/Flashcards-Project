@@ -1790,35 +1790,59 @@
                                     </Border>
 
                                     <StackPanel Grid.Column="2">
+                                        <!-- Phase status -->
+                                        <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,0,0,16">
+                                            <StackPanel>
+                                                <TextBlock Text="Phase status" Style="{StaticResource SectionHeader}" Margin="0,0,0,14"/>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Recommendations" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" x:Name="OvRecStatus" Text="Not started" Foreground="{StaticResource MutedBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Research plan" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" x:Name="OvPlanStatus" Text="Not started" Foreground="{StaticResource MutedBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Proposal draft" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" x:Name="OvProposalStatus" Text="Not started" Foreground="{StaticResource MutedBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
                                         <Border Style="{StaticResource CardBorder}" Padding="22">
                                             <StackPanel>
                                                 <TextBlock Text="Progress checklist" Style="{StaticResource SectionHeader}" Margin="0,0,0,16"/>
 
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                                    <Border Width="22" Height="22" CornerRadius="11" Background="{StaticResource SuccessBrush}" VerticalAlignment="Center">
-                                                        <Path Data="{StaticResource IconCheck}" Fill="White" Width="11" Height="11" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <TextBlock Text="Project created" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <Border x:Name="ChkCreatedIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkCreatedText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Research question — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <Border x:Name="ChkRecIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkRecText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Proposal — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <Border x:Name="ChkPlanIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkPlanText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Data extraction — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <Border x:Name="ChkProposalIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkProposalText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Statistics — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <Border x:Name="ChkDataIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkDataText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Border x:Name="ChkStatsIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkStatsText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal">
-                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="Manuscript — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                    <Border x:Name="ChkManuscriptIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="ChkManuscriptText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                             </StackPanel>
                                         </Border>
@@ -1826,7 +1850,7 @@
                                         <Border Style="{StaticResource CardBorder}" Background="{StaticResource PrimarySoftBrush}" BorderBrush="{StaticResource PrimarySoftBrush}" Padding="20" Margin="0,16,0,0">
                                             <StackPanel>
                                                 <TextBlock Text="Next best step" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="15"/>
-                                                <TextBlock Text="Next: review your project details. AI recommendations and proposal generation will be added in the next phase."
+                                                <TextBlock x:Name="DashNextStepText" Text="Next: generate or import AI recommendations."
                                                            Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                             </StackPanel>
                                         </Border>
@@ -1834,38 +1858,367 @@
                                 </Grid>
 
                                 <!-- PROPOSAL -->
-                                <Border x:Name="TabProposal" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
-                                    <StackPanel MaxWidth="760">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
-                                                <Path Data="{StaticResource IconEdit}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Proposal" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                <StackPanel x:Name="TabProposal" Visibility="Collapsed" MaxWidth="960" HorizontalAlignment="Left">
+
+                                    <!-- Header -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                            <Path Data="{StaticResource IconEdit}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Proposal" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Build a structured proposal draft from your project and accepted recommendations." Style="{StaticResource Caption}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Safety notice -->
+                                    <Border Background="#FFF7ED" BorderBrush="#F5C98A" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,0,0,16">
+                                        <TextBlock Text="Do not submit AI-generated text without supervisor review. Verify all references, ethics requirements, methods, and statistical plans. This tool does not write Results or Discussion, and never adds citations."
+                                                   Foreground="#9A5B12" FontSize="12.5" TextWrapping="Wrap"/>
+                                    </Border>
+
+                                    <!-- Generate / manual workflow -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <TextBlock Text="Create a draft" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Option A — build an offline template from your project. Option B — copy a Claude prompt, then paste the response back to import."
+                                                       Style="{StaticResource Caption}" Margin="0,4,0,14" TextWrapping="Wrap"/>
+
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Content="Generate Proposal Draft" Style="{StaticResource PremiumButton}" Click="GenerateProposalDraft_Click"/>
+                                                <Button Style="{StaticResource SoftButton}" Margin="10,0,0,0" Click="CopyProposalPrompt_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconCopy}" Fill="{StaticResource PrimaryBrush}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="Copy Proposal Prompt" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+
+                                            <TextBlock Text="Paste Claude proposal response here" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,6"/>
+                                            <TextBox x:Name="ProposalPasteBox" Style="{StaticResource EditorTextBox}" MinHeight="120" MaxHeight="220"
+                                                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"
+                                                     local:Watermark.Text="Paste Claude's proposal response (including the JSON block) here, then click Import Proposal Draft."/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                                <Button Content="Import Proposal Draft" Style="{StaticResource PremiumButton}" Click="ImportProposalDraft_Click"/>
+                                                <Button Content="Clear" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="ClearProposalPaste_Click"/>
                                             </StackPanel>
                                         </StackPanel>
-                                        <TextBlock Text="AI proposal builder will be available in the next phase."
-                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
-                                    </StackPanel>
-                                </Border>
+                                    </Border>
+
+                                    <!-- Editable proposal sections -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="26">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Text="Proposal sections" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+                                                <Border x:Name="PropTemplateBadge" Background="{StaticResource PrimarySoftBrush}" CornerRadius="8" Padding="10,4" Margin="12,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
+                                                    <TextBlock Text="Template draft — review and expand with real references" Foreground="{StaticResource PrimaryBrush}" FontSize="11.5" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="Edit any section, then save. Leave references for you to add and verify." Style="{StaticResource Caption}" Margin="0,2,0,4"/>
+
+                                            <TextBlock Text="Title" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropTitle" Style="{StaticResource EditorTextBox}"/>
+                                            <TextBlock Text="Background" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropBackground" Style="{StaticResource EditorTextBox}" MinHeight="80" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Rationale" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropRationale" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Aim" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropAim" Style="{StaticResource EditorTextBox}" MinHeight="60" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Study design" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropStudyDesign" Style="{StaticResource EditorTextBox}" MinHeight="60" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="Objectives" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropObjectives" Style="{StaticResource EditorTextBox}" MinHeight="80" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Methods" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropMethods" Style="{StaticResource EditorTextBox}" MinHeight="80" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Setting" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropSetting" Style="{StaticResource EditorTextBox}"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Population" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropPopulation" Style="{StaticResource EditorTextBox}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Inclusion criteria" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropInclusion" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Exclusion criteria" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropExclusion" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="Variables" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropVariables" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Data collection" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropDataCollection" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Statistical analysis plan" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropStatsPlan" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Ethics" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="PropEthics" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Timeline" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropTimeline" Style="{StaticResource EditorTextBox}" MinHeight="60" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Limitations" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="PropLimitations" Style="{StaticResource EditorTextBox}" MinHeight="60" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Border x:Name="PropRawCard" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}"
+                                                    BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,16,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock Text="Imported text (unstructured)" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                    <TextBox x:Name="PropRawText" Style="{StaticResource EditorTextBox}" MinHeight="120" MaxHeight="260"
+                                                             IsReadOnly="True" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Button Content="Save Proposal Draft" Style="{StaticResource PremiumButton}" Width="180" HorizontalAlignment="Left" Margin="0,18,0,0" Click="SaveProposal_Click"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                </StackPanel>
 
                                 <!-- AI RECOMMENDATIONS -->
-                                <Border x:Name="TabAiRec" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
-                                    <StackPanel MaxWidth="760">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
-                                                <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="AI Recommendations" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                <StackPanel x:Name="TabAiRec" Visibility="Collapsed" MaxWidth="960" HorizontalAlignment="Left">
+
+                                    <!-- Header -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                                        <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                            <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="AI Recommendations" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Get structured guidance for study design, objectives, variables, analyses, and next steps." Style="{StaticResource Caption}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- A. Project snapshot -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <TextBlock Text="Project snapshot" Style="{StaticResource SectionHeader}" Margin="0,0,0,16"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="TITLE" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapTitle" Foreground="{StaticResource TextBrush}" FontSize="13.5" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                                    <TextBlock Text="STUDY TYPE" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapStudyType" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                                    <TextBlock Text="POPULATION" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapPopulation" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                                    <TextBlock Text="AVAILABLE DATA" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapData" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="SPECIALTY" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapSpecialty" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                                    <TextBlock Text="AIM" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapAim" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,3,0,12"/>
+                                                    <TextBlock Text="SETTING" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock x:Name="AiSnapSetting" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- B + C. Generate prompt / paste response -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <TextBlock Text="Generate with Claude (manual)" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Copy a ready-made prompt, paste it into Claude, then paste the response back here. No API key is stored and no data leaves this app on its own."
+                                                       Style="{StaticResource Caption}" Margin="0,4,0,14" TextWrapping="Wrap"/>
+
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Style="{StaticResource PremiumButton}" Click="CopyClaudePrompt_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconCopy}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="Copy Claude Prompt" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Content="Generate offline draft (no AI)" Style="{StaticResource SoftButton}" Margin="10,0,0,0" Click="GenerateOfflineRec_Click"/>
+                                            </StackPanel>
+
+                                            <TextBlock Text="Paste Claude recommendations here" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,18,0,6"/>
+                                            <TextBox x:Name="AiPasteBox" Style="{StaticResource EditorTextBox}" MinHeight="130" MaxHeight="230"
+                                                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"
+                                                     local:Watermark.Text="Paste the full Claude response (including the JSON block) here, then click Import Recommendations."/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                                <Button Content="Import Recommendations" Style="{StaticResource PremiumButton}" Click="ImportRecommendations_Click"/>
+                                                <Button Content="Clear" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="ClearAiPaste_Click"/>
                                             </StackPanel>
                                         </StackPanel>
-                                        <TextBlock Text="AI recommendations will review your title, study type, form questions, variables, and goals to suggest the best research design, objectives, variables, and analyses in the next phase."
-                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
-                                    </StackPanel>
-                                </Border>
+                                    </Border>
+
+                                    <!-- D. Recommendations viewer -->
+                                    <Border x:Name="AiRecEmptyHint" Style="{StaticResource SoftCardBorder}" Padding="28" Margin="0,0,0,16">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="No recommendations yet" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Copy the Claude prompt and paste the response above, or generate an offline draft to get started."
+                                                       Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="440" Margin="0,6,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border x:Name="AiRecViewer" Style="{StaticResource CardBorder}" Padding="26" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Text="Recommendations" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+                                                <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="8" Padding="10,4" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="AiRecSourceBadge" Text="Imported" Foreground="{StaticResource PrimaryBrush}" FontSize="11.5" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </StackPanel>
+
+                                            <StackPanel x:Name="RecTitleSec" Margin="0,14,0,0">
+                                                <TextBlock Text="Refined research title" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,5"/>
+                                                <TextBlock x:Name="RecRefinedTitle" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecStudyDesignSec" Margin="0,14,0,0">
+                                                <TextBlock Text="Recommended study design" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,5"/>
+                                                <TextBlock x:Name="RecStudyDesign" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecQuestionSec" Margin="0,14,0,0">
+                                                <TextBlock Text="Research question" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,5"/>
+                                                <TextBlock x:Name="RecQuestion" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecPrimarySec" Margin="0,14,0,0">
+                                                <TextBlock Text="Primary objective" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,5"/>
+                                                <TextBlock x:Name="RecPrimaryObjective" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecSecondarySec" Margin="0,16,0,0">
+                                                <TextBlock Text="Secondary objectives" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecSecondaryList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecVariablesSec" Margin="0,16,0,0">
+                                                <TextBlock Text="Suggested variables" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecVariablesList" ItemTemplate="{StaticResource ResearchVariableTemplate}"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecAnalysesSec" Margin="0,6,0,0">
+                                                <TextBlock Text="Suggested analyses" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecAnalysesList" ItemTemplate="{StaticResource ResearchAnalysisTemplate}"/>
+                                            </StackPanel>
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel x:Name="RecInclusionSec" Grid.Column="0">
+                                                    <TextBlock Text="Inclusion criteria" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                    <ItemsControl x:Name="RecInclusionList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                                </StackPanel>
+                                                <StackPanel x:Name="RecExclusionSec" Grid.Column="2">
+                                                    <TextBlock Text="Exclusion criteria" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                    <ItemsControl x:Name="RecExclusionList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <StackPanel x:Name="RecDataCollectionSec" Margin="0,16,0,0">
+                                                <TextBlock Text="Data-collection suggestions" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecDataCollectionList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecBiasSec" Margin="0,16,0,0">
+                                                <TextBlock Text="Bias &amp; limitations" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecBiasList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecEthicsSec" Margin="0,16,0,0">
+                                                <TextBlock Text="Ethics notes" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecEthicsList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                            </StackPanel>
+                                            <StackPanel x:Name="RecNextStepsSec" Margin="0,16,0,0">
+                                                <TextBlock Text="Next steps" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                <ItemsControl x:Name="RecNextStepsList" ItemTemplate="{StaticResource ResearchBulletTemplate}"/>
+                                            </StackPanel>
+
+                                            <Border x:Name="RecRawCard" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}"
+                                                    BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,16,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock Text="Imported text (unstructured)" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="Bold" Margin="0,0,0,8"/>
+                                                    <TextBox x:Name="RecRawText" Style="{StaticResource EditorTextBox}" MinHeight="120" MaxHeight="260"
+                                                             IsReadOnly="True" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Padding="16" Margin="0,20,0,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="Happy with these? Accept them to build your editable research plan below."
+                                                               Foreground="{StaticResource PrimaryBrush}" FontSize="13" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                                    <Button Grid.Column="1" x:Name="AcceptRecBtn" Content="Accept Recommendations Into Plan"
+                                                            Style="{StaticResource PremiumButton}" VerticalAlignment="Center" Click="AcceptRecommendations_Click"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 4. Research Plan Summary -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,0,0,4">
+                                        <StackPanel>
+                                            <TextBlock Text="Research Plan Summary" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Your editable plan. Edit freely — nothing here is overwritten automatically." Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+
+                                            <Border x:Name="PlanEmptyHint" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}"
+                                                    BorderThickness="1" CornerRadius="10" Padding="20" Margin="0,14,0,0">
+                                                <TextBlock Text="Generate or import recommendations first, then accept them to build a structured research plan."
+                                                           Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" TextAlignment="Center"/>
+                                            </Border>
+
+                                            <StackPanel x:Name="PlanEditor" Margin="0,16,0,0" Visibility="Collapsed">
+                                                <TextBlock Text="Final title" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanTitle" Style="{StaticResource EditorTextBox}"/>
+                                                <TextBlock Text="Research question" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanQuestion" Style="{StaticResource EditorTextBox}" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Study design" Style="{StaticResource RpFieldLabel}"/>
+                                                        <TextBox x:Name="PlanDesign" Style="{StaticResource EditorTextBox}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Aim" Style="{StaticResource RpFieldLabel}"/>
+                                                        <TextBox x:Name="PlanAim" Style="{StaticResource EditorTextBox}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Text="Primary objective" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanPrimaryObj" Style="{StaticResource EditorTextBox}" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Secondary objectives (one per line)" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanSecondaryObj" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <Grid Margin="0,2,0,0">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Population" Style="{StaticResource RpFieldLabel}"/>
+                                                        <TextBox x:Name="PlanPopulation" Style="{StaticResource EditorTextBox}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Setting" Style="{StaticResource RpFieldLabel}"/>
+                                                        <TextBox x:Name="PlanSetting" Style="{StaticResource EditorTextBox}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Text="Inclusion criteria (one per line)" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanInclusion" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Exclusion criteria (one per line)" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanExclusion" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Main variables (one per line)" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanVariables" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Suggested analyses (one per line)" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanAnalyses" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Next steps (one per line)" Style="{StaticResource RpFieldLabel}"/>
+                                                <TextBox x:Name="PlanNextSteps" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+
+                                                <Button Content="Save Research Plan" Style="{StaticResource PremiumButton}" Width="180" HorizontalAlignment="Left" Margin="0,16,0,0" Click="SaveResearchPlan_Click"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                </StackPanel>
 
                                 <!-- DATA EXTRACTION -->
                                 <Border x:Name="TabDataExt" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">

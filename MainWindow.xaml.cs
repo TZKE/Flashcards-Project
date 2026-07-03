@@ -135,6 +135,13 @@ public sealed partial class MainWindow : Window
     private string _openResearchId = "";
     private string _pendingDeleteResearchId = "";
 
+    // Research Lab (Phase 2) — service abstractions. These are local-only: no
+    // network calls and no API keys. A real backend/proxy can replace the
+    // offline service later without touching the UI.
+    private readonly IResearchPromptBuilder _researchPromptBuilder = new ResearchPromptBuilder();
+    private readonly IResearchRecommendationParser _researchParser = new ResearchRecommendationParser();
+    private readonly IResearchAiService _offlineResearchAi = new OfflineResearchAiService();
+
     private LocalAccount? _currentUser;
     private string _activeDeckId = "";
     private string _currentCardId = "";
@@ -2247,13 +2254,27 @@ public sealed partial class MainWindow : Window
     private void OpenProject(ResearchProject project)
     {
         _openResearchId = project.Id;
+
         PopulateOverview(project);
         DashNotesBox.Text = project.Notes;
+
+        PopulateAiSnapshot(project);
+        RenderRecommendations(project.Recommendations);
+        PopulatePlanEditor(project);
+        PopulateProposalEditor(project);
+        UpdateOverviewProgress(project);
+
+        // Clear paste boxes so one project's paste never leaks into another.
+        AiPasteBox.Text = "";
+        ProposalPasteBox.Text = "";
 
         // Always land on Overview when a project opens.
         SwitchResearchTab(SegOverview);
         ShowPage(PageResearchDashboard);
     }
+
+    private ResearchProject? CurrentResearchProject()
+        => _researchData.Projects.FirstOrDefault(p => p.Id == _openResearchId);
 
     private void PopulateOverview(ResearchProject p)
     {
@@ -2268,6 +2289,17 @@ public sealed partial class MainWindow : Window
         OvSetting.Text = string.IsNullOrWhiteSpace(p.Setting) ? "—" : p.Setting;
         OvTimePeriod.Text = string.IsNullOrWhiteSpace(p.TimePeriod) ? "—" : p.TimePeriod;
         OvStage.Text = p.StageDisplay;
+    }
+
+    private void PopulateAiSnapshot(ResearchProject p)
+    {
+        AiSnapTitle.Text = string.IsNullOrWhiteSpace(p.Title) ? "—" : p.Title;
+        AiSnapSpecialty.Text = p.SpecialtyDisplay;
+        AiSnapStudyType.Text = p.StudyTypeDisplay;
+        AiSnapAim.Text = string.IsNullOrWhiteSpace(p.Aim) ? "—" : p.Aim;
+        AiSnapPopulation.Text = string.IsNullOrWhiteSpace(p.Population) ? "—" : p.Population;
+        AiSnapSetting.Text = string.IsNullOrWhiteSpace(p.Setting) ? "—" : p.Setting;
+        AiSnapData.Text = string.IsNullOrWhiteSpace(p.AvailableDataType) ? "—" : p.AvailableDataType;
     }
 
     private void DeleteProject_Click(object sender, RoutedEventArgs e)
@@ -2343,6 +2375,466 @@ public sealed partial class MainWindow : Window
     {
         RefreshResearchProjects();
         ShowPage(PageResearch);
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 2) — AI recommendations, research plan, proposal.
+    //
+    // Everything here is local. There are NO network calls and NO API keys.
+    // The two supported modes are:
+    //   • Manual Claude — build a prompt, the user pastes it into Claude, then
+    //     pastes the reply back for local parsing.
+    //   • Offline draft — a clearly-labelled deterministic starting point built
+    //     only from the project's own fields (never presented as real AI).
+    // =====================================================================
+
+    // ---- AI Recommendations: prompt / generate / import -------------------
+
+    private void CopyClaudePrompt_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        string prompt = _researchPromptBuilder.BuildRecommendationsPrompt(p);
+        if (CopyToClipboardSafe(prompt))
+            ShowToast("Research prompt copied. Paste it into Claude, then paste the response back here.");
+    }
+
+    private async void GenerateOfflineRec_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        var rec = await _offlineResearchAi.GenerateRecommendationsAsync(p);
+        p.Recommendations = rec;   // fresh offline draft; not yet accepted
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+
+        RenderRecommendations(rec);
+        PopulatePlanEditor(p);
+        UpdateOverviewProgress(p);
+        ShowToast("Offline draft created from your project details. Review it, then accept it into your plan. This is not AI-generated.");
+    }
+
+    private void ImportRecommendations_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        string text = AiPasteBox.Text.Trim();
+        if (text.Length == 0) { ShowToast("Paste the Claude response first, then import."); return; }
+
+        if (_researchParser.TryParseRecommendations(text, out var rec))
+        {
+            p.Recommendations = rec;
+            p.UpdatedAt = DateTime.UtcNow;
+            SaveResearch();
+            RenderRecommendations(rec);
+            PopulatePlanEditor(p);
+            UpdateOverviewProgress(p);
+            ShowToast("Recommendations imported from the JSON block.");
+        }
+        else
+        {
+            // No usable JSON — keep the text verbatim so nothing is lost.
+            var raw = new ResearchRecommendations
+            {
+                SourceMode = ResearchSourceMode.ManualClaude,
+                RawAiText = text
+            };
+            p.Recommendations = raw;
+            p.UpdatedAt = DateTime.UtcNow;
+            SaveResearch();
+            RenderRecommendations(raw);
+            PopulatePlanEditor(p);
+            UpdateOverviewProgress(p);
+            ShowToast("No structured JSON found — saved the response as raw text you can read below.");
+        }
+    }
+
+    private void ClearAiPaste_Click(object sender, RoutedEventArgs e) => AiPasteBox.Text = "";
+
+    private void AcceptRecommendations_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        var rec = p.Recommendations;
+        if (rec is null || (!rec.HasStructuredContent && string.IsNullOrWhiteSpace(rec.RawAiText)))
+        {
+            ShowToast("Generate or import recommendations first.");
+            return;
+        }
+
+        rec.AcceptedIntoPlan = true;
+
+        // Build the editable plan only if one doesn't already exist — never
+        // overwrite the student's own edits.
+        p.Plan ??= BuildPlanFromRecommendations(p, rec);
+
+        p.CurrentStage = "Research plan ready";
+        p.ProgressPercent = Math.Max(p.ProgressPercent, 30);
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+
+        PopulateOverview(p);
+        PopulatePlanEditor(p);
+        UpdateOverviewProgress(p);
+        ShowToast("Recommendations accepted. Your research plan is ready to edit below.");
+    }
+
+    // ---- Research plan ----------------------------------------------------
+
+    private static ResearchPlan BuildPlanFromRecommendations(ResearchProject p, ResearchRecommendations r)
+    {
+        return new ResearchPlan
+        {
+            FinalTitle = FirstNonEmpty(r.RefinedResearchTitle, p.Title),
+            ResearchQuestion = r.ResearchQuestion,
+            StudyDesign = FirstNonEmpty(r.RecommendedStudyDesign, p.StudyType),
+            Aim = FirstNonEmpty(p.Aim, r.PrimaryObjective),
+            PrimaryObjective = r.PrimaryObjective,
+            SecondaryObjectives = JoinLines(r.SecondaryObjectives),
+            Population = p.Population,
+            Setting = p.Setting,
+            InclusionCriteria = JoinLines(r.InclusionCriteria),
+            ExclusionCriteria = JoinLines(r.ExclusionCriteria),
+            MainVariables = JoinLines(r.SuggestedVariables
+                .Select(v => v.HeaderDisplay + (string.IsNullOrWhiteSpace(v.Role) ? "" : " (" + v.Role + ")"))
+                .ToList()),
+            SuggestedAnalyses = JoinLines(r.SuggestedAnalyses.Select(a => a.HeaderDisplay).ToList()),
+            NextSteps = JoinLines(r.NextSteps),
+            UpdatedAt = DateTime.UtcNow
+        };
+    }
+
+    private void PopulatePlanEditor(ResearchProject p)
+    {
+        bool accepted = p.Recommendations?.AcceptedIntoPlan == true;
+        PlanEmptyHint.Visibility = accepted ? Visibility.Collapsed : Visibility.Visible;
+        PlanEditor.Visibility = accepted ? Visibility.Visible : Visibility.Collapsed;
+        if (!accepted) return;
+
+        var plan = p.Plan ??= BuildPlanFromRecommendations(p, p.Recommendations!);
+
+        PlanTitle.Text = plan.FinalTitle;
+        PlanQuestion.Text = plan.ResearchQuestion;
+        PlanDesign.Text = plan.StudyDesign;
+        PlanAim.Text = plan.Aim;
+        PlanPrimaryObj.Text = plan.PrimaryObjective;
+        PlanSecondaryObj.Text = plan.SecondaryObjectives;
+        PlanPopulation.Text = plan.Population;
+        PlanSetting.Text = plan.Setting;
+        PlanInclusion.Text = plan.InclusionCriteria;
+        PlanExclusion.Text = plan.ExclusionCriteria;
+        PlanVariables.Text = plan.MainVariables;
+        PlanAnalyses.Text = plan.SuggestedAnalyses;
+        PlanNextSteps.Text = plan.NextSteps;
+    }
+
+    private void SaveResearchPlan_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        p.Plan ??= new ResearchPlan();
+        p.Plan.FinalTitle = PlanTitle.Text.Trim();
+        p.Plan.ResearchQuestion = PlanQuestion.Text.Trim();
+        p.Plan.StudyDesign = PlanDesign.Text.Trim();
+        p.Plan.Aim = PlanAim.Text.Trim();
+        p.Plan.PrimaryObjective = PlanPrimaryObj.Text.Trim();
+        p.Plan.SecondaryObjectives = PlanSecondaryObj.Text.Trim();
+        p.Plan.Population = PlanPopulation.Text.Trim();
+        p.Plan.Setting = PlanSetting.Text.Trim();
+        p.Plan.InclusionCriteria = PlanInclusion.Text.Trim();
+        p.Plan.ExclusionCriteria = PlanExclusion.Text.Trim();
+        p.Plan.MainVariables = PlanVariables.Text.Trim();
+        p.Plan.SuggestedAnalyses = PlanAnalyses.Text.Trim();
+        p.Plan.NextSteps = PlanNextSteps.Text.Trim();
+        p.Plan.UpdatedAt = DateTime.UtcNow;
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+        ShowToast("Research plan saved.");
+    }
+
+    // ---- Proposal ---------------------------------------------------------
+
+    private async void GenerateProposalDraft_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        var draft = await _offlineResearchAi.GenerateProposalDraftAsync(p, p.Recommendations);
+        p.ProposalDraft = draft;
+        p.CurrentStage = "Proposal drafted";
+        p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+
+        PopulateProposalEditor(p);
+        PopulateOverview(p);
+        UpdateOverviewProgress(p);
+        ShowToast("Template draft created. Review and expand it with real references — this is not AI-generated.");
+    }
+
+    private void CopyProposalPrompt_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        string prompt = _researchPromptBuilder.BuildProposalPrompt(p, p.Recommendations);
+        if (CopyToClipboardSafe(prompt))
+            ShowToast("Proposal prompt copied. Paste it into Claude, then paste the response back here.");
+    }
+
+    private void ImportProposalDraft_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        string text = ProposalPasteBox.Text.Trim();
+        if (text.Length == 0) { ShowToast("Paste the Claude proposal response first, then import."); return; }
+
+        if (_researchParser.TryParseProposal(text, out var draft))
+        {
+            p.ProposalDraft = draft;
+            ShowToast("Proposal draft imported from the JSON block.");
+        }
+        else
+        {
+            var raw = p.ProposalDraft ?? new ResearchProposalDraft();
+            raw.RawText = text;
+            raw.SourceMode = ResearchSourceMode.ManualClaude;
+            raw.IsTemplateGenerated = false;
+            p.ProposalDraft = raw;
+            ShowToast("No structured JSON found — saved the response as raw text you can read below.");
+        }
+
+        p.CurrentStage = "Proposal drafted";
+        p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+
+        PopulateProposalEditor(p);
+        PopulateOverview(p);
+        UpdateOverviewProgress(p);
+    }
+
+    private void ClearProposalPaste_Click(object sender, RoutedEventArgs e) => ProposalPasteBox.Text = "";
+
+    private void SaveProposal_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        var d = p.ProposalDraft ??= new ResearchProposalDraft { SourceMode = ResearchSourceMode.ManualClaude };
+        d.Title = PropTitle.Text.Trim();
+        d.Background = PropBackground.Text.Trim();
+        d.Rationale = PropRationale.Text.Trim();
+        d.Aim = PropAim.Text.Trim();
+        d.Objectives = PropObjectives.Text.Trim();
+        d.Methods = PropMethods.Text.Trim();
+        d.StudyDesign = PropStudyDesign.Text.Trim();
+        d.Setting = PropSetting.Text.Trim();
+        d.Population = PropPopulation.Text.Trim();
+        d.InclusionCriteria = PropInclusion.Text.Trim();
+        d.ExclusionCriteria = PropExclusion.Text.Trim();
+        d.Variables = PropVariables.Text.Trim();
+        d.DataCollection = PropDataCollection.Text.Trim();
+        d.StatisticalAnalysisPlan = PropStatsPlan.Text.Trim();
+        d.Ethics = PropEthics.Text.Trim();
+        d.Timeline = PropTimeline.Text.Trim();
+        d.Limitations = PropLimitations.Text.Trim();
+        d.UpdatedAt = DateTime.UtcNow;
+
+        p.CurrentStage = "Proposal drafted";
+        p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+
+        PopulateOverview(p);
+        UpdateOverviewProgress(p);
+        ShowToast("Proposal draft saved.");
+    }
+
+    private void PopulateProposalEditor(ResearchProject p)
+    {
+        var d = p.ProposalDraft;
+        var boxes = new[]
+        {
+            PropTitle, PropBackground, PropRationale, PropAim, PropObjectives, PropMethods,
+            PropStudyDesign, PropSetting, PropPopulation, PropInclusion, PropExclusion,
+            PropVariables, PropDataCollection, PropStatsPlan, PropEthics, PropTimeline, PropLimitations
+        };
+
+        if (d is null)
+        {
+            foreach (var box in boxes) box.Text = "";
+            PropTemplateBadge.Visibility = Visibility.Collapsed;
+            PropRawCard.Visibility = Visibility.Collapsed;
+            PropRawText.Text = "";
+            return;
+        }
+
+        PropTitle.Text = d.Title;
+        PropBackground.Text = d.Background;
+        PropRationale.Text = d.Rationale;
+        PropAim.Text = d.Aim;
+        PropObjectives.Text = d.Objectives;
+        PropMethods.Text = d.Methods;
+        PropStudyDesign.Text = d.StudyDesign;
+        PropSetting.Text = d.Setting;
+        PropPopulation.Text = d.Population;
+        PropInclusion.Text = d.InclusionCriteria;
+        PropExclusion.Text = d.ExclusionCriteria;
+        PropVariables.Text = d.Variables;
+        PropDataCollection.Text = d.DataCollection;
+        PropStatsPlan.Text = d.StatisticalAnalysisPlan;
+        PropEthics.Text = d.Ethics;
+        PropTimeline.Text = d.Timeline;
+        PropLimitations.Text = d.Limitations;
+
+        PropTemplateBadge.Visibility = d.IsTemplateGenerated ? Visibility.Visible : Visibility.Collapsed;
+        bool hasRaw = !string.IsNullOrWhiteSpace(d.RawText);
+        PropRawCard.Visibility = hasRaw ? Visibility.Visible : Visibility.Collapsed;
+        PropRawText.Text = hasRaw ? d.RawText : "";
+    }
+
+    // ---- Recommendations viewer rendering ---------------------------------
+
+    private void RenderRecommendations(ResearchRecommendations? rec)
+    {
+        bool has = rec is not null && (rec.HasStructuredContent || !string.IsNullOrWhiteSpace(rec.RawAiText));
+        AiRecEmptyHint.Visibility = has ? Visibility.Collapsed : Visibility.Visible;
+        AiRecViewer.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        if (!has || rec is null) return;
+
+        AiRecSourceBadge.Text = rec.SourceLabel;
+
+        SetTextSection(RecRefinedTitle, RecTitleSec, rec.RefinedResearchTitle);
+        SetTextSection(RecStudyDesign, RecStudyDesignSec, rec.RecommendedStudyDesign);
+        SetTextSection(RecQuestion, RecQuestionSec, rec.ResearchQuestion);
+        SetTextSection(RecPrimaryObjective, RecPrimarySec, rec.PrimaryObjective);
+
+        SetListSection(RecSecondaryList, RecSecondarySec, rec.SecondaryObjectives);
+        SetListSection(RecVariablesList, RecVariablesSec, rec.SuggestedVariables);
+        SetListSection(RecAnalysesList, RecAnalysesSec, rec.SuggestedAnalyses);
+        SetListSection(RecInclusionList, RecInclusionSec, rec.InclusionCriteria);
+        SetListSection(RecExclusionList, RecExclusionSec, rec.ExclusionCriteria);
+        SetListSection(RecDataCollectionList, RecDataCollectionSec, rec.DataCollectionSuggestions);
+        SetListSection(RecBiasList, RecBiasSec, rec.BiasAndLimitations);
+        SetListSection(RecEthicsList, RecEthicsSec, rec.EthicsNotes);
+        SetListSection(RecNextStepsList, RecNextStepsSec, rec.NextSteps);
+
+        bool showRaw = !rec.HasStructuredContent && !string.IsNullOrWhiteSpace(rec.RawAiText);
+        RecRawCard.Visibility = showRaw ? Visibility.Visible : Visibility.Collapsed;
+        RecRawText.Text = showRaw ? rec.RawAiText : "";
+    }
+
+    private static void SetTextSection(TextBlock target, UIElement section, string value)
+    {
+        target.Text = value ?? "";
+        section.Visibility = string.IsNullOrWhiteSpace(value) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private static void SetListSection(ItemsControl control, UIElement section, System.Collections.IList items)
+    {
+        control.ItemsSource = null;
+        control.ItemsSource = items;
+        section.Visibility = items is { Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ---- Overview progress (checklist + status + next step) ---------------
+
+    private void UpdateOverviewProgress(ResearchProject p)
+    {
+        var rec = p.Recommendations;
+        bool hasRec = rec is not null && (rec.HasStructuredContent || !string.IsNullOrWhiteSpace(rec.RawAiText));
+        bool planAccepted = rec?.AcceptedIntoPlan == true;
+        bool hasProposal = p.ProposalDraft is not null;
+
+        SetChecklistRow(ChkCreatedIcon, ChkCreatedText, true, "Project created");
+        SetChecklistRow(ChkRecIcon, ChkRecText, hasRec, hasRec ? "AI recommendations — complete" : "AI recommendations — pending");
+        SetChecklistRow(ChkPlanIcon, ChkPlanText, planAccepted, planAccepted ? "Research plan — accepted" : "Research plan — pending");
+        SetChecklistRow(ChkProposalIcon, ChkProposalText, hasProposal, hasProposal ? "Proposal draft — created" : "Proposal draft — pending");
+        SetChecklistRow(ChkDataIcon, ChkDataText, false, "Data extraction — pending");
+        SetChecklistRow(ChkStatsIcon, ChkStatsText, false, "Statistics — pending");
+        SetChecklistRow(ChkManuscriptIcon, ChkManuscriptText, false, "Manuscript — pending");
+
+        SetStatusText(OvRecStatus, hasRec, hasRec ? "Complete" : "Not started");
+        SetStatusText(OvPlanStatus, planAccepted, planAccepted ? "Accepted" : "Not started");
+        SetStatusText(OvProposalStatus, hasProposal, hasProposal ? "Created" : "Not started");
+
+        string next;
+        if (!hasRec) next = "Next: generate or import AI recommendations.";
+        else if (!planAccepted) next = "Next: review and accept recommendations into your research plan.";
+        else if (!hasProposal) next = "Next: create a proposal draft.";
+        else next = "Next: prepare your data extraction sheet in the next phase.";
+        DashNextStepText.Text = next;
+    }
+
+    private void SetStatusText(TextBlock target, bool done, string text)
+    {
+        target.Text = text;
+        target.Foreground = (Brush)FindResource(done ? "SuccessBrush" : "MutedBrush");
+    }
+
+    private void SetChecklistRow(Border icon, TextBlock text, bool done, string label)
+    {
+        text.Text = label;
+
+        if (done)
+        {
+            icon.Background = (Brush)FindResource("SuccessBrush");
+            icon.BorderThickness = new Thickness(0);
+            icon.Child = new System.Windows.Shapes.Path
+            {
+                Data = (Geometry)FindResource("IconCheck"),
+                Fill = Brushes.White,
+                Width = 11,
+                Height = 11,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            text.Foreground = (Brush)FindResource("TextBrush");
+            text.FontWeight = FontWeights.SemiBold;
+        }
+        else
+        {
+            icon.Background = Brushes.Transparent;
+            icon.BorderBrush = (Brush)FindResource("BorderBrushSoft");
+            icon.BorderThickness = new Thickness(1.6);
+            icon.Child = null;
+            text.Foreground = (Brush)FindResource("MutedBrush");
+            text.FontWeight = FontWeights.Normal;
+        }
+    }
+
+    // ---- Small helpers ----------------------------------------------------
+
+    private bool CopyToClipboardSafe(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text ?? "");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowToast("Could not access the clipboard: " + ex.Message);
+            return false;
+        }
+    }
+
+    private static string JoinLines(List<string> items)
+        => items is { Count: > 0 } ? string.Join(Environment.NewLine, items) : "";
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (var v in values)
+            if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+        return "";
     }
 
     private readonly struct ActivationInfo
