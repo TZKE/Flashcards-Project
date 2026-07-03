@@ -357,6 +357,15 @@
                                 </StackPanel>
                             </Button>
 
+                            <TextBlock Text="RESEARCH" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold" Margin="0,14,0,8"/>
+
+                            <Button x:Name="NavResearch" Style="{StaticResource NavButton}" Click="ResearchPage_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconResearch}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Research Lab" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+
                             <TextBlock Text="SYSTEM" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold" Margin="0,14,0,8"/>
 
                             <Button x:Name="NavSettings" Style="{StaticResource NavButton}" Click="SettingsPage_Click">
@@ -1445,6 +1454,499 @@
                                                FontWeight="SemiBold"/>
                                 </Border>
                             </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- ================================================ -->
+                    <!-- RESEARCH LAB — PROJECT LIST                       -->
+                    <!-- ================================================ -->
+                    <Grid x:Name="PageResearch" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="76"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Research Lab" Style="{StaticResource PageTitle}"/>
+                                <TextBlock Text="Plan, analyze, and write research projects in one workspace."
+                                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Create New Research Project"
+                                    Style="{StaticResource PremiumButton}" Width="250" Margin="0"
+                                    VerticalAlignment="Center" Click="OpenCreateProject_Click"/>
+                        </Grid>
+
+                        <!-- Content -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <Grid>
+                                <!-- Empty state -->
+                                <Border x:Name="ResearchEmptyState" Style="{StaticResource SoftCardBorder}" Padding="40" Margin="0,4,0,0" VerticalAlignment="Top">
+                                    <StackPanel HorizontalAlignment="Center" MaxWidth="540">
+                                        <Border Width="76" Height="76" Background="{StaticResource PrimarySoftBrush}" CornerRadius="20" HorizontalAlignment="Center">
+                                            <Path Data="{StaticResource IconResearch}" Fill="{StaticResource PrimaryBrush}" Width="38" Height="38" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="No research projects yet" Style="{StaticResource SectionHeader}" HorizontalAlignment="Center" Margin="0,18,0,0"/>
+                                        <TextBlock Text="Create your first project to start building a proposal, extraction sheet, statistics plan, and manuscript."
+                                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0"/>
+                                        <Button Content="Create New Research Project" Style="{StaticResource PremiumButton}"
+                                                Width="250" HorizontalAlignment="Center" Margin="0,22,0,0" Click="OpenCreateProject_Click"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Project cards -->
+                                <ItemsControl x:Name="ResearchCardsHost" Visibility="Collapsed">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,4,0,14">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+
+                                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="7" Padding="10,5" Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding SpecialtyDisplay}" Foreground="{StaticResource PrimaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                                            </Border>
+                                                            <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="7" Padding="10,5" Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding StudyTypeDisplay}" Foreground="{StaticResource InfoBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                                            </Border>
+                                                            <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="7" Padding="10,5">
+                                                                <TextBlock Text="{Binding StageDisplay}" Foreground="{StaticResource SuccessBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                                            </Border>
+                                                        </StackPanel>
+
+                                                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0" VerticalAlignment="Center">
+                                                            <Border Width="170" Height="8" CornerRadius="4" Background="#ECEEF1" VerticalAlignment="Center">
+                                                                <Border CornerRadius="4" Background="{StaticResource PrimaryBrush}" HorizontalAlignment="Left"
+                                                                        Width="{Binding ProgressPercent, Converter={StaticResource PercentBarWidth}, ConverterParameter=170}"/>
+                                                            </Border>
+                                                            <TextBlock Text="{Binding ProgressDisplay}" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding UpdatedDisplay}" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" Margin="18,0,0,0" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                                        <Button Content="Continue" Style="{StaticResource SoftButton}" Width="110" Tag="{Binding Id}" Click="ContinueProject_Click"/>
+                                                        <Button Content="Delete" Style="{StaticResource DangerSoftButton}" Width="96" Margin="0" Tag="{Binding Id}" Click="DeleteProject_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </ScrollViewer>
+
+                        <!-- Create-project modal overlay -->
+                        <Grid x:Name="CreateProjectOverlay" Grid.RowSpan="2" Background="#8A1B1B2A" Visibility="Collapsed">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="660" MaxHeight="600"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Create New Research Project" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Set up the basics now — you can refine everything later inside the project dashboard."
+                                                   Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+                                    </StackPanel>
+
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,0,20,0">
+                                        <StackPanel Margin="0,6,0,8">
+                                            <TextBlock Text="Project title / idea *" Style="{StaticResource FieldLabel}"/>
+                                            <TextBox x:Name="RpTitleBox" local:Watermark.Text="e.g. Prevalence of anemia among first-year medical students"/>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Specialty" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="RpSpecialtyBox" local:Watermark.Text="e.g. Internal Medicine"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Study type" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="RpStudyTypeCombo">
+                                                        <ComboBoxItem Content="Cross-sectional"/>
+                                                        <ComboBoxItem Content="Case-control"/>
+                                                        <ComboBoxItem Content="Cohort"/>
+                                                        <ComboBoxItem Content="Retrospective"/>
+                                                        <ComboBoxItem Content="Systematic review"/>
+                                                        <ComboBoxItem Content="Meta-analysis"/>
+                                                        <ComboBoxItem Content="Case report"/>
+                                                        <ComboBoxItem Content="Not sure"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <TextBlock Text="Research aim" Style="{StaticResource FieldLabel}" Margin="0,16,0,7"/>
+                                            <TextBox x:Name="RpAimBox" Style="{StaticResource EditorTextBox}" MinHeight="64"
+                                                     local:Watermark.Text="What question is this project trying to answer?"/>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Population" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="RpPopulationBox" local:Watermark.Text="e.g. Adults aged 18–45"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Setting" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="RpSettingBox" local:Watermark.Text="e.g. Teaching hospital, outpatient clinic"/>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Time period" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="RpTimePeriodBox" local:Watermark.Text="e.g. Jan–Jun 2026"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Available data" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="RpDataCombo">
+                                                        <ComboBoxItem Content="Google Form"/>
+                                                        <ComboBoxItem Content="Pasted questions"/>
+                                                        <ComboBoxItem Content="Excel/CSV"/>
+                                                        <ComboBoxItem Content="Manual entry"/>
+                                                        <ComboBoxItem Content="No data yet"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <TextBlock Text="Desired outputs" Style="{StaticResource FieldLabel}" Margin="0,16,0,9"/>
+                                            <WrapPanel>
+                                                <CheckBox x:Name="RpOutProposal" Content="Proposal" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutIntroduction" Content="Introduction" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutMethods" Content="Methods" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutExtraction" Content="Data Extraction Sheet" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutStatistics" Content="Statistics" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutManuscript" Content="Manuscript" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutAbstract" Content="Abstract" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="RpOutTables" Content="Tables" Margin="0,0,22,10"/>
+                                            </WrapPanel>
+
+                                            <TextBlock Text="Notes" Style="{StaticResource FieldLabel}" Margin="0,10,0,7"/>
+                                            <TextBox x:Name="RpNotesBox" Style="{StaticResource EditorTextBox}" MinHeight="64"
+                                                     local:Watermark.Text="Optional notes, references, or reminders"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+
+                                    <Border Grid.Row="2" Background="{StaticResource SoftCardBrush}" CornerRadius="0,0,14,14"
+                                            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="RpValidationText" Grid.Column="0" Foreground="{StaticResource DangerBrush}"
+                                                       FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                       Margin="0,0,14,0" Visibility="Collapsed"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelCreateProject_Click"/>
+                                                <Button Content="Create Project" Style="{StaticResource PremiumButton}" Width="160" Margin="0" Click="CreateProject_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- Delete-confirm overlay -->
+                        <Grid x:Name="DeleteConfirmOverlay" Grid.RowSpan="2" Background="#8A1B1B2A" Visibility="Collapsed">
+                            <Border Style="{StaticResource CardBorder}" Padding="28" Width="440"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <StackPanel>
+                                    <TextBlock Text="Delete research project?" Style="{StaticResource SectionHeader}"/>
+                                    <TextBlock x:Name="DeleteConfirmText"
+                                               Text="This will permanently remove the project and its saved details. This cannot be undone."
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                                        <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelDelete_Click"/>
+                                        <Button Content="Delete Project" Style="{StaticResource DangerButton}" Width="160" Margin="0" Click="ConfirmDelete_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+
+                    <!-- ================================================ -->
+                    <!-- RESEARCH LAB — PROJECT DASHBOARD                  -->
+                    <!-- ================================================ -->
+                    <Grid x:Name="PageResearchDashboard" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <StackPanel Margin="0,0,0,16">
+                            <Button Style="{StaticResource GhostButton}" HorizontalAlignment="Left" Padding="14,0" Margin="0,0,0,14" Click="BackToResearch_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="M14 6 L8 12 L14 18 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          Width="11" Height="11" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Back to Research Lab" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBlock x:Name="DashTitleText" Text="Project" Style="{StaticResource PageTitle}" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="DashSubtitleText" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <!-- Segmented tab bar -->
+                        <Border Grid.Row="1" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}"
+                                BorderThickness="1" CornerRadius="11" Padding="4" Margin="0,0,0,18" SnapsToDevicePixels="True">
+                            <WrapPanel>
+                                <Button x:Name="SegOverview" Content="Overview" Style="{StaticResource SegTabActive}" Tag="Overview" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegProposal" Content="Proposal" Style="{StaticResource SegTab}" Tag="Proposal" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegAiRec" Content="AI Recommendations" Style="{StaticResource SegTab}" Tag="AiRec" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegDataExt" Content="Data Extraction" Style="{StaticResource SegTab}" Tag="DataExt" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegStats" Content="Statistics" Style="{StaticResource SegTab}" Tag="Stats" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegResults" Content="Results" Style="{StaticResource SegTab}" Tag="Results" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegManuscript" Content="Manuscript" Style="{StaticResource SegTab}" Tag="Manuscript" Click="ResearchTab_Click"/>
+                                <Button x:Name="SegNotes" Content="Notes" Style="{StaticResource SegTab}" Tag="Notes" Click="ResearchTab_Click"/>
+                            </WrapPanel>
+                        </Border>
+
+                        <!-- Tab content -->
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                            <Grid x:Name="DashTabHost">
+
+                                <!-- OVERVIEW -->
+                                <Grid x:Name="TabOverview">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="20"/>
+                                        <ColumnDefinition Width="340"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="26" VerticalAlignment="Top">
+                                        <StackPanel>
+                                            <TextBlock Text="Project details" Style="{StaticResource SectionHeader}" Margin="0,0,0,18"/>
+
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Title" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvTitle" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Specialty" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvSpecialty" Foreground="{StaticResource TextBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Study type" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvStudyType" Foreground="{StaticResource TextBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Aim" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvAim" Foreground="{StaticResource TextBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Population" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvPopulation" Foreground="{StaticResource TextBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Setting" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvSetting" Foreground="{StaticResource TextBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Time period" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvTimePeriod" Foreground="{StaticResource TextBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                            </Grid>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Current stage" Foreground="{StaticResource SoftMutedBrush}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" x:Name="OvStage" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2">
+                                        <Border Style="{StaticResource CardBorder}" Padding="22">
+                                            <StackPanel>
+                                                <TextBlock Text="Progress checklist" Style="{StaticResource SectionHeader}" Margin="0,0,0,16"/>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="{StaticResource SuccessBrush}" VerticalAlignment="Center">
+                                                        <Path Data="{StaticResource IconCheck}" Fill="White" Width="11" Height="11" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <TextBlock Text="Project created" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Research question — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Proposal — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Data extraction — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Statistics — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="Transparent" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1.6" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Manuscript — pending" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource CardBorder}" Background="{StaticResource PrimarySoftBrush}" BorderBrush="{StaticResource PrimarySoftBrush}" Padding="20" Margin="0,16,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="Next best step" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" FontSize="15"/>
+                                                <TextBlock Text="Next: review your project details. AI recommendations and proposal generation will be added in the next phase."
+                                                           Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- PROPOSAL -->
+                                <Border x:Name="TabProposal" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel MaxWidth="760">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconEdit}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Proposal" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="AI proposal builder will be available in the next phase."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- AI RECOMMENDATIONS -->
+                                <Border x:Name="TabAiRec" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel MaxWidth="760">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="AI Recommendations" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="AI recommendations will review your title, study type, form questions, variables, and goals to suggest the best research design, objectives, variables, and analyses in the next phase."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- DATA EXTRACTION -->
+                                <Border x:Name="TabDataExt" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel MaxWidth="760">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconImport}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Data Extraction" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="Paste Google Form questions or upload data later to build an editable extraction sheet."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- STATISTICS -->
+                                <Border x:Name="TabStats" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel MaxWidth="760">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconCards}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Statistics" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="The app will run analyses internally without requiring SPSS in a later phase."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- RESULTS -->
+                                <Border x:Name="TabResults" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel MaxWidth="760">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconDecks}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Results" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="Results will be written only from real computed tables and statistics."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- MANUSCRIPT -->
+                                <Border x:Name="TabManuscript" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel MaxWidth="760">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                                                <Path Data="{StaticResource IconBook}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Manuscript" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Text="Manuscript writer will draft sections from real project data, real results, and user-provided references."
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- NOTES -->
+                                <Border x:Name="TabNotes" Style="{StaticResource CardBorder}" Padding="26" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel>
+                                        <TextBlock Text="Notes" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Keep private notes, references, or reminders for this project." Style="{StaticResource Caption}" Margin="0,4,0,14"/>
+                                        <TextBox x:Name="DashNotesBox" Style="{StaticResource EditorTextBox}" MinHeight="240"
+                                                 local:Watermark.Text="Write notes for this project…"/>
+                                        <Button Content="Save Notes" Style="{StaticResource PremiumButton}" Width="150" HorizontalAlignment="Left" Margin="0,14,0,0" Click="SaveDashNotes_Click"/>
+                                    </StackPanel>
+                                </Border>
+
+                            </Grid>
                         </ScrollViewer>
                     </Grid>
 

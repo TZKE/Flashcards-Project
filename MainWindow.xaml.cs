@@ -123,10 +123,17 @@ public sealed partial class MainWindow : Window
     private string StorePath => Path.Combine(dataDir, "accounts.json");
     private string SettingsPath => Path.Combine(dataDir, "settings.json");
     private string DecksPath => Path.Combine(dataDir, "decks.json");
+    private string ResearchPath => Path.Combine(dataDir, "research_projects.json");
+
+    // Research Lab (Phase 1) — kept separate from deck/card storage.
+    private const int ResearchProjectLimit = 2;
 
     private LocalStore _store = new();
     private AppSettings _settings = new();
     private DeckStore _deckStore = new();
+    private ResearchLabData _researchData = new();
+    private string _openResearchId = "";
+    private string _pendingDeleteResearchId = "";
 
     private LocalAccount? _currentUser;
     private string _activeDeckId = "";
@@ -140,6 +147,9 @@ public sealed partial class MainWindow : Window
 
     private readonly Dictionary<UIElement, Button> _navMap = new();
 
+    // Research dashboard sub-tabs: segmented button -> content panel.
+    private readonly List<(Button Button, UIElement Panel)> _researchTabs = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -150,6 +160,7 @@ public sealed partial class MainWindow : Window
         Height = Math.Min(Height, SystemParameters.WorkArea.Height);
 
         BuildNavMap();
+        BuildResearchTabMap();
         InitializeGifAnimations();
 
         Directory.CreateDirectory(dataDir);
@@ -157,6 +168,7 @@ public sealed partial class MainWindow : Window
         LoadStore();
         LoadSettings();
         LoadDecks();
+        LoadResearch();
         EnsureDefaultDeck();
         SetupCombos();
 
@@ -229,6 +241,8 @@ public sealed partial class MainWindow : Window
         _navMap[PageExport] = NavExport;
         _navMap[PageSettings] = NavSettings;
         _navMap[PageAccount] = NavAccount;
+        _navMap[PageResearch] = NavResearch;
+        _navMap[PageResearchDashboard] = NavResearch;
     }
 
     private void SetActiveNav(UIElement page)
@@ -2027,6 +2041,308 @@ public sealed partial class MainWindow : Window
         {
             WriteIndented = true
         }));
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 1) — local storage, project list, create form,
+    // and the project-dashboard shell. No AI / statistics / manuscript
+    // logic here yet; those arrive in later phases.
+    // =====================================================================
+
+    private void BuildResearchTabMap()
+    {
+        _researchTabs.Clear();
+        _researchTabs.Add((SegOverview, TabOverview));
+        _researchTabs.Add((SegProposal, TabProposal));
+        _researchTabs.Add((SegAiRec, TabAiRec));
+        _researchTabs.Add((SegDataExt, TabDataExt));
+        _researchTabs.Add((SegStats, TabStats));
+        _researchTabs.Add((SegResults, TabResults));
+        _researchTabs.Add((SegManuscript, TabManuscript));
+        _researchTabs.Add((SegNotes, TabNotes));
+    }
+
+    private void LoadResearch()
+    {
+        try
+        {
+            if (!File.Exists(ResearchPath))
+            {
+                _researchData = new ResearchLabData();
+                return;
+            }
+
+            string json = File.ReadAllText(ResearchPath);
+            _researchData = JsonSerializer.Deserialize<ResearchLabData>(json) ?? new ResearchLabData();
+            _researchData.Projects ??= new List<ResearchProject>();
+        }
+        catch
+        {
+            // Corrupt or unreadable file: fail safely with an empty list and
+            // never touch the user's flashcard data.
+            _researchData = new ResearchLabData();
+            SetStatus("Research projects file could not be read — starting with an empty list.");
+        }
+    }
+
+    private void SaveResearch()
+    {
+        try
+        {
+            File.WriteAllText(ResearchPath, JsonSerializer.Serialize(_researchData, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            }));
+        }
+        catch (Exception ex)
+        {
+            ShowToast("Could not save research projects: " + ex.Message);
+        }
+    }
+
+    private void ResearchPage_Click(object sender, RoutedEventArgs e)
+    {
+        CreateProjectOverlay.Visibility = Visibility.Collapsed;
+        DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
+        RefreshResearchProjects();
+        ShowPage(PageResearch);
+    }
+
+    private void RefreshResearchProjects()
+    {
+        var projects = _researchData.Projects
+            .OrderByDescending(p => p.UpdatedAt)
+            .ToList();
+
+        ResearchCardsHost.ItemsSource = null;
+        ResearchCardsHost.ItemsSource = projects;
+
+        bool any = projects.Count > 0;
+        ResearchCardsHost.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        ResearchEmptyState.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OpenCreateProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (_researchData.Projects.Count >= ResearchProjectLimit)
+        {
+            ShowToast("You reached the current limit of 2 research projects. Additional research projects will be available with an upgrade later.");
+            return;
+        }
+
+        ResetCreateProjectForm();
+        CreateProjectOverlay.Visibility = Visibility.Visible;
+        FadeIn(CreateProjectOverlay, 160);
+        RpTitleBox.Focus();
+    }
+
+    private void ResetCreateProjectForm()
+    {
+        RpTitleBox.Text = "";
+        RpSpecialtyBox.Text = "";
+        RpAimBox.Text = "";
+        RpPopulationBox.Text = "";
+        RpSettingBox.Text = "";
+        RpTimePeriodBox.Text = "";
+        RpNotesBox.Text = "";
+
+        RpStudyTypeCombo.SelectedIndex = 7; // Not sure
+        RpDataCombo.SelectedIndex = 4;      // No data yet
+
+        RpOutProposal.IsChecked = false;
+        RpOutIntroduction.IsChecked = false;
+        RpOutMethods.IsChecked = false;
+        RpOutExtraction.IsChecked = false;
+        RpOutStatistics.IsChecked = false;
+        RpOutManuscript.IsChecked = false;
+        RpOutAbstract.IsChecked = false;
+        RpOutTables.IsChecked = false;
+
+        RpValidationText.Text = "";
+        RpValidationText.Visibility = Visibility.Collapsed;
+    }
+
+    private void CancelCreateProject_Click(object sender, RoutedEventArgs e)
+    {
+        CreateProjectOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private static string ComboText(ComboBox combo, string fallback)
+        => (combo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? fallback;
+
+    private List<string> CollectDesiredOutputs()
+    {
+        var outputs = new List<string>();
+        if (RpOutProposal.IsChecked == true) outputs.Add("Proposal");
+        if (RpOutIntroduction.IsChecked == true) outputs.Add("Introduction");
+        if (RpOutMethods.IsChecked == true) outputs.Add("Methods");
+        if (RpOutExtraction.IsChecked == true) outputs.Add("Data Extraction Sheet");
+        if (RpOutStatistics.IsChecked == true) outputs.Add("Statistics");
+        if (RpOutManuscript.IsChecked == true) outputs.Add("Manuscript");
+        if (RpOutAbstract.IsChecked == true) outputs.Add("Abstract");
+        if (RpOutTables.IsChecked == true) outputs.Add("Tables");
+        return outputs;
+    }
+
+    private void CreateProject_Click(object sender, RoutedEventArgs e)
+    {
+        // Safety re-check of the limit before committing.
+        if (_researchData.Projects.Count >= ResearchProjectLimit)
+        {
+            CreateProjectOverlay.Visibility = Visibility.Collapsed;
+            ShowToast("You reached the current limit of 2 research projects. Additional research projects will be available with an upgrade later.");
+            return;
+        }
+
+        string title = RpTitleBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            RpValidationText.Text = "Please enter a project title to continue.";
+            RpValidationText.Visibility = Visibility.Visible;
+            RpTitleBox.Focus();
+            return;
+        }
+
+        var project = new ResearchProject
+        {
+            Title = title,
+            Specialty = RpSpecialtyBox.Text.Trim(),
+            StudyType = ComboText(RpStudyTypeCombo, "Not sure"),
+            Aim = RpAimBox.Text.Trim(),
+            Population = RpPopulationBox.Text.Trim(),
+            Setting = RpSettingBox.Text.Trim(),
+            TimePeriod = RpTimePeriodBox.Text.Trim(),
+            AvailableDataType = ComboText(RpDataCombo, "No data yet"),
+            DesiredOutputs = CollectDesiredOutputs(),
+            Notes = RpNotesBox.Text.Trim(),
+            CurrentStage = "Project created",
+            ProgressPercent = 15,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _researchData.Projects.Add(project);
+        SaveResearch();
+
+        CreateProjectOverlay.Visibility = Visibility.Collapsed;
+        RefreshResearchProjects();
+        ShowToast($"Research project created: {project.Title}");
+    }
+
+    private void ContinueProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
+
+        var project = _researchData.Projects.FirstOrDefault(p => p.Id == id);
+        if (project is null)
+        {
+            ShowToast("That project could not be found.");
+            RefreshResearchProjects();
+            return;
+        }
+
+        OpenProject(project);
+    }
+
+    private void OpenProject(ResearchProject project)
+    {
+        _openResearchId = project.Id;
+        PopulateOverview(project);
+        DashNotesBox.Text = project.Notes;
+
+        // Always land on Overview when a project opens.
+        SwitchResearchTab(SegOverview);
+        ShowPage(PageResearchDashboard);
+    }
+
+    private void PopulateOverview(ResearchProject p)
+    {
+        DashTitleText.Text = p.Title;
+        DashSubtitleText.Text = $"{p.SpecialtyDisplay}  •  {p.StudyTypeDisplay}";
+
+        OvTitle.Text = p.Title;
+        OvSpecialty.Text = p.SpecialtyDisplay;
+        OvStudyType.Text = p.StudyTypeDisplay;
+        OvAim.Text = string.IsNullOrWhiteSpace(p.Aim) ? "—" : p.Aim;
+        OvPopulation.Text = string.IsNullOrWhiteSpace(p.Population) ? "—" : p.Population;
+        OvSetting.Text = string.IsNullOrWhiteSpace(p.Setting) ? "—" : p.Setting;
+        OvTimePeriod.Text = string.IsNullOrWhiteSpace(p.TimePeriod) ? "—" : p.TimePeriod;
+        OvStage.Text = p.StageDisplay;
+    }
+
+    private void DeleteProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
+
+        var project = _researchData.Projects.FirstOrDefault(p => p.Id == id);
+        if (project is null) return;
+
+        _pendingDeleteResearchId = id;
+        DeleteConfirmText.Text = $"“{project.Title}” will be permanently removed along with its saved details. This cannot be undone.";
+        DeleteConfirmOverlay.Visibility = Visibility.Visible;
+        FadeIn(DeleteConfirmOverlay, 150);
+    }
+
+    private void CancelDelete_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingDeleteResearchId = "";
+        DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void ConfirmDelete_Click(object sender, RoutedEventArgs e)
+    {
+        DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
+
+        if (string.IsNullOrEmpty(_pendingDeleteResearchId)) return;
+
+        var project = _researchData.Projects.FirstOrDefault(p => p.Id == _pendingDeleteResearchId);
+        _pendingDeleteResearchId = "";
+        if (project is null) return;
+
+        _researchData.Projects.Remove(project);
+        SaveResearch();
+        RefreshResearchProjects();
+        ShowToast("Research project deleted.");
+    }
+
+    private void ResearchTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button)
+            SwitchResearchTab(button);
+    }
+
+    private void SwitchResearchTab(Button active)
+    {
+        var normal = (Style)FindResource("SegTab");
+        var activeStyle = (Style)FindResource("SegTabActive");
+
+        foreach (var (button, panel) in _researchTabs)
+        {
+            bool isActive = ReferenceEquals(button, active);
+            button.Style = isActive ? activeStyle : normal;
+            panel.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void SaveDashNotes_Click(object sender, RoutedEventArgs e)
+    {
+        var project = _researchData.Projects.FirstOrDefault(p => p.Id == _openResearchId);
+        if (project is null)
+        {
+            ShowToast("Open a project before saving notes.");
+            return;
+        }
+
+        project.Notes = DashNotesBox.Text.Trim();
+        project.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+        ShowToast("Notes saved.");
+    }
+
+    private void BackToResearch_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshResearchProjects();
+        ShowPage(PageResearch);
     }
 
     private readonly struct ActivationInfo
