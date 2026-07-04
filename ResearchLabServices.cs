@@ -145,6 +145,11 @@ public interface IResearchAiService
     bool IsConfigured { get; }
     Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken);
     Task<ResearchProposalDraft> GenerateProposalDraftAsync(ResearchProject project, ResearchRecommendations? recommendations, CancellationToken cancellationToken);
+
+    // Phase 2F — Import Existing Proposal. Reads structured fields out of an
+    // existing proposal the student supplied. Strictly extraction-only: the
+    // implementation must never fabricate content that is not in the text.
+    Task<ProposalExtractionResult> ExtractProposalAsync(string proposalText, ResearchProject existingProject, CancellationToken cancellationToken);
 }
 
 // Facade that reads live options and dispatches to the backend HTTP client, the
@@ -184,6 +189,9 @@ public sealed class ResearchAiService : IResearchAiService
 
     public Task<ResearchProposalDraft> GenerateProposalDraftAsync(ResearchProject project, ResearchRecommendations? recommendations, CancellationToken cancellationToken)
         => Route(_options()).GenerateProposalDraftAsync(project, recommendations, cancellationToken);
+
+    public Task<ProposalExtractionResult> ExtractProposalAsync(string proposalText, ResearchProject existingProject, CancellationToken cancellationToken)
+        => Route(_options()).ExtractProposalAsync(proposalText, existingProject, cancellationToken);
 }
 
 // ---- Backend/proxy HTTP client --------------------------------------------
@@ -229,6 +237,51 @@ public sealed class ResearchAiHttpClient : IResearchAiService
         resp.ProposalDraft.SourceMode = ResearchSourceMode.AiGenerated;
         resp.ProposalDraft.IsTemplateGenerated = true;
         return resp.ProposalDraft;
+    }
+
+    public async Task<ProposalExtractionResult> ExtractProposalAsync(string proposalText, ResearchProject existingProject, CancellationToken cancellationToken)
+    {
+        var o = _options();
+        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
+            throw new ResearchAiNotConfiguredException();
+
+        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/extract-proposal";
+
+        var request = new
+        {
+            projectId = existingProject.Id,
+            taskType = "extract-proposal",
+            project = ResearchAiProjectPayload.From(existingProject),
+            proposalText,
+            desiredOutputFormat = "json"
+        };
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(o.TimeoutSeconds, 5, 300)));
+
+        try
+        {
+            using var content = new StringContent(JsonSerializer.Serialize(request, Json), Encoding.UTF8, "application/json");
+            using var httpResp = await Http.PostAsync(url, content, cts.Token);
+            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
+
+            if (!httpResp.IsSuccessStatusCode)
+                throw new ResearchAiException($"The Research AI service returned an error ({(int)httpResp.StatusCode}).");
+
+            if (!_parser.TryParseExtraction(body, out var extraction) || !extraction.HasAnyContent)
+                throw new ResearchAiException("The Research AI response could not be read as extracted proposal details.");
+
+            extraction.SourceMode = ResearchSourceMode.AiGenerated;
+            return extraction;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new ResearchAiException("The Research AI service timed out. Please try again.");
+        }
+        catch (HttpRequestException)
+        {
+            throw new ResearchAiException("Could not reach the Research AI service. Check the endpoint in Settings and your connection.");
+        }
     }
 
     private async Task<ResearchAiResponse> PostAsync(
@@ -317,6 +370,34 @@ public sealed class MockResearchAiService : IResearchAiService
     {
         await Task.Delay(700, cancellationToken);
         return BuildProposal(project, recommendations);
+    }
+
+    // Development mock cannot truly parse free text, so it never pretends to.
+    // It keeps the pasted text verbatim in Background for review and flags every
+    // structured section as needing manual completion. No fabrication.
+    public async Task<ProposalExtractionResult> ExtractProposalAsync(string proposalText, ResearchProject existingProject, CancellationToken cancellationToken)
+    {
+        await Task.Delay(700, cancellationToken);
+
+        string text = (proposalText ?? "").Trim();
+        var result = new ProposalExtractionResult
+        {
+            SourceMode = ResearchSourceMode.DevelopmentMock,
+            ConfidenceSummary =
+                "Development mode: automatic extraction is not available offline. The pasted text " +
+                "has been kept below for you to copy into the correct fields. Enable the connected " +
+                "Research AI provider or a backend endpoint for real extraction.",
+            Warnings =
+            {
+                "This is a development-mode placeholder — no fields were parsed from the text."
+            },
+            MissingOrWeakSections =
+            {
+                "All sections require manual review in development mode."
+            }
+        };
+        result.ExtractedProposalSections.Background = text;
+        return result;
     }
 
     private static string Or(string value, string fallback)
@@ -539,7 +620,21 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         return draft;
     }
 
-    private async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken)
+    public async Task<ProposalExtractionResult> ExtractProposalAsync(string proposalText, ResearchProject existingProject, CancellationToken cancellationToken)
+    {
+        // Same working dev-provider pattern as recommendations/proposal: 180s
+        // timeout floor, max_tokens 8000, strict-JSON prompt, tolerant parser.
+        // Extraction measured ~100-150s in testing, comfortably within 180s.
+        string text = await CompleteAsync(ExtractionSystemPrompt, BuildExtractionUserPrompt(proposalText, existingProject), cancellationToken, minTimeoutSeconds: 180);
+
+        if (!_parser.TryParseExtraction(text, out var result) || !result.HasAnyContent)
+            throw new ResearchAiException("The Research AI response could not be read as extracted proposal details. Please try again.");
+
+        result.SourceMode = ResearchSourceMode.AiGenerated;
+        return result;
+    }
+
+    private async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken, int minTimeoutSeconds = 180)
     {
         var creds = _credentials();
         if (!creds.HasKey)
@@ -564,10 +659,11 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
             stream = false
         };
 
-        // GLM takes ~90-100s to produce the full structured JSON, so never let a
-        // small configured timeout cut it off. Floor at 180s (matching the proven
-        // flashcard request's 3-minute allowance); users may raise it up to 300s.
-        int timeoutSeconds = Math.Clamp(Math.Max(opts.TimeoutSeconds, 180), 30, 300);
+        // GLM takes ~90-180s to produce the full structured JSON, so never let a
+        // small configured timeout cut it off. Floor at minTimeoutSeconds (180s for
+        // recommendations/proposal, higher for the larger extraction payload);
+        // users may raise the configured value up to 300s.
+        int timeoutSeconds = Math.Clamp(Math.Max(opts.TimeoutSeconds, minTimeoutSeconds), 30, 300);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -706,6 +802,76 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         "Return ONLY the JSON object above, filled in. No markdown, no code fences, " +
         "no explanation, and no text before or after the JSON.";
 
+    // Phase 2F — extraction. Reads structured fields out of an EXISTING proposal
+    // the student supplied. This is extraction, not authoring: every value must
+    // come from the supplied text, and anything not present is reported as
+    // missing/unclear rather than invented.
+    private const string ExtractionSystemPrompt =
+        "You are a careful research assistant. The student has pasted an EXISTING " +
+        "research proposal (or a draft). Your job is ONLY to EXTRACT information " +
+        "that is actually present in the supplied text and organise it into the " +
+        "JSON shape below.\n\n" +
+        "Strict extraction rules you must follow:\n" +
+        "- Extract ONLY from the supplied proposal text. Do NOT add, invent, or " +
+        "complete anything that is not clearly present.\n" +
+        "- Do NOT fabricate methods, results, numbers, p-values, sample sizes, " +
+        "statistics, references, or citations.\n" +
+        "- If a field is not present in the text, return an empty string or empty " +
+        "array for it, and list it in \"missingOrWeakSections\".\n" +
+        "- If a field is present but vague or unclear, still extract what is there " +
+        "and add a note to \"warnings\".\n" +
+        "- Do NOT copy any Results or Discussion findings into the plan fields; " +
+        "this tool is for the proposal/protocol only.\n" +
+        "- \"confidenceSummary\" is a short, plain-language note on how complete the " +
+        "proposal appears and what the student should double-check.\n" +
+        "- Return ONLY one valid JSON object — no markdown, no code fences, no " +
+        "commentary before or after the JSON.\n\n" +
+        "Use exactly this JSON shape (include every field; use \"\" or [] where a " +
+        "value is genuinely not present in the text):\n" +
+        "{\n" +
+        "  \"title\": \"string\",\n" +
+        "  \"specialty\": \"string\",\n" +
+        "  \"studyDesign\": \"string\",\n" +
+        "  \"researchQuestion\": \"string\",\n" +
+        "  \"aim\": \"string\",\n" +
+        "  \"primaryObjective\": \"string\",\n" +
+        "  \"secondaryObjectives\": [\"string\"],\n" +
+        "  \"population\": \"string\",\n" +
+        "  \"setting\": \"string\",\n" +
+        "  \"timePeriod\": \"string\",\n" +
+        "  \"inclusionCriteria\": [\"string\"],\n" +
+        "  \"exclusionCriteria\": [\"string\"],\n" +
+        "  \"variables\": [{\"name\":\"string\",\"label\":\"string\",\"type\":\"string\",\"role\":\"string\",\"coding\":\"string\",\"notes\":\"string\"}],\n" +
+        "  \"suggestedAnalyses\": [{\"name\":\"string\",\"whenToUse\":\"string\",\"variablesNeeded\":\"string\",\"outputExpected\":\"string\",\"notes\":\"string\"}],\n" +
+        "  \"dataCollection\": [\"string\"],\n" +
+        "  \"ethics\": [\"string\"],\n" +
+        "  \"limitations\": [\"string\"],\n" +
+        "  \"timeline\": \"string\",\n" +
+        "  \"proposalSections\": {\n" +
+        "    \"background\": \"string\",\n" +
+        "    \"rationale\": \"string\",\n" +
+        "    \"aim\": \"string\",\n" +
+        "    \"objectives\": \"string\",\n" +
+        "    \"methods\": \"string\",\n" +
+        "    \"studyDesign\": \"string\",\n" +
+        "    \"setting\": \"string\",\n" +
+        "    \"population\": \"string\",\n" +
+        "    \"inclusionCriteria\": \"string\",\n" +
+        "    \"exclusionCriteria\": \"string\",\n" +
+        "    \"variables\": \"string\",\n" +
+        "    \"dataCollection\": \"string\",\n" +
+        "    \"statisticalAnalysisPlan\": \"string\",\n" +
+        "    \"ethics\": \"string\",\n" +
+        "    \"timeline\": \"string\",\n" +
+        "    \"limitations\": \"string\"\n" +
+        "  },\n" +
+        "  \"missingOrWeakSections\": [\"string\"],\n" +
+        "  \"warnings\": [\"string\"],\n" +
+        "  \"confidenceSummary\": \"string\"\n" +
+        "}\n\n" +
+        "Return ONLY the JSON object above, filled in from the supplied text. No " +
+        "markdown, no code fences, no explanation, and no text before or after the JSON.";
+
     private static string BuildRecommendationsUserPrompt(ResearchProject p)
     {
         var sb = new StringBuilder();
@@ -713,6 +879,23 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         sb.AppendLine("Base everything only on the details below; where a detail is missing, say what is needed rather than inventing it.");
         sb.AppendLine();
         AppendProjectDetails(sb, p);
+
+        // If the student imported an existing proposal, base the recommendations
+        // primarily on it — derive the research question, objectives, variables,
+        // analyses, methods, criteria, and ethics from the proposal itself, not
+        // just the raw project fields. Still extraction-based: nothing invented.
+        if (!string.IsNullOrWhiteSpace(p.ImportedProposalText))
+        {
+            sb.AppendLine();
+            sb.AppendLine("The student ALREADY has an existing proposal (below). Base your recommendations "
+                + "primarily on it: derive the research question, objectives, variables, analyses, methods, "
+                + "inclusion/exclusion criteria, and ethics from THIS proposal and stay consistent with it. "
+                + "Do not invent anything that is not supported by the proposal or the project details.");
+            sb.AppendLine("===== BEGIN EXISTING PROPOSAL =====");
+            sb.AppendLine(p.ImportedProposalText.Trim());
+            sb.AppendLine("===== END EXISTING PROPOSAL =====");
+        }
+
         return sb.ToString();
     }
 
@@ -778,6 +961,29 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
                 sb.AppendLine("    • " + item.Trim());
     }
 
+    private static string BuildExtractionUserPrompt(string proposalText, ResearchProject p)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Extract structured details from the EXISTING research proposal below.");
+        sb.AppendLine("Only use what is actually written in it. Anything not present must be left empty and listed under missingOrWeakSections.");
+
+        // A little existing-project context helps disambiguate (e.g. specialty),
+        // but the model is told above to extract only from the proposal text.
+        if (!string.IsNullOrWhiteSpace(p.Title) || !string.IsNullOrWhiteSpace(p.Specialty))
+        {
+            sb.AppendLine();
+            sb.AppendLine("For context only (do NOT copy from here unless the proposal text also says it):");
+            if (!string.IsNullOrWhiteSpace(p.Title)) sb.AppendLine("- Current project title: " + p.Title.Trim());
+            if (!string.IsNullOrWhiteSpace(p.Specialty)) sb.AppendLine("- Current specialty: " + p.Specialty.Trim());
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("===== BEGIN PROPOSAL TEXT =====");
+        sb.AppendLine(proposalText.Trim());
+        sb.AppendLine("===== END PROPOSAL TEXT =====");
+        return sb.ToString();
+    }
+
     private static void AppendProjectDetails(StringBuilder sb, ResearchProject p)
     {
         string V(string s) => string.IsNullOrWhiteSpace(s) ? "(not provided)" : s.Trim();
@@ -804,6 +1010,7 @@ public interface IResearchRecommendationParser
 {
     bool TryParseRecommendations(string text, out ResearchRecommendations recommendations);
     bool TryParseProposal(string text, out ResearchProposalDraft proposal);
+    bool TryParseExtraction(string text, out ProposalExtractionResult extraction);
 }
 
 public sealed class ResearchRecommendationParser : IResearchRecommendationParser
@@ -950,6 +1157,109 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
         return false;
     }
 
+    public bool TryParseExtraction(string text, out ProposalExtractionResult extraction)
+    {
+        extraction = new ProposalExtractionResult { SourceMode = ResearchSourceMode.AiGenerated };
+
+        foreach (string json in ExtractJsonCandidates(text))
+        {
+            try
+            {
+                var dto = JsonSerializer.Deserialize<ExtractionDto>(json, Opts);
+                if (dto is null) continue;
+
+                var r = new ProposalExtractionResult
+                {
+                    SourceMode = ResearchSourceMode.AiGenerated,
+                    ExtractedTitle = Clean(dto.Title),
+                    ExtractedSpecialty = Clean(dto.Specialty),
+                    ExtractedStudyDesign = Clean(dto.StudyDesign),
+                    ExtractedResearchQuestion = Clean(dto.ResearchQuestion),
+                    ExtractedAim = Clean(dto.Aim),
+                    ExtractedPrimaryObjective = Clean(dto.PrimaryObjective),
+                    ExtractedSecondaryObjectives = CleanList(dto.SecondaryObjectives),
+                    ExtractedPopulation = Clean(dto.Population),
+                    ExtractedSetting = Clean(dto.Setting),
+                    ExtractedTimePeriod = Clean(dto.TimePeriod),
+                    ExtractedInclusionCriteria = CleanList(dto.InclusionCriteria),
+                    ExtractedExclusionCriteria = CleanList(dto.ExclusionCriteria),
+                    ExtractedDataCollection = CleanList(dto.DataCollection),
+                    ExtractedEthics = CleanList(dto.Ethics),
+                    ExtractedLimitations = CleanList(dto.Limitations),
+                    ExtractedTimeline = Clean(dto.Timeline),
+                    MissingOrWeakSections = CleanList(dto.MissingOrWeakSections),
+                    Warnings = CleanList(dto.Warnings),
+                    ConfidenceSummary = Clean(dto.ConfidenceSummary)
+                };
+
+                if (dto.Variables is not null)
+                    foreach (var v in dto.Variables)
+                    {
+                        if (v is null) continue;
+                        r.ExtractedVariables.Add(new ResearchVariableSuggestion
+                        {
+                            VariableName = Clean(v.Name),
+                            VariableLabel = Clean(v.Label),
+                            VariableType = Clean(v.Type),
+                            Role = Clean(v.Role),
+                            SuggestedCoding = Clean(v.Coding),
+                            Notes = Clean(v.Notes)
+                        });
+                    }
+
+                if (dto.SuggestedAnalyses is not null)
+                    foreach (var a in dto.SuggestedAnalyses)
+                    {
+                        if (a is null) continue;
+                        r.ExtractedSuggestedAnalyses.Add(new ResearchAnalysisSuggestion
+                        {
+                            AnalysisName = Clean(a.Name),
+                            WhenToUse = Clean(a.WhenToUse),
+                            VariablesNeeded = Clean(a.VariablesNeeded),
+                            OutputExpected = Clean(a.OutputExpected),
+                            Notes = Clean(a.Notes)
+                        });
+                    }
+
+                if (dto.ProposalSections is not null)
+                {
+                    var s = dto.ProposalSections;
+                    r.ExtractedProposalSections = new ExtractedProposalSections
+                    {
+                        Background = Clean(s.Background),
+                        Rationale = Clean(s.Rationale),
+                        Aim = Clean(s.Aim),
+                        Objectives = Clean(s.Objectives),
+                        Methods = Clean(s.Methods),
+                        StudyDesign = Clean(s.StudyDesign),
+                        Setting = Clean(s.Setting),
+                        Population = Clean(s.Population),
+                        InclusionCriteria = Clean(s.InclusionCriteria),
+                        ExclusionCriteria = Clean(s.ExclusionCriteria),
+                        Variables = Clean(s.Variables),
+                        DataCollection = Clean(s.DataCollection),
+                        StatisticalAnalysisPlan = Clean(s.StatisticalAnalysisPlan),
+                        Ethics = Clean(s.Ethics),
+                        Timeline = Clean(s.Timeline),
+                        Limitations = Clean(s.Limitations)
+                    };
+                }
+
+                if (r.HasAnyContent)
+                {
+                    extraction = r;
+                    return true;
+                }
+            }
+            catch
+            {
+                // Not this candidate — try the next one.
+            }
+        }
+
+        return false;
+    }
+
     // Returns every balanced top-level JSON object found in the text, largest
     // first (the real payload is almost always the biggest object). Markdown code
     // fences are stripped first, so ```json ... ``` and prose-wrapped replies both
@@ -1067,5 +1377,31 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
         [JsonPropertyName("ethics")] public string? Ethics { get; set; }
         [JsonPropertyName("timeline")] public string? Timeline { get; set; }
         [JsonPropertyName("limitations")] public string? Limitations { get; set; }
+    }
+
+    private sealed class ExtractionDto
+    {
+        [JsonPropertyName("title")] public string? Title { get; set; }
+        [JsonPropertyName("specialty")] public string? Specialty { get; set; }
+        [JsonPropertyName("studyDesign")] public string? StudyDesign { get; set; }
+        [JsonPropertyName("researchQuestion")] public string? ResearchQuestion { get; set; }
+        [JsonPropertyName("aim")] public string? Aim { get; set; }
+        [JsonPropertyName("primaryObjective")] public string? PrimaryObjective { get; set; }
+        [JsonPropertyName("secondaryObjectives")] public List<string>? SecondaryObjectives { get; set; }
+        [JsonPropertyName("population")] public string? Population { get; set; }
+        [JsonPropertyName("setting")] public string? Setting { get; set; }
+        [JsonPropertyName("timePeriod")] public string? TimePeriod { get; set; }
+        [JsonPropertyName("inclusionCriteria")] public List<string>? InclusionCriteria { get; set; }
+        [JsonPropertyName("exclusionCriteria")] public List<string>? ExclusionCriteria { get; set; }
+        [JsonPropertyName("variables")] public List<VarDto?>? Variables { get; set; }
+        [JsonPropertyName("suggestedAnalyses")] public List<AnaDto?>? SuggestedAnalyses { get; set; }
+        [JsonPropertyName("dataCollection")] public List<string>? DataCollection { get; set; }
+        [JsonPropertyName("ethics")] public List<string>? Ethics { get; set; }
+        [JsonPropertyName("limitations")] public List<string>? Limitations { get; set; }
+        [JsonPropertyName("timeline")] public string? Timeline { get; set; }
+        [JsonPropertyName("proposalSections")] public ProposalDto? ProposalSections { get; set; }
+        [JsonPropertyName("missingOrWeakSections")] public List<string>? MissingOrWeakSections { get; set; }
+        [JsonPropertyName("warnings")] public List<string>? Warnings { get; set; }
+        [JsonPropertyName("confidenceSummary")] public string? ConfidenceSummary { get; set; }
     }
 }

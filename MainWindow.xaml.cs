@@ -1,5 +1,7 @@
 using Microsoft.Win32;
 using System.IO;
+using System.IO.Compression;
+using System.Text.RegularExpressions;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -143,6 +145,20 @@ public sealed partial class MainWindow : Window
     private ResearchAiOptions _researchAiOptions = new();
     private IResearchAiService _researchAi = null!;   // built in the constructor
     private string ResearchAiConfigPath => Path.Combine(dataDir, "research_ai_config.json");
+
+    // Research Lab (Phase 2E/F) — import + generic confirm state.
+    // Guards for pasted/uploaded proposal text length (protects the model call
+    // and keeps the UI responsive). The proposal text is never logged or printed.
+    private const int ImportProposalMaxChars = 24000;
+    private const int ImportProposalMinChars = 40;
+    private const long ImportProposalMaxFileBytes = 5 * 1024 * 1024;   // 5 MB
+    private ProposalExtractionResult? _currentExtraction;
+    private string _lastImportText = "";
+    // Text read from a chosen file, kept separate from the paste box so that a
+    // non-empty paste always takes precedence at analyze time.
+    private string _importedFileText = "";
+    private string _importedFileError = "";
+    private Action? _rlConfirmAction;
 
     private LocalAccount? _currentUser;
     private string _activeDeckId = "";
@@ -2280,6 +2296,7 @@ public sealed partial class MainWindow : Window
         UpdateProposalPlanSource(project);
         UpdateOverviewProgress(project);
         UpdateGenerateRecButton(project);
+        UpdateAiRecImportedBadge(project);
         UpdateResearchAiAvailability();
 
         // Always land on Overview when a project opens.
@@ -2405,11 +2422,46 @@ public sealed partial class MainWindow : Window
 
     // ---- AI Recommendations: generate in-app ------------------------------
 
-    private async void GenerateRecommendations_Click(object sender, RoutedEventArgs e)
+    private void GenerateRecommendations_Click(object sender, RoutedEventArgs e)
     {
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
 
+        // Safe regenerate: if recommendations already exist, confirm first so a
+        // stray click never quietly replaces the current AI suggestions.
+        if (HasExistingRecommendations(p))
+        {
+            ShowRlConfirm(
+                "Regenerate recommendations?",
+                "Regenerating recommendations may replace the current AI suggestions. Your accepted research plan will not be overwritten unless you accept the new recommendations.",
+                "Regenerate",
+                () => _ = RunGenerateRecommendations(p));
+            return;
+        }
+
+        // Workflow rule: if the student already has a proposal, they should
+        // import it first so recommendations are extracted from their existing
+        // work. Only prompt on first-time generation with nothing imported yet.
+        if (!HasImportedProposal(p))
+        {
+            ShowRlConfirm(
+                "Already have a proposal?",
+                "Import it first so Research AI can extract recommendations from your existing work. If you don't have one, continue to generate recommendations from your project details.",
+                okLabel: "Import Existing Proposal",
+                onConfirm: OpenImportProposalOverlay,
+                onCancel: () => _ = RunGenerateRecommendations(p),
+                cancelLabel: "Continue without proposal");
+            return;
+        }
+
+        _ = RunGenerateRecommendations(p);
+    }
+
+    private static bool HasImportedProposal(ResearchProject p)
+        => p.ProposalImported || !string.IsNullOrWhiteSpace(p.ImportedProposalText);
+
+    private async Task RunGenerateRecommendations(ResearchProject p)
+    {
         if (!_researchAi.IsConfigured)
         {
             ShowResearchAiNotConfigured();
@@ -2426,13 +2478,18 @@ public sealed partial class MainWindow : Window
         {
             var rec = await _researchAi.GenerateRecommendationsAsync(p, CancellationToken.None);
             p.Recommendations = rec;
+            // Fresh recommendations now reflect the current details, so clear the
+            // "details changed" nudge.
+            p.DetailsChangedSinceRecommendations = false;
             p.UpdatedAt = DateTime.UtcNow;
             SaveResearch();
 
             RenderRecommendations(rec);
             PopulatePlanEditor(p);
             UpdateOverviewProgress(p);
+            UpdateProposalPlanSource(p);
             UpdateGenerateRecButton(p);
+            UpdateAiRecImportedBadge(p);
             ShowToast("Recommendations generated successfully.");
         }
         catch (ResearchAiNotConfiguredException)
@@ -2472,8 +2529,15 @@ public sealed partial class MainWindow : Window
     {
         bool has = p.Recommendations is not null &&
                    (p.Recommendations.HasStructuredContent || !string.IsNullOrWhiteSpace(p.Recommendations.RawAiText));
-        GenerateRecBtnText.Text = has ? "Regenerate recommendations" : "Generate AI Recommendations";
+        GenerateRecBtnText.Text = has ? "Regenerate AI Recommendations" : "Generate AI Recommendations";
     }
+
+    private static bool HasExistingRecommendations(ResearchProject p)
+        => p.Recommendations is not null &&
+           (p.Recommendations.HasStructuredContent || !string.IsNullOrWhiteSpace(p.Recommendations.RawAiText));
+
+    private void UpdateAiRecImportedBadge(ResearchProject p)
+        => AiRecImportedBadge.Visibility = HasImportedProposal(p) ? Visibility.Visible : Visibility.Collapsed;
 
     private void AcceptRecommendations_Click(object sender, RoutedEventArgs e)
     {
@@ -2488,6 +2552,7 @@ public sealed partial class MainWindow : Window
         }
 
         rec.AcceptedIntoPlan = true;
+        p.DetailsChangedSinceRecommendations = false;
 
         // Build the editable plan only if one doesn't already exist — never
         // overwrite the student's own edits.
@@ -2840,11 +2905,102 @@ public sealed partial class MainWindow : Window
         SetStatusText(OvProposalStatus, hasProposal, hasProposal ? "Created" : "Not started");
 
         string next;
-        if (!hasRec) next = "Next: generate AI recommendations.";
+        if (!hasRec) next = "Next: generate or import AI recommendations.";
         else if (!planAccepted) next = "Next: review and accept the research plan.";
         else if (!hasProposal) next = "Next: generate a proposal draft.";
-        else next = "Next: prepare your data extraction sheet in the next phase.";
+        else next = "Next: build your data extraction sheet in Phase 3.";
         DashNextStepText.Text = next;
+
+        // Phase 2E/D — details-changed nudge, plan readiness, and extraction gate.
+        OvDetailsChangedWarning.Visibility =
+            (p.DetailsChangedSinceRecommendations && hasRec) ? Visibility.Visible : Visibility.Collapsed;
+        UpdateReadiness(p);
+        UpdateReadyForExtraction(p, planAccepted, hasProposal);
+    }
+
+    // ---- Research Plan Readiness (Phase 2E) --------------------------------
+
+    private void UpdateReadiness(ResearchProject p)
+    {
+        var rec = p.Recommendations;
+        bool accepted = HasAcceptedResearchPlan(p);
+
+        // A field counts as ready if the recommendations OR the accepted/edited
+        // plan carry it. Never fabricated — purely reflects stored content.
+        bool title = !string.IsNullOrWhiteSpace(p.Title)
+            || !string.IsNullOrWhiteSpace(rec?.RefinedResearchTitle)
+            || !string.IsNullOrWhiteSpace(p.Plan?.FinalTitle);
+        bool design = !string.IsNullOrWhiteSpace(rec?.RecommendedStudyDesign)
+            || !string.IsNullOrWhiteSpace(p.Plan?.StudyDesign)
+            || (!string.IsNullOrWhiteSpace(p.StudyType) && !string.Equals(p.StudyType.Trim(), "Not sure", StringComparison.OrdinalIgnoreCase));
+        bool question = !string.IsNullOrWhiteSpace(rec?.ResearchQuestion)
+            || !string.IsNullOrWhiteSpace(p.Plan?.ResearchQuestion);
+        bool objectives = !string.IsNullOrWhiteSpace(rec?.PrimaryObjective)
+            || (rec?.SecondaryObjectives.Count > 0)
+            || !string.IsNullOrWhiteSpace(p.Plan?.PrimaryObjective);
+        bool variables = (rec?.SuggestedVariables.Count > 0)
+            || !string.IsNullOrWhiteSpace(p.Plan?.MainVariables);
+        bool analyses = (rec?.SuggestedAnalyses.Count > 0)
+            || !string.IsNullOrWhiteSpace(p.Plan?.SuggestedAnalyses);
+        bool criteria = (rec?.InclusionCriteria.Count > 0) || (rec?.ExclusionCriteria.Count > 0)
+            || !string.IsNullOrWhiteSpace(p.Plan?.InclusionCriteria) || !string.IsNullOrWhiteSpace(p.Plan?.ExclusionCriteria);
+        bool ethics = rec?.EthicsNotes.Count > 0;
+        bool proposal = p.ProposalDraft is not null;
+
+        SetChecklistRow(RdyTitleIcon, RdyTitleText, title, "Project title defined");
+        SetChecklistRow(RdyDesignIcon, RdyDesignText, design, "Study design selected");
+        SetChecklistRow(RdyQuestionIcon, RdyQuestionText, question, "Research question generated");
+        SetChecklistRow(RdyObjectivesIcon, RdyObjectivesText, objectives, "Objectives generated");
+        SetChecklistRow(RdyVariablesIcon, RdyVariablesText, variables, "Variables suggested");
+        SetChecklistRow(RdyAnalysesIcon, RdyAnalysesText, analyses, "Analyses suggested");
+        SetChecklistRow(RdyCriteriaIcon, RdyCriteriaText, criteria, "Inclusion/exclusion criteria added");
+        SetChecklistRow(RdyEthicsIcon, RdyEthicsText, ethics, "Ethics notes added");
+        SetChecklistRow(RdyAcceptedIcon, RdyAcceptedText, accepted, "Recommendations accepted");
+        SetChecklistRow(RdyProposalIcon, RdyProposalText, proposal, "Proposal draft created");
+    }
+
+    // ---- Ready for Data Extraction (Phase 2D/E) ---------------------------
+
+    private void UpdateReadyForExtraction(ResearchProject p, bool planAccepted, bool hasProposal)
+    {
+        bool ready = planAccepted && hasProposal;
+
+        var solid = ready ? (Brush)FindResource("SuccessBrush") : (Brush)FindResource("WarningBrush");
+        var soft = ready ? (Brush)FindResource("SuccessSoftBrush") : (Brush)FindResource("WarningSoftBrush");
+
+        OvReadyCard.Background = soft;
+        OvReadyIcon.Background = solid;
+        OvReadyTitle.Foreground = solid;
+        OvReadyDetail.Foreground = solid;
+
+        OvReadyIcon.Child = ready
+            ? new System.Windows.Shapes.Path
+            {
+                Data = (Geometry)FindResource("IconCheck"),
+                Fill = Brushes.White,
+                Width = 13, Height = 13, Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+            : null;
+
+        if (ready)
+        {
+            OvReadyTitle.Text = "Ready for Data Extraction";
+            OvReadyDetail.Text = "Next: build your data extraction sheet in Phase 3.";
+        }
+        else
+        {
+            OvReadyTitle.Text = "Not ready for data extraction yet";
+            var missing = new List<string>();
+            if (!planAccepted)
+            {
+                if (!HasExistingRecommendations(p)) missing.Add("Generate AI recommendations");
+                missing.Add("Accept research plan");
+            }
+            if (!hasProposal) missing.Add("Generate proposal draft");
+            OvReadyDetail.Text = "Still needed: " + string.Join("  •  ", missing);
+        }
     }
 
     private void SetStatusText(TextBlock target, bool done, string text)
@@ -2968,6 +3124,708 @@ public sealed partial class MainWindow : Window
         ProposalNotConfigured.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
         AiRecError.Visibility = Visibility.Collapsed;
         ProposalError.Visibility = Visibility.Collapsed;
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 2E) — Edit Project Details
+    // =====================================================================
+
+    private void OpenEditProject_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        PopulateEditProjectForm(p);
+        EpValidationText.Visibility = Visibility.Collapsed;
+        EpRecsWarning.Visibility = HasExistingRecommendations(p) ? Visibility.Visible : Visibility.Collapsed;
+        EditProjectOverlay.Visibility = Visibility.Visible;
+        FadeIn(EditProjectOverlay, 160);
+        EpTitleBox.Focus();
+    }
+
+    private void PopulateEditProjectForm(ResearchProject p)
+    {
+        EpTitleBox.Text = p.Title;
+        EpSpecialtyBox.Text = p.Specialty;
+        EpAimBox.Text = p.Aim;
+        EpPopulationBox.Text = p.Population;
+        EpSettingBox.Text = p.Setting;
+        EpTimePeriodBox.Text = p.TimePeriod;
+        EpNotesBox.Text = p.Notes;
+
+        SelectComboByText(EpStudyTypeCombo, p.StudyType, 7);   // fallback "Not sure"
+        SelectComboByText(EpDataCombo, p.AvailableDataType, 4); // fallback "No data yet"
+
+        var outs = p.DesiredOutputs ?? new List<string>();
+        EpOutProposal.IsChecked = outs.Contains("Proposal");
+        EpOutIntroduction.IsChecked = outs.Contains("Introduction");
+        EpOutMethods.IsChecked = outs.Contains("Methods");
+        EpOutExtraction.IsChecked = outs.Contains("Data Extraction Sheet");
+        EpOutStatistics.IsChecked = outs.Contains("Statistics");
+        EpOutManuscript.IsChecked = outs.Contains("Manuscript");
+        EpOutAbstract.IsChecked = outs.Contains("Abstract");
+        EpOutTables.IsChecked = outs.Contains("Tables");
+    }
+
+    private static void SelectComboByText(ComboBox combo, string text, int fallbackIndex)
+    {
+        string want = (text ?? "").Trim();
+        for (int i = 0; i < combo.Items.Count; i++)
+        {
+            if (combo.Items[i] is ComboBoxItem item &&
+                string.Equals(item.Content?.ToString()?.Trim(), want, StringComparison.OrdinalIgnoreCase))
+            {
+                combo.SelectedIndex = i;
+                return;
+            }
+        }
+        combo.SelectedIndex = fallbackIndex;
+    }
+
+    private List<string> CollectEditDesiredOutputs()
+    {
+        var outputs = new List<string>();
+        if (EpOutProposal.IsChecked == true) outputs.Add("Proposal");
+        if (EpOutIntroduction.IsChecked == true) outputs.Add("Introduction");
+        if (EpOutMethods.IsChecked == true) outputs.Add("Methods");
+        if (EpOutExtraction.IsChecked == true) outputs.Add("Data Extraction Sheet");
+        if (EpOutStatistics.IsChecked == true) outputs.Add("Statistics");
+        if (EpOutManuscript.IsChecked == true) outputs.Add("Manuscript");
+        if (EpOutAbstract.IsChecked == true) outputs.Add("Abstract");
+        if (EpOutTables.IsChecked == true) outputs.Add("Tables");
+        return outputs;
+    }
+
+    private void CancelEditProject_Click(object sender, RoutedEventArgs e)
+        => EditProjectOverlay.Visibility = Visibility.Collapsed;
+
+    private void SaveEditProject_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { EditProjectOverlay.Visibility = Visibility.Collapsed; return; }
+
+        string title = EpTitleBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            EpValidationText.Text = "Please enter a project title to continue.";
+            EpValidationText.Visibility = Visibility.Visible;
+            EpTitleBox.Focus();
+            return;
+        }
+
+        // Detect whether any detail that feeds the research plan actually changed,
+        // so we can gently suggest regenerating recommendations afterwards.
+        bool changed =
+            !StringEquals(p.Title, title)
+            || !StringEquals(p.Specialty, EpSpecialtyBox.Text)
+            || !StringEquals(p.StudyType, ComboText(EpStudyTypeCombo, "Not sure"))
+            || !StringEquals(p.Aim, EpAimBox.Text)
+            || !StringEquals(p.Population, EpPopulationBox.Text)
+            || !StringEquals(p.Setting, EpSettingBox.Text)
+            || !StringEquals(p.TimePeriod, EpTimePeriodBox.Text)
+            || !StringEquals(p.AvailableDataType, ComboText(EpDataCombo, "No data yet"));
+
+        p.Title = title;
+        p.Specialty = EpSpecialtyBox.Text.Trim();
+        p.StudyType = ComboText(EpStudyTypeCombo, "Not sure");
+        p.Aim = EpAimBox.Text.Trim();
+        p.Population = EpPopulationBox.Text.Trim();
+        p.Setting = EpSettingBox.Text.Trim();
+        p.TimePeriod = EpTimePeriodBox.Text.Trim();
+        p.AvailableDataType = ComboText(EpDataCombo, "No data yet");
+        p.DesiredOutputs = CollectEditDesiredOutputs();
+        p.Notes = EpNotesBox.Text.Trim();
+        p.UpdatedAt = DateTime.UtcNow;
+
+        // Existing recommendations / proposal are deliberately NOT deleted.
+        if (changed && HasExistingRecommendations(p))
+            p.DetailsChangedSinceRecommendations = true;
+
+        SaveResearch();
+
+        EditProjectOverlay.Visibility = Visibility.Collapsed;
+
+        // Refresh every view that shows project details.
+        PopulateOverview(p);
+        PopulateAiSnapshot(p);
+        DashNotesBox.Text = p.Notes;
+        DashTitleText.Text = p.Title;
+        DashSubtitleText.Text = $"{p.SpecialtyDisplay}  •  {p.StudyTypeDisplay}";
+        UpdateOverviewProgress(p);
+
+        ShowToast(changed && HasExistingRecommendations(p)
+            ? "Project details updated. Consider regenerating AI recommendations."
+            : "Project details updated.");
+    }
+
+    private static bool StringEquals(string a, string b)
+        => string.Equals((a ?? "").Trim(), (b ?? "").Trim(), StringComparison.Ordinal);
+
+    // =====================================================================
+    // Research Lab (Phase 2F) — Import Existing Proposal
+    // =====================================================================
+
+    private void OpenImportProposal_Click(object sender, RoutedEventArgs e)
+        => OpenImportProposalOverlay();
+
+    private void OpenImportProposalOverlay()
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        ImportPasteBox.Text = "";
+        ImportFileNameText.Text = "No file chosen";
+        _importedFileText = "";
+        _importedFileError = "";
+        ImportValidationText.Visibility = Visibility.Collapsed;
+        ImportProposalOverlay.Visibility = Visibility.Visible;
+        FadeIn(ImportProposalOverlay, 160);
+        ImportPasteBox.Focus();
+    }
+
+    private void CancelImportProposal_Click(object sender, RoutedEventArgs e)
+        => ImportProposalOverlay.Visibility = Visibility.Collapsed;
+
+    private void ChooseProposalFile_Click(object sender, RoutedEventArgs e)
+    {
+        var ofd = new OpenFileDialog
+        {
+            Title = "Choose a proposal file",
+            Filter = "Text and documents (*.txt;*.md;*.docx)|*.txt;*.md;*.docx|Text files (*.txt;*.md)|*.txt;*.md|Word document (*.docx)|*.docx|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (ofd.ShowDialog() != true) return;
+
+        if (!TryLoadProposalFile(ofd.FileName, out string text, out string error))
+        {
+            // Keep any pasted text intact — it takes precedence at analyze time.
+            _importedFileText = "";
+            _importedFileError = error;
+            ImportFileNameText.Text = Path.GetFileName(ofd.FileName) + " — could not be read";
+            ShowImportValidation(error);
+            return;
+        }
+
+        // Remember the file text separately. Only fill the paste box when it is
+        // empty, so a non-empty paste is never clobbered by a chosen file.
+        _importedFileText = text;
+        _importedFileError = "";
+        if (string.IsNullOrWhiteSpace(ImportPasteBox.Text))
+            ImportPasteBox.Text = text;
+
+        // Show only the file name, never the full path.
+        ImportFileNameText.Text = Path.GetFileName(ofd.FileName);
+        ImportValidationText.Visibility = Visibility.Collapsed;
+    }
+
+    // Reads .txt/.md as UTF-8 and .docx via its word/document.xml. PDFs and
+    // images are intentionally deferred to a later OCR/vision update. Never logs
+    // or prints the file contents.
+    private bool TryLoadProposalFile(string path, out string text, out string error)
+    {
+        text = "";
+        error = "";
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) { error = "That file could not be found."; return false; }
+            if (info.Length == 0) { error = "That file is empty."; return false; }
+            if (info.Length > ImportProposalMaxFileBytes)
+            {
+                error = "That file is too large. Please use a file under 5 MB or paste the text.";
+                return false;
+            }
+
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            switch (ext)
+            {
+                case ".txt":
+                case ".md":
+                    text = File.ReadAllText(path);
+                    break;
+                case ".docx":
+                    // Word files vary a lot; if this simple reader can't get clean
+                    // text, fail gracefully and ask the student to paste instead.
+                    try
+                    {
+                        text = ExtractDocxText(path);
+                    }
+                    catch
+                    {
+                        error = "Could not read this Word file. Please paste the proposal text instead.";
+                        return false;
+                    }
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        error = "Could not read this Word file. Please paste the proposal text instead.";
+                        return false;
+                    }
+                    break;
+                case ".pdf":
+                    error = "PDF import will require OCR/text support in a later update. Please paste the proposal text or use a .txt, .md, or .docx file.";
+                    return false;
+                case ".png":
+                case ".jpg":
+                case ".jpeg":
+                case ".bmp":
+                case ".tif":
+                case ".tiff":
+                    error = "Image and scanned-PDF extraction will require OCR/vision support in a later update. Please paste the proposal text instead.";
+                    return false;
+                default:
+                    error = "Unsupported file type. Please use .txt, .md, or .docx, or paste the text.";
+                    return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                error = "No readable text was found in that file. Please paste the proposal text instead.";
+                text = "";
+                return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            error = "That file could not be read. Please paste the proposal text instead.";
+            text = "";
+            return false;
+        }
+    }
+
+    // Minimal, dependency-free .docx text extraction: unzip, read the main
+    // document part, turn paragraphs/tabs/breaks into whitespace, strip the
+    // remaining XML tags, and decode entities.
+    private static string ExtractDocxText(string path)
+    {
+        using var archive = ZipFile.OpenRead(path);
+        var entry = archive.GetEntry("word/document.xml");
+        if (entry is null) return "";
+
+        string xml;
+        using (var reader = new StreamReader(entry.Open(), Encoding.UTF8))
+            xml = reader.ReadToEnd();
+
+        // Paragraph and line breaks -> newlines; tabs -> spaces.
+        xml = Regex.Replace(xml, "</w:p>", "\n", RegexOptions.IgnoreCase);
+        xml = Regex.Replace(xml, "<w:br[^>]*/>", "\n", RegexOptions.IgnoreCase);
+        xml = Regex.Replace(xml, "<w:tab[^>]*/>", "\t", RegexOptions.IgnoreCase);
+
+        // Drop every remaining tag, then decode XML entities.
+        string text = Regex.Replace(xml, "<[^>]+>", "");
+        text = System.Net.WebUtility.HtmlDecode(text);
+
+        // Collapse excessive blank lines.
+        text = Regex.Replace(text, "\n{3,}", "\n\n");
+        return text.Trim();
+    }
+
+    private void ShowImportValidation(string message)
+    {
+        ImportValidationText.Text = message;
+        ImportValidationText.Visibility = Visibility.Visible;
+    }
+
+    private async void AnalyzeProposal_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ImportProposalOverlay.Visibility = Visibility.Collapsed; return; }
+
+        // Prefer pasted text; fall back to a chosen file's text only when nothing
+        // was pasted. A non-empty paste is always used, even if a file is selected
+        // (and even if that file failed to read).
+        string pasted = (ImportPasteBox.Text ?? "").Trim();
+        string text = pasted.Length > 0 ? pasted : (_importedFileText ?? "").Trim();
+
+        if (text.Length == 0)
+        {
+            // Empty overall — point at the most helpful reason.
+            ShowImportValidation(!string.IsNullOrEmpty(_importedFileError)
+                ? _importedFileError
+                : "Proposal text is empty. Paste your proposal text, or choose a readable .txt, .md, or .docx file.");
+            return;
+        }
+        if (text.Length < ImportProposalMinChars)
+        {
+            ShowImportValidation("Please paste or upload a longer proposal (at least a few sentences).");
+            return;
+        }
+        if (text.Length > ImportProposalMaxChars)
+        {
+            ShowImportValidation($"That proposal is too long ({text.Length:N0} characters). Please trim it to under {ImportProposalMaxChars:N0} characters.");
+            return;
+        }
+        if (!_researchAi.IsConfigured)
+        {
+            ShowImportValidation("Research AI is not configured yet. Add an endpoint or enable a development provider in Settings.");
+            return;
+        }
+
+        ImportValidationText.Visibility = Visibility.Collapsed;
+        AnalyzeProposalBtn.IsEnabled = false;
+        ShowLoading("Research AI is analyzing your proposal...");
+
+        try
+        {
+            var result = await _researchAi.ExtractProposalAsync(text, p, CancellationToken.None);
+            _currentExtraction = result;
+            _lastImportText = text;
+
+            ImportProposalOverlay.Visibility = Visibility.Collapsed;
+            ShowReviewScreen(result);
+        }
+        catch (ResearchAiNotConfiguredException)
+        {
+            ShowImportValidation("Research AI is not configured yet. Add an endpoint or enable a development provider in Settings.");
+        }
+        catch (ResearchAiException ex)
+        {
+            // Surface the specific, key-free reason (timed out, could not be
+            // parsed, provider error) instead of one generic message.
+            ShowImportValidation(ex.Message);
+        }
+        catch (Exception)
+        {
+            ShowImportValidation("Research AI extraction failed. Please try again.");
+        }
+        finally
+        {
+            HideLoading();
+            AnalyzeProposalBtn.IsEnabled = true;
+        }
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 2G/H) — Review & Apply extracted details
+    // =====================================================================
+
+    private void ShowReviewScreen(ProposalExtractionResult r)
+    {
+        // Editable core fields (prefilled from the extraction).
+        RvTitle.Text = r.ExtractedTitle;
+        RvSpecialty.Text = r.ExtractedSpecialty;
+        RvStudyDesign.Text = r.ExtractedStudyDesign;
+        RvPopulation.Text = r.ExtractedPopulation;
+        RvSetting.Text = r.ExtractedSetting;
+        RvTimePeriod.Text = r.ExtractedTimePeriod;
+        RvResearchQuestion.Text = r.ExtractedResearchQuestion;
+        RvAim.Text = r.ExtractedAim;
+        RvPrimaryObjective.Text = r.ExtractedPrimaryObjective;
+
+        RvSecondaryObjectives.Text = r.ExtractedSecondaryObjectives.Count > 0
+            ? "Secondary objectives:\n" + BulletLines(r.ExtractedSecondaryObjectives)
+            : "Secondary objectives: none found.";
+
+        var sec = r.ExtractedProposalSections;
+        RvMethods.Text = FirstFilled(
+            (sec.Methods, "Methods"),
+            (sec.StudyDesign, "Study design"),
+            (r.ExtractedStudyDesign, "Study design"));
+
+        RvCriteria.Text = JoinReview(
+            ("Inclusion criteria", r.ExtractedInclusionCriteria),
+            ("Exclusion criteria", r.ExtractedExclusionCriteria));
+        if (string.IsNullOrWhiteSpace(RvCriteria.Text)) RvCriteria.Text = "No inclusion/exclusion criteria found.";
+
+        RvVariablesAnalyses.Text = BuildVariablesAnalysesReview(r);
+        if (string.IsNullOrWhiteSpace(RvVariablesAnalyses.Text)) RvVariablesAnalyses.Text = "No variables or analyses found.";
+
+        RvEthicsLimitations.Text = JoinReview(
+            ("Ethics", r.ExtractedEthics),
+            ("Limitations", r.ExtractedLimitations));
+        if (!string.IsNullOrWhiteSpace(r.ExtractedTimeline))
+            RvEthicsLimitations.Text = (RvEthicsLimitations.Text + "\nTimeline: " + r.ExtractedTimeline).Trim();
+        if (string.IsNullOrWhiteSpace(RvEthicsLimitations.Text)) RvEthicsLimitations.Text = "No ethics or limitations found.";
+
+        RvProposalSections.Text = BuildProposalSectionsReview(sec);
+        if (string.IsNullOrWhiteSpace(RvProposalSections.Text)) RvProposalSections.Text = "No full proposal sections were extracted.";
+
+        bool hasMissing = r.MissingOrWeakSections.Count > 0;
+        RvMissingCard.Visibility = hasMissing ? Visibility.Visible : Visibility.Collapsed;
+        RvMissing.Text = hasMissing ? BulletLines(r.MissingOrWeakSections) : "";
+
+        RvConfidence.Text = string.IsNullOrWhiteSpace(r.ConfidenceSummary)
+            ? "Review every field before applying. AI extraction can miss or misread details."
+            : r.ConfidenceSummary;
+        RvWarnings.Text = r.Warnings.Count > 0 ? BulletLines(r.Warnings) : "";
+
+        ReviewExtractionOverlay.Visibility = Visibility.Visible;
+        FadeIn(ReviewExtractionOverlay, 160);
+    }
+
+    private void CancelReview_Click(object sender, RoutedEventArgs e)
+        => ReviewExtractionOverlay.Visibility = Visibility.Collapsed;
+
+    private void ReanalyzeExtraction_Click(object sender, RoutedEventArgs e)
+    {
+        // Reopen the import dialog, keeping the last pasted text for a quick retry.
+        ReviewExtractionOverlay.Visibility = Visibility.Collapsed;
+        ImportPasteBox.Text = _lastImportText;
+        ImportFileNameText.Text = "No file chosen";
+        ImportValidationText.Visibility = Visibility.Collapsed;
+        ImportProposalOverlay.Visibility = Visibility.Visible;
+        FadeIn(ImportProposalOverlay, 140);
+    }
+
+    private void ApplyExtraction_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null || _currentExtraction is null)
+        {
+            ReviewExtractionOverlay.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // If the project already carries a plan or proposal, confirm before we
+        // overwrite any of those fields.
+        if (HasExistingRecommendations(p) || p.ProposalDraft is not null)
+        {
+            ShowRlConfirm(
+                "Apply extracted details?",
+                "This project already has a research plan or proposal draft. Applying extracted details may replace some fields. Continue?",
+                "Apply",
+                () => AskAcceptThenApply(p));
+            return;
+        }
+
+        AskAcceptThenApply(p);
+    }
+
+    // Ask whether to mark the extracted plan as the accepted research plan, then
+    // apply either way.
+    private void AskAcceptThenApply(ResearchProject p)
+    {
+        ShowRlConfirm(
+            "Mark as accepted research plan?",
+            "Do you want to mark this extracted research plan as your accepted plan? You can still edit it afterwards. Choose Cancel to apply the details without accepting the plan yet.",
+            "Mark as accepted",
+            onConfirm: () => ApplyExtractionCore(p, markAccepted: true),
+            onCancel: () => ApplyExtractionCore(p, markAccepted: false));
+    }
+
+    private void ApplyExtractionCore(ResearchProject p, bool markAccepted)
+    {
+        var r = _currentExtraction;
+        if (r is null) { ReviewExtractionOverlay.Visibility = Visibility.Collapsed; return; }
+
+        // --- Project details (use the possibly-edited review fields) ---
+        if (!string.IsNullOrWhiteSpace(RvTitle.Text)) p.Title = RvTitle.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(RvSpecialty.Text)) p.Specialty = RvSpecialty.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(RvAim.Text)) p.Aim = RvAim.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(RvPopulation.Text)) p.Population = RvPopulation.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(RvSetting.Text)) p.Setting = RvSetting.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(RvTimePeriod.Text)) p.TimePeriod = RvTimePeriod.Text.Trim();
+
+        // --- Recommendations from the extracted plan ---
+        var rec = new ResearchRecommendations
+        {
+            SourceMode = ResearchSourceMode.AiGenerated,
+            RefinedResearchTitle = RvTitle.Text.Trim(),
+            RecommendedStudyDesign = RvStudyDesign.Text.Trim(),
+            ResearchQuestion = RvResearchQuestion.Text.Trim(),
+            PrimaryObjective = RvPrimaryObjective.Text.Trim(),
+            SecondaryObjectives = new List<string>(r.ExtractedSecondaryObjectives),
+            SuggestedVariables = new List<ResearchVariableSuggestion>(r.ExtractedVariables),
+            SuggestedAnalyses = new List<ResearchAnalysisSuggestion>(r.ExtractedSuggestedAnalyses),
+            InclusionCriteria = new List<string>(r.ExtractedInclusionCriteria),
+            ExclusionCriteria = new List<string>(r.ExtractedExclusionCriteria),
+            DataCollectionSuggestions = new List<string>(r.ExtractedDataCollection),
+            EthicsNotes = new List<string>(r.ExtractedEthics),
+            BiasAndLimitations = new List<string>(r.ExtractedLimitations),
+            AcceptedIntoPlan = markAccepted
+        };
+
+        // Only replace recommendations if the extraction actually produced plan
+        // content; otherwise keep whatever the project already had.
+        if (rec.HasStructuredContent)
+            p.Recommendations = rec;
+
+        if (markAccepted && p.Recommendations is not null && p.Recommendations.HasStructuredContent)
+        {
+            p.Recommendations.AcceptedIntoPlan = true;
+            // Rebuild the editable plan from the freshly imported recommendations.
+            p.Plan = BuildPlanFromRecommendations(p, p.Recommendations);
+        }
+
+        // --- Proposal draft from the extracted sections ---
+        var sec = r.ExtractedProposalSections;
+        if (sec.HasAnyContent || !string.IsNullOrWhiteSpace(RvTitle.Text))
+        {
+            var d = p.ProposalDraft ??= new ResearchProposalDraft();
+            d.SourceMode = ResearchSourceMode.AiGenerated;
+            d.IsTemplateGenerated = false;
+            d.Title = FirstNonEmpty(RvTitle.Text, sec.Aim, p.Title);
+            d.Background = sec.Background;
+            d.Rationale = sec.Rationale;
+            d.Aim = FirstNonEmpty(sec.Aim, RvAim.Text);
+            d.Objectives = sec.Objectives;
+            d.Methods = sec.Methods;
+            d.StudyDesign = FirstNonEmpty(sec.StudyDesign, RvStudyDesign.Text);
+            d.Setting = FirstNonEmpty(sec.Setting, RvSetting.Text);
+            d.Population = FirstNonEmpty(sec.Population, RvPopulation.Text);
+            d.InclusionCriteria = sec.InclusionCriteria;
+            d.ExclusionCriteria = sec.ExclusionCriteria;
+            d.Variables = sec.Variables;
+            d.DataCollection = sec.DataCollection;
+            d.StatisticalAnalysisPlan = sec.StatisticalAnalysisPlan;
+            d.Ethics = sec.Ethics;
+            d.Timeline = FirstNonEmpty(sec.Timeline, r.ExtractedTimeline);
+            d.Limitations = sec.Limitations;
+            d.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // --- Mark as imported so the workflow (import-first prompt, recs badge,
+        //     recommendations-from-proposal) behaves correctly ---
+        p.ProposalImported = true;
+        if (!string.IsNullOrWhiteSpace(_lastImportText))
+            p.ImportedProposalText = _lastImportText.Length > ImportProposalMaxChars
+                ? _lastImportText.Substring(0, ImportProposalMaxChars)
+                : _lastImportText;
+
+        // --- Stage / progress ---
+        p.DetailsChangedSinceRecommendations = false;
+        if (p.ProposalDraft is not null)
+        {
+            p.CurrentStage = markAccepted ? "Proposal imported" : "Proposal draft imported";
+            p.ProgressPercent = Math.Max(p.ProgressPercent, markAccepted ? 45 : 40);
+        }
+        else if (p.Recommendations is not null)
+        {
+            p.CurrentStage = markAccepted ? "Research plan ready" : "Recommendations imported";
+            p.ProgressPercent = Math.Max(p.ProgressPercent, markAccepted ? 30 : 25);
+        }
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+
+        ReviewExtractionOverlay.Visibility = Visibility.Collapsed;
+        _currentExtraction = null;
+
+        // --- Refresh every affected view (Part H integration) ---
+        PopulateOverview(p);
+        PopulateAiSnapshot(p);
+        DashTitleText.Text = p.Title;
+        DashSubtitleText.Text = $"{p.SpecialtyDisplay}  •  {p.StudyTypeDisplay}";
+        RenderRecommendations(p.Recommendations);
+        PopulatePlanEditor(p);
+        PopulateProposalEditor(p);
+        UpdateProposalPlanSource(p);
+        UpdateOverviewProgress(p);
+        UpdateGenerateRecButton(p);
+        UpdateAiRecImportedBadge(p);
+        DashNextStepText.Text = "Next: review the extracted plan, then prepare your data extraction sheet.";
+
+        ShowToast("Extracted details applied. Review everything before you continue.");
+    }
+
+    // ---- Review formatting helpers ----------------------------------------
+
+    private static string BulletLines(IEnumerable<string> items)
+        => string.Join("\n", items.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => "•  " + s.Trim()));
+
+    private static string FirstFilled(params (string Value, string Label)[] options)
+    {
+        foreach (var (value, _) in options)
+            if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+        return "No study design or methods found.";
+    }
+
+    private static string JoinReview(params (string Label, List<string> Items)[] groups)
+    {
+        var sb = new StringBuilder();
+        foreach (var (label, items) in groups)
+        {
+            if (items is null || items.Count == 0) continue;
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(label).Append(":\n").Append(BulletLines(items));
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static string BuildVariablesAnalysesReview(ProposalExtractionResult r)
+    {
+        var sb = new StringBuilder();
+        if (r.ExtractedVariables.Count > 0)
+        {
+            sb.Append("Variables:\n");
+            foreach (var v in r.ExtractedVariables)
+            {
+                string meta = v.MetaDisplay == "—" ? "" : " (" + v.MetaDisplay + ")";
+                sb.Append("•  ").Append(v.HeaderDisplay).Append(meta).Append('\n');
+            }
+        }
+        if (r.ExtractedSuggestedAnalyses.Count > 0)
+        {
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append("Analyses:\n");
+            foreach (var a in r.ExtractedSuggestedAnalyses)
+                sb.Append("•  ").Append(a.HeaderDisplay).Append('\n');
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static string BuildProposalSectionsReview(ExtractedProposalSections s)
+    {
+        var sb = new StringBuilder();
+        void Add(string label, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            if (sb.Length > 0) sb.Append("\n\n");
+            sb.Append(label).Append(":  ").Append(value.Trim());
+        }
+        Add("Background", s.Background);
+        Add("Rationale", s.Rationale);
+        Add("Aim", s.Aim);
+        Add("Objectives", s.Objectives);
+        Add("Methods", s.Methods);
+        Add("Study design", s.StudyDesign);
+        Add("Setting", s.Setting);
+        Add("Population", s.Population);
+        Add("Inclusion criteria", s.InclusionCriteria);
+        Add("Exclusion criteria", s.ExclusionCriteria);
+        Add("Variables", s.Variables);
+        Add("Data collection", s.DataCollection);
+        Add("Statistical analysis plan", s.StatisticalAnalysisPlan);
+        Add("Ethics", s.Ethics);
+        Add("Timeline", s.Timeline);
+        Add("Limitations", s.Limitations);
+        return sb.ToString();
+    }
+
+    // =====================================================================
+    // Research Lab — generic confirm dialog (reused across 2E/2F/2G flows)
+    // =====================================================================
+
+    private Action? _rlConfirmCancelAction;
+
+    private void ShowRlConfirm(string title, string message, string okLabel, Action onConfirm, Action? onCancel = null, string cancelLabel = "Cancel")
+    {
+        RlConfirmTitle.Text = title;
+        RlConfirmMessage.Text = message;
+        RlConfirmOkText.Text = okLabel;
+        RlConfirmCancelText.Text = cancelLabel;
+        _rlConfirmAction = onConfirm;
+        _rlConfirmCancelAction = onCancel;
+        RlConfirmOverlay.Visibility = Visibility.Visible;
+        FadeIn(RlConfirmOverlay, 150);
+    }
+
+    private void RlConfirmOk_Click(object sender, RoutedEventArgs e)
+    {
+        RlConfirmOverlay.Visibility = Visibility.Collapsed;
+        var action = _rlConfirmAction;
+        _rlConfirmAction = null;
+        _rlConfirmCancelAction = null;
+        action?.Invoke();
+    }
+
+    private void RlConfirmCancel_Click(object sender, RoutedEventArgs e)
+    {
+        RlConfirmOverlay.Visibility = Visibility.Collapsed;
+        var cancelAction = _rlConfirmCancelAction;
+        _rlConfirmAction = null;
+        _rlConfirmCancelAction = null;
+        cancelAction?.Invoke();
     }
 
     // ---- Small helpers ----------------------------------------------------

@@ -1798,9 +1798,28 @@
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel Grid.Column="0" VerticalAlignment="Top">
+
+                                    <!-- Details changed since recommendations (Phase 2E) -->
+                                    <Border x:Name="OvDetailsChangedWarning" Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="16,14" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <StackPanel>
+                                            <TextBlock Text="Project details changed" Foreground="{StaticResource WarningBrush}" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text="Consider regenerating AI recommendations so the research plan stays aligned."
+                                                       Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
                                     <Border Style="{StaticResource CardBorder}" Padding="26">
                                         <StackPanel>
-                                            <TextBlock Text="Project details" Style="{StaticResource SectionHeader}" Margin="0,0,0,18"/>
+                                            <Grid Margin="0,0,0,18">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Project details" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Style="{StaticResource SoftButton}" Padding="14,8" Click="OpenEditProject_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconEdit}" Fill="{StaticResource PrimaryBrush}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Edit Project Details" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </Grid>
 
                                             <Grid Margin="0,0,0,12">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -1859,6 +1878,84 @@
                                                 <TextBlock Margin="0,0,0,9"><Run Text="6." FontWeight="Bold" Foreground="{StaticResource MutedBrush}"/><Run Text="  Run statistics" Foreground="{StaticResource MutedBrush}"/></TextBlock>
                                                 <TextBlock><Run Text="7." FontWeight="Bold" Foreground="{StaticResource MutedBrush}"/><Run Text="  Write manuscript" Foreground="{StaticResource MutedBrush}"/></TextBlock>
                                             </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Research Plan Readiness (Phase 2E) -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,16,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Research Plan Readiness" Style="{StaticResource SectionHeader}" Margin="0,0,0,4"/>
+                                            <TextBlock Text="What is complete before data extraction." Style="{StaticResource Caption}" Margin="0,0,0,16"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyTitleIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyTitleText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyDesignIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyDesignText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyQuestionIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyQuestionText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyObjectivesIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyObjectivesText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border x:Name="RdyVariablesIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyVariablesText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyAnalysesIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyAnalysesText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyCriteriaIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyCriteriaText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyEthicsIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyEthicsText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                        <Border x:Name="RdyAcceptedIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyAcceptedText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border x:Name="RdyProposalIcon" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="RdyProposalText" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Import Existing Proposal (Phase 2F) -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,16,0,0">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <Border Width="40" Height="40" Background="{StaticResource PrimarySoftBrush}" CornerRadius="11" Margin="0,0,13,0" VerticalAlignment="Center">
+                                                    <Path Data="{StaticResource IconImport}" Fill="{StaticResource PrimaryBrush}" Width="19" Height="19" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Import Existing Proposal" Style="{StaticResource SectionHeader}"/>
+                                                    <TextBlock Text="Already have a proposal? Let Research AI read it." Style="{StaticResource Caption}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <TextBlock Text="Upload or paste an existing proposal and let Research AI extract the project details, research plan, variables, analyses, and proposal sections."
+                                                       Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,14"/>
+                                            <Button Style="{StaticResource PremiumButton}" HorizontalAlignment="Left" Click="OpenImportProposal_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconImport}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                    <TextBlock Text="Import Existing Proposal" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
                                         </StackPanel>
                                     </Border>
                                     </StackPanel>
@@ -1928,6 +2025,17 @@
                                                            Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                             </StackPanel>
                                         </Border>
+
+                                        <!-- Data extraction readiness (Phase 2E/D) -->
+                                        <Border x:Name="OvReadyCard" CornerRadius="14" Padding="20" Margin="0,16,0,0">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                    <Border x:Name="OvReadyIcon" Width="26" Height="26" CornerRadius="13" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="OvReadyTitle" Text="Ready for Data Extraction" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock x:Name="OvReadyDetail" TextWrapping="Wrap" FontSize="13" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </Grid>
 
@@ -1944,6 +2052,24 @@
                                             <TextBlock Text="Build a structured proposal draft from your project and accepted recommendations." Style="{StaticResource Caption}"/>
                                         </StackPanel>
                                     </StackPanel>
+
+                                    <!-- Import Existing Proposal (Phase 2F) -->
+                                    <Border Style="{StaticResource SoftCardBorder}" Padding="20" Margin="0,0,0,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                                <TextBlock Text="Already have a proposal?" Foreground="{StaticResource TextBrush}" FontSize="14.5" FontWeight="SemiBold"/>
+                                                <TextBlock Text="Upload or paste an existing proposal and let Research AI extract the project details, research plan, variables, analyses, and proposal sections."
+                                                           Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Style="{StaticResource PremiumButton}" VerticalAlignment="Center" Click="OpenImportProposal_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconImport}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                    <TextBlock Text="Import Existing Proposal" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
 
                                     <!-- Research Plan Source: accepted state -->
                                     <Border x:Name="ProposalPlanSourceAccepted" Background="{StaticResource SuccessSoftBrush}" CornerRadius="12" Padding="18" Margin="0,0,0,16" Visibility="Collapsed">
@@ -2148,6 +2274,16 @@
                                             <TextBlock Text="AI Research Assistant" Style="{StaticResource SectionHeader}"/>
                                             <TextBlock Text="Generate structured recommendations for this project — study design, objectives, variables, analyses, and next steps — right here in the app."
                                                        Style="{StaticResource Caption}" Margin="0,4,0,14" TextWrapping="Wrap"/>
+
+                                            <!-- Based on imported proposal (Phase 2F) -->
+                                            <Border x:Name="AiRecImportedBadge" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="14,11" Margin="0,0,0,14" Visibility="Collapsed">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="30" Height="30" Background="{StaticResource SuccessBrush}" CornerRadius="8" Margin="0,0,11,0" VerticalAlignment="Center">
+                                                        <Path Data="{StaticResource IconCheck}" Fill="White" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <TextBlock Text="Recommendations are based on the imported proposal." Foreground="{StaticResource SuccessBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Border>
 
                                             <Button x:Name="GenerateRecBtn" Style="{StaticResource PremiumButton}" HorizontalAlignment="Left" Click="GenerateRecommendations_Click">
                                                 <StackPanel Orientation="Horizontal">
@@ -2413,6 +2549,332 @@
 
                             </Grid>
                         </ScrollViewer>
+
+                        <!-- ============================================ -->
+                        <!-- EDIT PROJECT DETAILS overlay (Phase 2E)       -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="EditProjectOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="50">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="660" MaxHeight="640"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Edit Project Details" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Update the basics for this research project. Your recommendations and proposal are kept."
+                                                   Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+                                    </StackPanel>
+
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,0,20,0">
+                                        <StackPanel Margin="0,6,0,8">
+                                            <Border x:Name="EpRecsWarning" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="14,11" Margin="0,0,0,14" Visibility="Collapsed">
+                                                <TextBlock Text="This project already has AI recommendations. Editing details does not delete them, but you may want to regenerate recommendations afterwards so the plan stays aligned."
+                                                           Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                            </Border>
+
+                                            <TextBlock Text="Project title / idea *" Style="{StaticResource FieldLabel}"/>
+                                            <TextBox x:Name="EpTitleBox" local:Watermark.Text="e.g. Prevalence of anemia among first-year medical students"/>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Specialty" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="EpSpecialtyBox" local:Watermark.Text="e.g. Internal Medicine"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Study type" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="EpStudyTypeCombo">
+                                                        <ComboBoxItem Content="Cross-sectional"/>
+                                                        <ComboBoxItem Content="Case-control"/>
+                                                        <ComboBoxItem Content="Cohort"/>
+                                                        <ComboBoxItem Content="Retrospective"/>
+                                                        <ComboBoxItem Content="Systematic review"/>
+                                                        <ComboBoxItem Content="Meta-analysis"/>
+                                                        <ComboBoxItem Content="Case report"/>
+                                                        <ComboBoxItem Content="Not sure"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <TextBlock Text="Research aim" Style="{StaticResource FieldLabel}" Margin="0,16,0,7"/>
+                                            <TextBox x:Name="EpAimBox" Style="{StaticResource EditorTextBox}" MinHeight="64"
+                                                     local:Watermark.Text="What question is this project trying to answer?"/>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Population" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="EpPopulationBox" local:Watermark.Text="e.g. Adults aged 18–45"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Setting" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="EpSettingBox" local:Watermark.Text="e.g. Teaching hospital, outpatient clinic"/>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Time period" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="EpTimePeriodBox" local:Watermark.Text="e.g. Jan–Jun 2026"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Available data" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="EpDataCombo">
+                                                        <ComboBoxItem Content="Google Form"/>
+                                                        <ComboBoxItem Content="Pasted questions"/>
+                                                        <ComboBoxItem Content="Excel/CSV"/>
+                                                        <ComboBoxItem Content="Manual entry"/>
+                                                        <ComboBoxItem Content="No data yet"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <TextBlock Text="Desired outputs" Style="{StaticResource FieldLabel}" Margin="0,16,0,9"/>
+                                            <WrapPanel>
+                                                <CheckBox x:Name="EpOutProposal" Content="Proposal" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutIntroduction" Content="Introduction" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutMethods" Content="Methods" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutExtraction" Content="Data Extraction Sheet" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutStatistics" Content="Statistics" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutManuscript" Content="Manuscript" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutAbstract" Content="Abstract" Margin="0,0,22,10"/>
+                                                <CheckBox x:Name="EpOutTables" Content="Tables" Margin="0,0,22,10"/>
+                                            </WrapPanel>
+
+                                            <TextBlock Text="Notes" Style="{StaticResource FieldLabel}" Margin="0,10,0,7"/>
+                                            <TextBox x:Name="EpNotesBox" Style="{StaticResource EditorTextBox}" MinHeight="64"
+                                                     local:Watermark.Text="Optional notes, references, or reminders"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+
+                                    <Border Grid.Row="2" Background="{StaticResource SoftCardBrush}" CornerRadius="0,0,14,14"
+                                            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="EpValidationText" Grid.Column="0" Foreground="{StaticResource DangerBrush}"
+                                                       FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                       Margin="0,0,14,0" Visibility="Collapsed"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelEditProject_Click"/>
+                                                <Button Content="Save Changes" Style="{StaticResource PremiumButton}" Width="150" Margin="0" Click="SaveEditProject_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- IMPORT EXISTING PROPOSAL overlay (Phase 2F)   -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="ImportProposalOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="50">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="680" MaxHeight="640"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Import Existing Proposal" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Upload or paste an existing proposal and let Research AI extract the project details, research plan, variables, analyses, and proposal sections."
+                                                   Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,0,20,0">
+                                        <StackPanel Margin="0,6,0,8">
+                                            <TextBlock Text="Paste proposal text" Style="{StaticResource FieldLabel}"/>
+                                            <TextBox x:Name="ImportPasteBox" Style="{StaticResource EditorTextBox}" MinHeight="200" MaxHeight="260"
+                                                     AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                                     local:Watermark.Text="Paste the full text of your existing proposal here…"/>
+
+                                            <Border Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,16,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="…or upload a file" Foreground="{StaticResource TextBrush}" FontSize="13.5" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="Supported: .txt, .md, .docx (simple documents). The text is read into the box above." Style="{StaticResource Caption}" Margin="0,3,0,10" TextWrapping="Wrap"/>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Button Content="Choose File" Style="{StaticResource SoftButton}" Click="ChooseProposalFile_Click"/>
+                                                        <TextBlock x:Name="ImportFileNameText" Text="No file chosen" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="Image and scanned-PDF extraction will require OCR/vision support in a later update. For now, please paste the text or use a .txt, .md, or .docx file."
+                                                               Foreground="{StaticResource SoftMutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Background="#FFF7ED" BorderBrush="#F5C98A" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,16,0,0">
+                                                <TextBlock Text="Research AI reads only what is in your proposal. It does not invent methods, results, p-values, or references. Anything missing is flagged for you to review."
+                                                           Foreground="#9A5B12" FontSize="12.5" TextWrapping="Wrap"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </ScrollViewer>
+
+                                    <Border Grid.Row="2" Background="{StaticResource SoftCardBrush}" CornerRadius="0,0,14,14"
+                                            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="ImportValidationText" Grid.Column="0" Foreground="{StaticResource DangerBrush}"
+                                                       FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                       Margin="0,0,14,0" Visibility="Collapsed"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelImportProposal_Click"/>
+                                                <Button x:Name="AnalyzeProposalBtn" Style="{StaticResource PremiumButton}" Margin="0" Click="AnalyzeProposal_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconGenerate}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="Analyze with Research AI" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- REVIEW EXTRACTED DETAILS overlay (Phase 2G)   -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="ReviewExtractionOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="55">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="760" MaxHeight="680"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Review Extracted Proposal Details" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Check what Research AI found. Edit the key fields if needed, then apply. Nothing is applied to your project until you click Apply."
+                                                   Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,0,20,0">
+                                        <StackPanel Margin="0,6,0,8">
+
+                                            <!-- Project Details (editable) -->
+                                            <TextBlock Text="Project Details" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,4,0,8"/>
+                                            <TextBlock Text="Title" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="RvTitle" Style="{StaticResource EditorTextBox}"/>
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Specialty" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="RvSpecialty" Style="{StaticResource EditorTextBox}"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Study design" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="RvStudyDesign" Style="{StaticResource EditorTextBox}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,2,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Population" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="RvPopulation" Style="{StaticResource EditorTextBox}"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Setting" Style="{StaticResource RpFieldLabel}"/>
+                                                    <TextBox x:Name="RvSetting" Style="{StaticResource EditorTextBox}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="Time period" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="RvTimePeriod" Style="{StaticResource EditorTextBox}"/>
+
+                                            <!-- Research Question & Objectives -->
+                                            <TextBlock Text="Research Question &amp; Objectives" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,18,0,8"/>
+                                            <TextBlock Text="Research question" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="RvResearchQuestion" Style="{StaticResource EditorTextBox}" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Aim" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="RvAim" Style="{StaticResource EditorTextBox}" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock Text="Primary objective" Style="{StaticResource RpFieldLabel}"/>
+                                            <TextBox x:Name="RvPrimaryObjective" Style="{StaticResource EditorTextBox}" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <TextBlock x:Name="RvSecondaryObjectives" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+                                            <!-- Study Design & Methods -->
+                                            <TextBlock Text="Study Design &amp; Methods" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,18,0,8"/>
+                                            <TextBlock x:Name="RvMethods" Foreground="{StaticResource TextBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                            <!-- Criteria -->
+                                            <TextBlock Text="Criteria" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,18,0,8"/>
+                                            <TextBlock x:Name="RvCriteria" Foreground="{StaticResource TextBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                            <!-- Variables & Analyses -->
+                                            <TextBlock Text="Variables &amp; Analyses" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,18,0,8"/>
+                                            <TextBlock x:Name="RvVariablesAnalyses" Foreground="{StaticResource TextBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                            <!-- Ethics & Limitations -->
+                                            <TextBlock Text="Ethics &amp; Limitations" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,18,0,8"/>
+                                            <TextBlock x:Name="RvEthicsLimitations" Foreground="{StaticResource TextBrush}" FontSize="13" TextWrapping="Wrap"/>
+
+                                            <!-- Proposal Sections -->
+                                            <TextBlock Text="Proposal Sections" Foreground="{StaticResource PrimaryBrush}" FontSize="13" FontWeight="Bold" Margin="0,18,0,8"/>
+                                            <Border Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="10" Padding="14">
+                                                <TextBlock x:Name="RvProposalSections" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                            </Border>
+
+                                            <!-- Missing / Weak Sections -->
+                                            <Border x:Name="RvMissingCard" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="14" Margin="0,16,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock Text="Missing / Weak Sections" Foreground="{StaticResource WarningBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,4"/>
+                                                    <TextBlock x:Name="RvMissing" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Warnings / Confidence -->
+                                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Padding="14" Margin="0,12,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="Warnings / Confidence" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="Bold" Margin="0,0,0,4"/>
+                                                    <TextBlock x:Name="RvConfidence" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                    <TextBlock x:Name="RvWarnings" Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ScrollViewer>
+
+                                    <Border Grid.Row="2" Background="{StaticResource SoftCardBrush}" CornerRadius="0,0,14,14"
+                                            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Button Grid.Column="0" Content="Re-analyze" Style="{StaticResource GhostButton}" Click="ReanalyzeExtraction_Click"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                                <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelReview_Click"/>
+                                                <Button Content="Apply Extracted Details" Style="{StaticResource PremiumButton}" Margin="0" Click="ApplyExtraction_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- Generic Research Lab confirm overlay          -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="RlConfirmOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="60">
+                            <Border Style="{StaticResource CardBorder}" Padding="28" Width="460"
+                                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <StackPanel>
+                                    <TextBlock x:Name="RlConfirmTitle" Text="Confirm" Style="{StaticResource SectionHeader}"/>
+                                    <TextBlock x:Name="RlConfirmMessage" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                                        <Button x:Name="RlConfirmCancelBtn" Style="{StaticResource GhostButton}" MinWidth="110" Click="RlConfirmCancel_Click">
+                                            <TextBlock x:Name="RlConfirmCancelText" Text="Cancel"/>
+                                        </Button>
+                                        <Button x:Name="RlConfirmOkBtn" Style="{StaticResource PremiumButton}" MinWidth="150" Margin="0" Click="RlConfirmOk_Click">
+                                            <TextBlock x:Name="RlConfirmOkText" Text="Confirm"/>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
                     </Grid>
 
                 </Grid>

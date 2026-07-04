@@ -44,6 +44,22 @@ public sealed class ResearchProject
     public ResearchPlan? Plan { get; set; }
     public ResearchProposalDraft? ProposalDraft { get; set; }
 
+    // ---- Phase 2E addition ------------------------------------------------
+    // Set true when the student edits the project details while accepted
+    // recommendations already exist, so the Overview can gently suggest
+    // regenerating the plan. Cleared whenever recommendations are (re)generated
+    // or accepted. Optional/defaulted so older files load unchanged.
+    public bool DetailsChangedSinceRecommendations { get; set; }
+
+    // ---- Phase 2F addition ------------------------------------------------
+    // Set when the student imports an existing proposal. ProposalImported drives
+    // the "import first?" prompt and the "based on imported proposal" badge;
+    // ImportedProposalText is kept so regenerating recommendations can be based
+    // on the existing proposal rather than only the raw project details. Both are
+    // optional/defaulted so older files load unchanged.
+    public bool ProposalImported { get; set; }
+    public string ImportedProposalText { get; set; } = "";
+
     // ---- Display helpers (not persisted) ----------------------------------
     // Used by the project-card DataTemplate so the XAML stays clean and we
     // avoid culture-sensitive StringFormat surprises.
@@ -271,6 +287,107 @@ public sealed class ResearchProposalDraft
 
     // Verbatim paste when the imported text was not structured JSON.
     public string RawText { get; set; } = "";
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2F — Import Existing Proposal.
+//
+// ProposalExtractionResult holds everything the Research AI extracted from an
+// existing proposal the student pasted or uploaded. It is a *local* data holder
+// only. Extraction is strictly read-only over the supplied text: the service is
+// instructed never to invent methods, results, p-values, references, or data —
+// anything absent is reported through MissingOrWeakSections / Warnings instead
+// of being guessed. Nothing here is applied to the project until the student
+// reviews it and clicks Apply.
+// ---------------------------------------------------------------------------
+public sealed class ProposalExtractionResult
+{
+    public ResearchSourceMode SourceMode { get; set; } = ResearchSourceMode.AiGenerated;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Project details
+    public string ExtractedTitle { get; set; } = "";
+    public string ExtractedSpecialty { get; set; } = "";
+    public string ExtractedStudyDesign { get; set; } = "";
+    public string ExtractedResearchQuestion { get; set; } = "";
+    public string ExtractedAim { get; set; } = "";
+    public string ExtractedPrimaryObjective { get; set; } = "";
+    public List<string> ExtractedSecondaryObjectives { get; set; } = new();
+    public string ExtractedPopulation { get; set; } = "";
+    public string ExtractedSetting { get; set; } = "";
+    public string ExtractedTimePeriod { get; set; } = "";
+
+    // Criteria / plan
+    public List<string> ExtractedInclusionCriteria { get; set; } = new();
+    public List<string> ExtractedExclusionCriteria { get; set; } = new();
+    public List<ResearchVariableSuggestion> ExtractedVariables { get; set; } = new();
+    public List<ResearchAnalysisSuggestion> ExtractedSuggestedAnalyses { get; set; } = new();
+    public List<string> ExtractedDataCollection { get; set; } = new();
+    public List<string> ExtractedEthics { get; set; } = new();
+    public List<string> ExtractedLimitations { get; set; } = new();
+    public string ExtractedTimeline { get; set; } = "";
+
+    // Full proposal sections
+    public ExtractedProposalSections ExtractedProposalSections { get; set; } = new();
+
+    // Quality signals
+    public List<string> MissingOrWeakSections { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+    public string ConfidenceSummary { get; set; } = "";
+
+    // ---- Display helpers (not persisted) ----------------------------------
+    [JsonIgnore]
+    public bool HasAnyContent =>
+        !string.IsNullOrWhiteSpace(ExtractedTitle)
+        || !string.IsNullOrWhiteSpace(ExtractedResearchQuestion)
+        || !string.IsNullOrWhiteSpace(ExtractedAim)
+        || !string.IsNullOrWhiteSpace(ExtractedStudyDesign)
+        || !string.IsNullOrWhiteSpace(ExtractedPrimaryObjective)
+        || ExtractedSecondaryObjectives.Count > 0
+        || ExtractedInclusionCriteria.Count > 0
+        || ExtractedExclusionCriteria.Count > 0
+        || ExtractedVariables.Count > 0
+        || ExtractedSuggestedAnalyses.Count > 0
+        || ExtractedProposalSections.HasAnyContent;
+}
+
+public sealed class ExtractedProposalSections
+{
+    public string Background { get; set; } = "";
+    public string Rationale { get; set; } = "";
+    public string Aim { get; set; } = "";
+    public string Objectives { get; set; } = "";
+    public string Methods { get; set; } = "";
+    public string StudyDesign { get; set; } = "";
+    public string Setting { get; set; } = "";
+    public string Population { get; set; } = "";
+    public string InclusionCriteria { get; set; } = "";
+    public string ExclusionCriteria { get; set; } = "";
+    public string Variables { get; set; } = "";
+    public string DataCollection { get; set; } = "";
+    public string StatisticalAnalysisPlan { get; set; } = "";
+    public string Ethics { get; set; } = "";
+    public string Timeline { get; set; } = "";
+    public string Limitations { get; set; } = "";
+
+    [JsonIgnore]
+    public bool HasAnyContent =>
+        !string.IsNullOrWhiteSpace(Background)
+        || !string.IsNullOrWhiteSpace(Rationale)
+        || !string.IsNullOrWhiteSpace(Aim)
+        || !string.IsNullOrWhiteSpace(Objectives)
+        || !string.IsNullOrWhiteSpace(Methods)
+        || !string.IsNullOrWhiteSpace(StudyDesign)
+        || !string.IsNullOrWhiteSpace(Setting)
+        || !string.IsNullOrWhiteSpace(Population)
+        || !string.IsNullOrWhiteSpace(InclusionCriteria)
+        || !string.IsNullOrWhiteSpace(ExclusionCriteria)
+        || !string.IsNullOrWhiteSpace(Variables)
+        || !string.IsNullOrWhiteSpace(DataCollection)
+        || !string.IsNullOrWhiteSpace(StatisticalAnalysisPlan)
+        || !string.IsNullOrWhiteSpace(Ethics)
+        || !string.IsNullOrWhiteSpace(Timeline)
+        || !string.IsNullOrWhiteSpace(Limitations);
 }
 
 // Maps a 0-100 progress value to a pixel width for the mini progress bar on a
