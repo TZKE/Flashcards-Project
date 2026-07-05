@@ -146,6 +146,11 @@ public sealed partial class MainWindow : Window
     private IResearchAiService _researchAi = null!;   // built in the constructor
     private string ResearchAiConfigPath => Path.Combine(dataDir, "research_ai_config.json");
 
+    // Last developer-safe diagnostic line from a failed Research AI call (action,
+    // timeout, elapsed, provider mode, status, empty/parse flags). Shown behind an
+    // "Open details" affordance. Never contains keys or request content.
+    private string? _lastAiDiagnostics;
+
     // Research Lab (Phase 2E/F) — import + generic confirm state.
     // Guards for pasted/uploaded proposal text length (protects the model call
     // and keeps the UI responsive). The proposal text is never logged or printed.
@@ -159,6 +164,35 @@ public sealed partial class MainWindow : Window
     private string _importedFileText = "";
     private string _importedFileError = "";
     private Action? _rlConfirmAction;
+
+    // Research Lab (Phase 3) — Data Extraction Sheet state.
+    // The grid binds to this live collection; on save it is copied back into the
+    // open project's Variables list.
+    private readonly System.Collections.ObjectModel.ObservableCollection<ResearchVariable> _extractionVariables = new();
+    // Editable working copy of AI suggestions shown in the review overlay.
+    private readonly System.Collections.ObjectModel.ObservableCollection<ResearchVariable> _reviewVariables = new();
+    // Live list behind the Resolve Conflicts window; ignored keys are session-only.
+    private readonly System.Collections.ObjectModel.ObservableCollection<ExtractionConflict> _conflicts = new();
+    private readonly HashSet<string> _ignoredConflictKeys = new();
+    // Captured when the conflict window opens so Cancel can discard all staged
+    // decisions and any immediate edits made during the session.
+    private List<ResearchVariable>? _conflictSnapshot;
+    private HashSet<string>? _conflictIgnoredSnapshot;
+
+    // Session-only undo/redo for the extraction sheet (snapshots of the variable
+    // list). Deliberately not persisted — restarting the app clears history.
+    private readonly Stack<List<ResearchVariable>> _dxUndo = new();
+    private readonly Stack<List<ResearchVariable>> _dxRedo = new();
+
+    // Pre-run delay for Data Extraction AI actions (prevents accidental API usage).
+    private Action? _aiDelayAction;
+    private DispatcherTimer? _aiDelayTimer;
+    private int _aiDelaySecondsLeft;
+    private ExtractionSheetResult? _pendingSheet;   // AI suggestions awaiting review/apply
+    private ExtractionSheetResult? _pendingFixes;    // AI fixes awaiting review/apply
+    private ResearchVariable? _editingVariable;      // row open in the single-variable modal
+    private const int CsvMaxSampleRows = 50;
+    private const long CsvMaxFileBytes = 10 * 1024 * 1024;   // 10 MB
 
     private LocalAccount? _currentUser;
     private string _activeDeckId = "";
@@ -187,6 +221,9 @@ public sealed partial class MainWindow : Window
         BuildNavMap();
         BuildResearchTabMap();
         InitializeGifAnimations();
+
+        // Escape closes the topmost Data Extraction dialog without applying changes.
+        PreviewKeyDown += DataExtraction_PreviewKeyDown;
 
         Directory.CreateDirectory(dataDir);
 
@@ -2298,6 +2335,7 @@ public sealed partial class MainWindow : Window
         UpdateGenerateRecButton(project);
         UpdateAiRecImportedBadge(project);
         UpdateResearchAiAvailability();
+        LoadExtractionSheet(project);
 
         // Always land on Overview when a project opens.
         SwitchResearchTab(SegOverview);
@@ -2389,6 +2427,11 @@ public sealed partial class MainWindow : Window
         // Keep the Proposal tab's plan-source status current whenever it opens.
         if (ReferenceEquals(active, SegProposal) && CurrentResearchProject() is { } proj)
             UpdateProposalPlanSource(proj);
+
+        // Refresh the extraction tab's chips/target when it opens (the proposal
+        // or plan may have changed since the project was first loaded).
+        if (ReferenceEquals(active, SegDataExt) && CurrentResearchProject() is { } dp)
+            RefreshExtractionChips(dp);
     }
 
     private void SaveDashNotes_Click(object sender, RoutedEventArgs e)
@@ -2469,8 +2512,16 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // Captured before the call so a failed REGENERATION can be told apart
+        // from a failed first-time generation, and so we know whether an
+        // accepted plan is at stake — the old recommendations are never cleared
+        // here, so this is purely about which message/banner to show.
+        bool hadExisting = HasExistingRecommendations(p);
+        bool wasAccepted = p.Recommendations?.AcceptedIntoPlan == true;
+
         AiRecError.Visibility = Visibility.Collapsed;
         AiRecNotConfigured.Visibility = Visibility.Collapsed;
+        AiRecRegenFailedBanner.Visibility = Visibility.Collapsed;
         GenerateRecBtn.IsEnabled = false;
         ShowLoading("Research AI is analyzing your project...");
 
@@ -2497,13 +2548,13 @@ public sealed partial class MainWindow : Window
             ShowResearchAiNotConfigured();
             ShowToast("Research AI service is not configured yet.");
         }
-        catch (ResearchAiException)
+        catch (ResearchAiException ex)
         {
-            ShowAiRecError("Research AI could not generate recommendations. Check your Research AI settings and try again.");
+            HandleRecGenerationFailure(hadExisting, wasAccepted, ex);
         }
         catch (Exception)
         {
-            ShowAiRecError("Research AI could not generate recommendations. Check your Research AI settings and try again.");
+            HandleRecGenerationFailure(hadExisting, wasAccepted, null);
         }
         finally
         {
@@ -2512,10 +2563,37 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // Routes a failed generate/regenerate call to the right banner. A failed
+    // FIRST-TIME generation has nothing to lose, so it's a plain error. A failed
+    // REGENERATION with existing recommendations must never look destructive —
+    // the old recommendations are still rendered below (they were never
+    // overwritten), so the message says so explicitly instead of showing a red
+    // "could not generate" banner underneath valid, still-visible content. The
+    // specific reason (timeout with elapsed seconds, unauthorized, etc.) comes
+    // straight from the service layer instead of a generic hardcoded string.
+    private void HandleRecGenerationFailure(bool hadExisting, bool wasAccepted, ResearchAiException? ex)
+    {
+        _lastAiDiagnostics = ex?.Diagnostics;
+        string reason = ex?.Message ?? "Research AI could not generate recommendations. Check your Research AI settings and try again.";
+
+        if (hadExisting)
+        {
+            string message = reason + " Your previous recommendations were kept.";
+            if (wasAccepted) message += " Your accepted research plan was not changed.";
+            ShowAiRecRegenFailed(message);
+            ShowToast("Could not regenerate recommendations. Your previous recommendations were kept.");
+        }
+        else
+        {
+            ShowAiRecError(reason);
+        }
+    }
+
     private void ShowResearchAiNotConfigured()
     {
         AiRecNotConfigured.Visibility = Visibility.Visible;
         AiRecError.Visibility = Visibility.Collapsed;
+        AiRecRegenFailedBanner.Visibility = Visibility.Collapsed;
     }
 
     private void ShowAiRecError(string message)
@@ -2523,6 +2601,26 @@ public sealed partial class MainWindow : Window
         AiRecErrorText.Text = message;
         AiRecError.Visibility = Visibility.Visible;
         AiRecNotConfigured.Visibility = Visibility.Collapsed;
+        AiRecRegenFailedBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowAiRecRegenFailed(string message)
+    {
+        AiRecRegenFailedText.Text = message;
+        AiRecRegenFailedBanner.Visibility = Visibility.Visible;
+        AiRecError.Visibility = Visibility.Collapsed;
+        AiRecNotConfigured.Visibility = Visibility.Collapsed;
+    }
+
+    // Retry from the non-destructive "kept" banner re-runs the regeneration
+    // directly — the user already confirmed once via the "Regenerate
+    // recommendations?" dialog to get into this failed state, so asking again
+    // here would be redundant friction.
+    private void RetryRegenerateRecommendations_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+        _ = RunGenerateRecommendations(p);
     }
 
     private void UpdateGenerateRecButton(ResearchProject p)
@@ -2530,6 +2628,16 @@ public sealed partial class MainWindow : Window
         bool has = p.Recommendations is not null &&
                    (p.Recommendations.HasStructuredContent || !string.IsNullOrWhiteSpace(p.Recommendations.RawAiText));
         GenerateRecBtnText.Text = has ? "Regenerate AI Recommendations" : "Generate AI Recommendations";
+
+        // Accepted / Needs-review status. Once accepted, the Accept row is
+        // replaced by a status banner; editing project details afterwards flips
+        // the banner to "Needs review" until recommendations are reviewed or
+        // regenerated (regenerating produces a fresh, not-yet-accepted set).
+        bool accepted = p.Recommendations?.AcceptedIntoPlan == true;
+        bool changed = p.DetailsChangedSinceRecommendations;
+        AiRecAcceptRow.Visibility = has && !accepted ? Visibility.Visible : Visibility.Collapsed;
+        AiRecAcceptedBanner.Visibility = accepted && !changed ? Visibility.Visible : Visibility.Collapsed;
+        AiRecNeedsReviewBanner.Visibility = accepted && changed ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static bool HasExistingRecommendations(ResearchProject p)
@@ -2567,7 +2675,8 @@ public sealed partial class MainWindow : Window
         PopulatePlanEditor(p);
         UpdateOverviewProgress(p);
         UpdateProposalPlanSource(p);
-        ShowToast("Recommendations accepted. Your research plan is ready to edit below.");
+        UpdateGenerateRecButton(p);   // flips the Accept row into the Accepted banner
+        ShowToast("Recommendations accepted. Your research plan is ready.");
     }
 
     // ---- Research plan ----------------------------------------------------
@@ -2655,6 +2764,14 @@ public sealed partial class MainWindow : Window
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
 
+        // One-time generation: a new draft requires deleting the current one first.
+        if (HasProposalDraftContent(p))
+        {
+            UpdateProposalPlanSource(p);
+            ShowToast("Proposal draft already generated. Delete the draft first to generate a new one.");
+            return;
+        }
+
         if (!HasAcceptedResearchPlan(p))
         {
             UpdateProposalPlanSource(p);
@@ -2667,12 +2784,25 @@ public sealed partial class MainWindow : Window
 
     // Explicit secondary opt-in: build a basic proposal from project details even
     // without an accepted plan. Only reachable from the labelled button in the
-    // "no accepted research plan" status card.
-    private async void GenerateBasicProposal_Click(object sender, RoutedEventArgs e)
+    // "no accepted research plan" status card, and always behind a strong warning
+    // so the student knowingly takes responsibility for the lower-quality path.
+    private void GenerateBasicProposal_Click(object sender, RoutedEventArgs e)
     {
         var p = CurrentResearchProject();
         if (p is null) { ShowToast("Open a project first."); return; }
-        await GenerateProposalCore(p);
+
+        if (HasProposalDraftContent(p))
+        {
+            UpdateProposalPlanSource(p);
+            ShowToast("Proposal draft already generated. Delete the draft first to generate a new one.");
+            return;
+        }
+
+        ShowRlConfirm("Generate without accepted research plan?",
+            "You are generating a proposal without an accepted AI research plan. The draft may be incomplete or inaccurate. "
+            + "You are responsible for reviewing and correcting the proposal before use.",
+            "Continue Anyway",
+            onConfirm: () => _ = GenerateProposalCore(p));
     }
 
     private void GoToAiRecommendations_Click(object sender, RoutedEventArgs e)
@@ -2715,9 +2845,13 @@ public sealed partial class MainWindow : Window
             ShowProposalNotConfigured();
             ShowToast("Research AI service is not configured yet.");
         }
-        catch (ResearchAiException)
+        catch (ResearchAiException ex)
         {
-            ShowProposalError("Research AI could not generate the proposal draft. Check your Research AI settings and try again.");
+            _lastAiDiagnostics = ex.Diagnostics;
+            // Existing content is never at risk here: the one-time-generation
+            // guard means GenerateProposalCore only runs when no draft exists
+            // yet, so there is nothing to protect — just show the real reason.
+            ShowProposalError(ex.Message);
         }
         catch (Exception)
         {
@@ -2735,17 +2869,58 @@ public sealed partial class MainWindow : Window
     private static bool HasAcceptedResearchPlan(ResearchProject p)
         => p.Recommendations?.AcceptedIntoPlan == true;
 
+    // True when a draft with real content exists (an empty shell created by
+    // saving blank fields doesn't count, so generation isn't locked out by it).
+    private static bool HasProposalDraftContent(ResearchProject p)
+    {
+        var d = p.ProposalDraft;
+        if (d is null) return false;
+        return !string.IsNullOrWhiteSpace(d.Title) || !string.IsNullOrWhiteSpace(d.Background)
+            || !string.IsNullOrWhiteSpace(d.Aim) || !string.IsNullOrWhiteSpace(d.Objectives)
+            || !string.IsNullOrWhiteSpace(d.Methods) || !string.IsNullOrWhiteSpace(d.StudyDesign)
+            || !string.IsNullOrWhiteSpace(d.StatisticalAnalysisPlan) || !string.IsNullOrWhiteSpace(d.RawText);
+    }
+
     // Shows the correct "Research Plan Source" status card in the Proposal tab
-    // and toggles the primary Generate button accordingly.
+    // and toggles the generate buttons. Generation is ONE-TIME: once a draft
+    // exists it must be deleted before a new one can be generated, so AI usage
+    // is never wasted on accidental re-generation.
     private void UpdateProposalPlanSource(ResearchProject p)
     {
         bool accepted = HasAcceptedResearchPlan(p);
+        bool hasDraft = HasProposalDraftContent(p);
+
         ProposalPlanSourceAccepted.Visibility = accepted ? Visibility.Visible : Visibility.Collapsed;
         ProposalPlanSourceMissing.Visibility = accepted ? Visibility.Collapsed : Visibility.Visible;
-        GenerateProposalBtn.IsEnabled = accepted;
-        GenerateProposalBtnText.Text = accepted
-            ? "Generate Proposal Draft"
-            : "Accept a research plan first";
+        ProposalDraftExistsCard.Visibility = hasDraft ? Visibility.Visible : Visibility.Collapsed;
+
+        GenerateProposalBtn.IsEnabled = accepted && !hasDraft;
+        GenerateProposalBtnText.Text = hasDraft
+            ? "Proposal draft already generated"
+            : accepted ? "Generate Proposal Draft" : "Accept a research plan first";
+        GenerateBasicProposalBtn.IsEnabled = !hasDraft;
+    }
+
+    private void DeleteProposalDraft_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+        if (p.ProposalDraft is null) { ShowToast("There is no proposal draft to delete."); return; }
+
+        ShowRlConfirm("Delete proposal draft?",
+            "This will delete the current proposal draft. You can then generate a new draft. Continue?",
+            "Delete Draft",
+            onConfirm: () =>
+            {
+                p.ProposalDraft = null;
+                p.UpdatedAt = DateTime.UtcNow;
+                SaveResearch();
+                PopulateProposalEditor(p);
+                UpdateProposalPlanSource(p);
+                PopulateOverview(p);
+                UpdateOverviewProgress(p);
+                ShowToast("Proposal draft deleted. You can generate a new one.");
+            });
     }
 
     private void ShowProposalNotConfigured()
@@ -3116,6 +3291,51 @@ public sealed partial class MainWindow : Window
         ShowPage(PageSettings);
     }
 
+    // Shows the last failure's developer-safe diagnostics (never any secrets).
+    private void ShowAiDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        string details = string.IsNullOrWhiteSpace(_lastAiDiagnostics)
+            ? (ResearchAiDiagnostics.LastEntry ?? "No diagnostic details are available.")
+            : _lastAiDiagnostics!;
+        MessageBox.Show(this, details + "\n\nA full log is saved to research_ai.log in the app data folder. No API keys or request content are ever logged.",
+            "Research AI — details", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    // Health check (Part G): sends a tiny request and reports a clear status.
+    private async void TestResearchAi_Click(object sender, RoutedEventArgs e)
+    {
+        // Persist current form values first so the test uses what the user sees.
+        _researchAiOptions.EndpointBaseUrl = RaiEndpointBox.Text.Trim();
+        if (int.TryParse(RaiTimeoutBox.Text.Trim(), out int secs))
+            _researchAiOptions.TimeoutSeconds = Math.Clamp(secs, 5, 300);
+        _researchAiOptions.UseDevelopmentMock = RaiMockToggle.IsChecked == true;
+        _researchAiOptions.UseDevelopmentZaiProvider = RaiDevProviderToggle.IsChecked == true;
+
+        RaiTestBtn.IsEnabled = false;
+        RaiTestResult.Visibility = Visibility.Visible;
+        RaiTestResultText.Text = "Testing Research AI…";
+        RaiTestResult.Background = (Brush)FindResource("SoftCardBrush");
+        RaiTestResultText.Foreground = (Brush)FindResource("MutedBrush");
+        try
+        {
+            var result = await _researchAi.TestConnectionAsync(CancellationToken.None);
+            string elapsed = result.ElapsedSeconds > 0 ? $" ({result.ElapsedSeconds:F1}s)" : "";
+            RaiTestResultText.Text = $"{result.Status}: {result.Message}{elapsed}";
+            RaiTestResult.Background = (Brush)FindResource(result.Success ? "SuccessSoftBrush" : "DangerSoftBrush");
+            RaiTestResultText.Foreground = (Brush)FindResource(result.Success ? "SuccessBrush" : "DangerBrush");
+        }
+        catch (Exception)
+        {
+            RaiTestResultText.Text = "Provider unavailable: the test could not be completed.";
+            RaiTestResult.Background = (Brush)FindResource("DangerSoftBrush");
+            RaiTestResultText.Foreground = (Brush)FindResource("DangerBrush");
+        }
+        finally
+        {
+            RaiTestBtn.IsEnabled = true;
+        }
+    }
+
     // Shows/hides the "not configured" panels for the open project's AI tabs.
     private void UpdateResearchAiAvailability()
     {
@@ -3123,6 +3343,7 @@ public sealed partial class MainWindow : Window
         AiRecNotConfigured.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
         ProposalNotConfigured.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
         AiRecError.Visibility = Visibility.Collapsed;
+        AiRecRegenFailedBanner.Visibility = Visibility.Collapsed;
         ProposalError.Visibility = Visibility.Collapsed;
     }
 
@@ -3252,6 +3473,7 @@ public sealed partial class MainWindow : Window
         DashTitleText.Text = p.Title;
         DashSubtitleText.Text = $"{p.SpecialtyDisplay}  •  {p.StudyTypeDisplay}";
         UpdateOverviewProgress(p);
+        UpdateGenerateRecButton(p);   // accepted plan → "Needs review" banner
 
         ShowToast(changed && HasExistingRecommendations(p)
             ? "Project details updated. Consider regenerating AI recommendations."
@@ -3407,6 +3629,18 @@ public sealed partial class MainWindow : Window
         using (var reader = new StreamReader(entry.Open(), Encoding.UTF8))
             xml = reader.ReadToEnd();
 
+        // Floating images/shapes/textboxes (letterhead logos, page borders, etc.)
+        // are anchored with DrawingML/VML metadata whose ELEMENT TEXT (not
+        // attributes) includes plain words like "left"/"right"/"center" and raw
+        // EMU coordinate numbers. Because Word XML has no whitespace between
+        // adjacent elements, stripping tags alone turns e.g.
+        // "<wp:align>left</wp:align><wp:posOffset>-8685070</wp:posOffset>" into
+        // the literal garbage "left-8685070" in the extracted text. Drop these
+        // blocks entirely before stripping tags — they never contain body text.
+        xml = Regex.Replace(xml, "<w:drawing>.*?</w:drawing>", "", RegexOptions.Singleline);
+        xml = Regex.Replace(xml, "<mc:AlternateContent>.*?</mc:AlternateContent>", "", RegexOptions.Singleline);
+        xml = Regex.Replace(xml, "<w:pict>.*?</w:pict>", "", RegexOptions.Singleline);
+
         // Paragraph and line breaks -> newlines; tabs -> spaces.
         xml = Regex.Replace(xml, "</w:p>", "\n", RegexOptions.IgnoreCase);
         xml = Regex.Replace(xml, "<w:br[^>]*/>", "\n", RegexOptions.IgnoreCase);
@@ -3416,9 +3650,35 @@ public sealed partial class MainWindow : Window
         string text = Regex.Replace(xml, "<[^>]+>", "");
         text = System.Net.WebUtility.HtmlDecode(text);
 
-        // Collapse excessive blank lines.
+        // Collapse excessive blank lines, then run the shared layout-artifact
+        // cleanup as a safety net for anything the block removal above missed.
         text = Regex.Replace(text, "\n{3,}", "\n\n");
-        return text.Trim();
+        return CleanProposalText(text);
+    }
+
+    // Removes leftover Word/layout artifacts and normalizes whitespace before
+    // ANY proposal text (pasted or extracted from a file) is sent to Research
+    // AI. Centralized here so both import paths get the same safety net.
+    private static string CleanProposalText(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        string t = raw;
+
+        // Leaked drawing-anchor tokens: an alignment word immediately followed by
+        // a large EMU/twip coordinate number with no separator, e.g.
+        // "left868507", "right-4765680", "center4585400".
+        t = Regex.Replace(t, @"\b(left|right|center|top|bottom|inline)-?\d{3,}\b", " ", RegexOptions.IgnoreCase);
+
+        // Bare oversized coordinate-looking numbers left isolated on their own.
+        t = Regex.Replace(t, @"(?<![\w.,])-?\d{6,}(?![\w.,])", " ");
+
+        // Collapse whitespace: repeated spaces/tabs, trailing spaces before a
+        // newline, and more than one blank line in a row.
+        t = Regex.Replace(t, @"[ \t]{2,}", " ");
+        t = Regex.Replace(t, @"[ \t]+\n", "\n");
+        t = Regex.Replace(t, @"(\r?\n){3,}", "\n\n");
+
+        return t.Trim();
     }
 
     private void ShowImportValidation(string message)
@@ -3437,6 +3697,10 @@ public sealed partial class MainWindow : Window
         // (and even if that file failed to read).
         string pasted = (ImportPasteBox.Text ?? "").Trim();
         string text = pasted.Length > 0 ? pasted : (_importedFileText ?? "").Trim();
+        // Safety-net cleanup regardless of source: .docx text is already cleaned
+        // in ExtractDocxText, but pasted text (e.g. copied from a PDF viewer or
+        // another tool) can carry the same kind of layout artifacts.
+        text = CleanProposalText(text);
 
         if (text.Length == 0)
         {
@@ -3482,7 +3746,9 @@ public sealed partial class MainWindow : Window
         catch (ResearchAiException ex)
         {
             // Surface the specific, key-free reason (timed out, could not be
-            // parsed, provider error) instead of one generic message.
+            // parsed, provider error) instead of one generic message. Nothing
+            // was applied yet, so any previously imported proposal is untouched.
+            _lastAiDiagnostics = ex.Diagnostics;
             ShowImportValidation(ex.Message);
         }
         catch (Exception)
@@ -3790,6 +4056,2044 @@ public sealed partial class MainWindow : Window
         Add("Timeline", s.Timeline);
         Add("Limitations", s.Limitations);
         return sb.ToString();
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — CSV sample import + local inference
+    //
+    // Only a privacy-safe SUMMARY is ever built: headers, inferred types, a few
+    // example values, unique/missing counts, and the total row count. The full
+    // CSV is never stored on the project and never sent to the AI. No statistics
+    // are computed — this is column profiling only, to help build the sheet.
+    // =====================================================================
+
+    private bool TryLoadCsvSample(string path, out CsvSampleSummary summary, out string error)
+    {
+        summary = new CsvSampleSummary();
+        error = "";
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) { error = "That file could not be found."; return false; }
+            if (info.Length == 0) { error = "That CSV file is empty."; return false; }
+            if (info.Length > CsvMaxFileBytes) { error = "That CSV is too large. Please use a file under 10 MB, or a smaller sample export."; return false; }
+
+            string[]? headers = null;
+            var sampleRows = new List<string[]>();
+            int totalDataRows = 0;
+
+            foreach (string line in File.ReadLines(path))
+            {
+                if (headers is null)
+                {
+                    // Skip leading blank lines before the header.
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    headers = ParseCsvLine(line);
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                totalDataRows++;
+                if (sampleRows.Count < CsvMaxSampleRows)
+                    sampleRows.Add(ParseCsvLine(line));
+            }
+
+            if (headers is null || headers.Length == 0) { error = "No column headers were found in that CSV."; return false; }
+
+            summary.FileName = Path.GetFileName(path);
+            summary.TotalRows = totalDataRows;
+            summary.SampledRows = sampleRows.Count;
+            summary.Columns = BuildCsvColumnSummaries(headers, sampleRows);
+            return true;
+        }
+        catch
+        {
+            error = "That CSV could not be read. Please check the file and try again, or paste your questions instead.";
+            return false;
+        }
+    }
+
+    // Minimal RFC-4180-ish splitter: handles quoted fields, embedded commas, and
+    // doubled quotes. Does not handle newlines inside quotes (rare in exports).
+    private static string[] ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        var sb = new StringBuilder();
+        bool inQuotes = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (inQuotes)
+            {
+                if (c == '"')
+                {
+                    if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                    else inQuotes = false;
+                }
+                else sb.Append(c);
+            }
+            else
+            {
+                if (c == '"') inQuotes = true;
+                else if (c == ',') { fields.Add(sb.ToString()); sb.Clear(); }
+                else sb.Append(c);
+            }
+        }
+        fields.Add(sb.ToString());
+        return fields.Select(f => f.Trim()).ToArray();
+    }
+
+    private static List<CsvColumnSummary> BuildCsvColumnSummaries(string[] headers, List<string[]> rows)
+    {
+        var cols = new List<CsvColumnSummary>();
+        for (int c = 0; c < headers.Length; c++)
+        {
+            string name = string.IsNullOrWhiteSpace(headers[c]) ? $"column_{c + 1}" : headers[c].Trim();
+            var values = new List<string>();
+            int missing = 0;
+            foreach (var row in rows)
+            {
+                string val = c < row.Length ? row[c].Trim() : "";
+                if (IsMissingToken(val)) { missing++; continue; }
+                values.Add(val);
+            }
+
+            var distinct = values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            int sampled = rows.Count == 0 ? 1 : rows.Count;
+            var summary = new CsvColumnSummary
+            {
+                Name = name,
+                MissingCount = missing,
+                MissingPercent = (int)Math.Round(100.0 * missing / sampled),
+                UniqueCount = distinct.Count,
+                SampleValues = distinct.Take(5).ToList()
+            };
+            summary.InferredType = InferColumnType(values, distinct, out bool likelyCategorical);
+            summary.IsLikelyCategorical = likelyCategorical;
+            cols.Add(summary);
+        }
+        return cols;
+    }
+
+    private static bool IsMissingToken(string v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return true;
+        string s = v.Trim().ToLowerInvariant();
+        return s is "na" or "n/a" or "null" or "none" or "-" or "." or "missing";
+    }
+
+    private static string InferColumnType(List<string> values, List<string> distinct, out bool likelyCategorical)
+    {
+        likelyCategorical = false;
+        if (values.Count == 0) return "Empty";
+
+        bool allNumeric = values.All(v => double.TryParse(v, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _));
+        bool allDate = values.All(v => DateTime.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _));
+
+        if (distinct.Count == 2) { likelyCategorical = true; return "Binary"; }
+        if (allNumeric) return "Numeric";
+        if (allDate) return "Date";
+        if (distinct.Count <= 10) { likelyCategorical = true; return "Categorical"; }
+        return "Text";
+    }
+
+    // Builds the safe text summary that is sent to the Research AI (never the raw
+    // data). Kept here so the privacy boundary is easy to audit.
+    private static string DescribeCsvForUser(CsvSampleSummary s)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"{s.FileName} — {s.CountSummary} (first {s.SampledRows} rows sampled).");
+        foreach (var c in s.Columns)
+            sb.AppendLine("• " + c.Display);
+        return sb.ToString().Trim();
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — local validation engine (no statistics)
+    // =====================================================================
+
+    private static readonly Regex ValidNameRegex = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+
+    private ExtractionValidationReport ValidateExtractionSheet(ResearchProject p)
+    {
+        var report = new ExtractionValidationReport();
+        var vars = p.Variables ?? new List<ResearchVariable>();
+
+        if (vars.Count == 0)
+        {
+            report.Errors.Add("The extraction sheet is empty. Add variables, generate them with Research AI, or import from your proposal.");
+            return report;
+        }
+
+        // Duplicate names (case-insensitive, non-empty).
+        foreach (var grp in vars.Where(v => !string.IsNullOrWhiteSpace(v.VariableName))
+                                 .GroupBy(v => v.VariableName.Trim().ToLowerInvariant())
+                                 .Where(g => g.Count() > 1))
+            report.Errors.Add($"Duplicate variable name '{grp.First().VariableName.Trim()}' is used {grp.Count()} times. Names must be unique.");
+
+        int index = 0;
+        foreach (var v in vars)
+        {
+            index++;
+            string label = string.IsNullOrWhiteSpace(v.VariableName) ? $"Row {index}" : $"'{v.VariableName.Trim()}'";
+
+            if (string.IsNullOrWhiteSpace(v.VariableName))
+                report.Errors.Add($"Row {index} has no variable name.");
+            else if (!ValidNameRegex.IsMatch(v.VariableName.Trim()))
+                report.Errors.Add($"Variable name {label} is invalid — use letters, numbers and underscores only, with no spaces or symbols (e.g. sleep_hours).");
+
+            if (string.IsNullOrWhiteSpace(v.VariableType))
+                report.Errors.Add($"Variable {label} has no type.");
+            else if (string.Equals(v.VariableType.Trim(), "Unknown", StringComparison.OrdinalIgnoreCase))
+                report.Warnings.Add($"Variable {label} has an unknown type — set it to a specific type.");
+
+            if (string.IsNullOrWhiteSpace(v.Role))
+                report.Errors.Add($"Variable {label} has no role.");
+            else if (string.Equals(v.Role.Trim(), "Unknown", StringComparison.OrdinalIgnoreCase))
+                report.Warnings.Add($"Variable {label} has an unknown role — mark it (outcome, exposure, demographic, …).");
+
+            bool needsCoding = v.VariableType is not null &&
+                (v.VariableType.Equals("Categorical", StringComparison.OrdinalIgnoreCase)
+                 || v.VariableType.Equals("Binary", StringComparison.OrdinalIgnoreCase)
+                 || v.VariableType.Equals("Ordinal", StringComparison.OrdinalIgnoreCase));
+            if (needsCoding && string.IsNullOrWhiteSpace(v.Coding) && string.IsNullOrWhiteSpace(v.ValueLabels))
+                report.Warnings.Add($"Variable {label} is {(v.VariableType ?? "categorical").ToLowerInvariant()} but has no value labels (e.g. 0 = No, 1 = Yes).");
+        }
+
+        // Outcome / demographic coverage.
+        if (!vars.Any(v => v.Role.Equals("Outcome", StringComparison.OrdinalIgnoreCase)))
+            report.Warnings.Add("No primary outcome variable is marked. Mark the variable that answers your research question as 'Outcome'.");
+        if (!vars.Any(v => v.Role.Equals("Demographic", StringComparison.OrdinalIgnoreCase)))
+            report.Warnings.Add("No demographic variables are present. Most studies collect basic demographics (age, sex, …).");
+        if (!vars.Any(v => v.Role.Equals("Identifier", StringComparison.OrdinalIgnoreCase) || v.VariableType.Equals("ID", StringComparison.OrdinalIgnoreCase)))
+            report.Suggestions.Add("Consider adding an anonymised participant ID so each record can be tracked without direct identifiers.");
+
+        // CSV cross-checks (normalized names, so "Sleep Hours" matches sleep_hours).
+        if (p.CsvSampleSummary is { Columns.Count: > 0 })
+        {
+            var sheetNames = vars.Select(v => NormalizeKey(v.VariableName)).Where(n => n.Length > 0).ToHashSet();
+            foreach (var col in p.CsvSampleSummary.Columns)
+            {
+                string cn = NormalizeKey(col.Name);
+                if (cn.Length > 0 && !sheetNames.Contains(cn))
+                    report.Warnings.Add($"Your CSV has a column '{col.Name}' but it is not in the extraction sheet.");
+            }
+            var csvNames = p.CsvSampleSummary.Columns.Select(c => NormalizeKey(c.Name)).ToHashSet();
+            foreach (var v in vars.Where(v => !string.IsNullOrWhiteSpace(v.VariableName)))
+                if (!csvNames.Contains(NormalizeKey(v.VariableName)))
+                    report.Warnings.Add($"Variable '{v.VariableName.Trim()}' is in the sheet but not found as a column in the uploaded CSV.");
+        }
+
+        // Proposal-implied variables not represented (concrete suggestion).
+        if (p.Recommendations is { SuggestedVariables.Count: > 0 })
+        {
+            var sheetTokens = vars.SelectMany(v => new[] { v.VariableName, v.QuestionLabel })
+                                  .Where(s => !string.IsNullOrWhiteSpace(s))
+                                  .Select(s => s.Trim().ToLowerInvariant()).ToList();
+            foreach (var rv in p.Recommendations.SuggestedVariables)
+            {
+                string key = rv.HeaderDisplay.Trim().ToLowerInvariant();
+                if (key.Length < 3) continue;
+                bool present = sheetTokens.Any(t => t.Contains(key) || key.Contains(t));
+                if (!present)
+                    report.Suggestions.Add($"The research plan mentions '{rv.HeaderDisplay.Trim()}', but no matching variable was found in the sheet.");
+            }
+        }
+
+        // Sample count vs target (Part J) — a plain comparison, not a calculation.
+        int? target = p.TargetSampleSize;
+        if (target is null && TryExtractTargetSampleSize(p, out int detected)) target = detected;
+        if (target is > 0 && p.CsvSampleSummary is { TotalRows: > 0 } csv)
+        {
+            if (csv.TotalRows < target)
+                report.Warnings.Add($"Your uploaded sample contains {csv.TotalRows} rows. The proposal target appears to be {target}. You may need {target - csv.TotalRows} more.");
+        }
+
+        return report;
+    }
+
+    // Best-effort, conservative detection of a stated target sample size in the
+    // imported proposal / plan. Never computes a sample size — only reads a number
+    // the student already wrote near a sample-size keyword.
+    private bool TryExtractTargetSampleSize(ResearchProject p, out int target)
+    {
+        target = 0;
+        var sources = new List<string?>
+        {
+            p.ImportedProposalText,
+            p.ProposalDraft?.StatisticalAnalysisPlan,
+            p.ProposalDraft?.Methods,
+            p.ProposalDraft?.DataCollection,
+            p.Plan?.MainVariables,
+            p.Notes
+        };
+        string text = string.Join("\n", sources.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        var patterns = new[]
+        {
+            @"sample\s*size\s*(?:of|:|=|is|was|will\s*be)?\s*(?:approximately\s*|about\s*|~\s*)?(\d{2,7})",
+            @"target\s*(?:sample|of|:)?\s*(?:approximately\s*|about\s*|~\s*)?(\d{2,7})",
+            @"\bn\s*[=:]\s*(\d{2,7})",
+            @"(\d{2,7})\s*(?:participants|patients|students|subjects|respondents|cases|records)"
+        };
+        foreach (var pat in patterns)
+        {
+            var m = Regex.Match(text, pat, RegexOptions.IgnoreCase);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int n) && n is >= 10 and <= 1_000_000)
+            {
+                target = n;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — Google Form link (best-effort, safe, no OAuth)
+    // =====================================================================
+
+    private static bool IsGoogleFormUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp) return false;
+        string host = uri.Host.ToLowerInvariant();
+        return host is "docs.google.com" or "forms.gle" or "www.google.com" || host.EndsWith(".google.com");
+    }
+
+    // Attempts to read the visible question titles from a PUBLIC Google Form the
+    // user pasted. Only follows the user-provided link, only reads (GET), never
+    // logs in, never scrapes private forms, and never sends any data. It parses
+    // the public FB_PUBLIC_LOAD_DATA_ array as JSON and extracts ONLY the clean
+    // question titles — raw JSON/script text is never returned. Any failure
+    // returns an empty list so the caller can show the friendly fallback.
+    private static async Task<List<string>> TryFetchGoogleFormQuestionsAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; ResearchLab/1.0)");
+            string html = await http.GetStringAsync(url, ct);
+            return ExtractGoogleFormQuestions(html);
+        }
+        catch
+        {
+            return new List<string>();
+        }
+    }
+
+    // Structured extraction of question titles from the public form payload.
+    // FB_PUBLIC_LOAD_DATA_ is a JSON array; the item list lives at [1][1], and
+    // each item's title is item[1]. We navigate that structure and return only
+    // those title strings — never the raw array text.
+    private static List<string> ExtractGoogleFormQuestions(string html)
+    {
+        var questions = new List<string>();
+        try
+        {
+            int idx = html.IndexOf("FB_PUBLIC_LOAD_DATA_", StringComparison.Ordinal);
+            if (idx < 0) return questions;
+            int arrStart = html.IndexOf('[', idx);
+            if (arrStart < 0) return questions;
+
+            // Find the matching closing bracket for the top-level array.
+            int depth = 0; bool inStr = false, esc = false; int arrEnd = -1;
+            for (int i = arrStart; i < html.Length; i++)
+            {
+                char c = html[i];
+                if (inStr) { if (esc) esc = false; else if (c == '\\') esc = true; else if (c == '"') inStr = false; continue; }
+                if (c == '"') inStr = true;
+                else if (c == '[') depth++;
+                else if (c == ']') { depth--; if (depth == 0) { arrEnd = i; break; } }
+            }
+            if (arrEnd < 0) return questions;
+
+            string json = html.Substring(arrStart, arrEnd - arrStart + 1);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() < 2) return questions;
+            var section = root[1];
+            if (section.ValueKind != JsonValueKind.Array || section.GetArrayLength() < 2) return questions;
+            var items = section[1];
+            if (items.ValueKind != JsonValueKind.Array) return questions;
+
+            foreach (var item in items.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Array || item.GetArrayLength() < 2) continue;
+                var titleEl = item[1];
+                if (titleEl.ValueKind != JsonValueKind.String) continue;
+                string title = System.Net.WebUtility.HtmlDecode(titleEl.GetString() ?? "").Trim();
+                // Only keep clean, human question titles.
+                if (title.Length < 2 || title.Length > 200) continue;
+                if (!title.Any(char.IsLetter)) continue;
+                if (title.StartsWith("http", StringComparison.OrdinalIgnoreCase)) continue;
+                if (title.Contains('{') || title.Contains('[') || title.Contains("function")) continue;   // never leak raw script
+                if (!questions.Contains(title)) questions.Add(title);
+                if (questions.Count >= 80) break;
+            }
+        }
+        catch
+        {
+            return new List<string>();   // any parse issue → friendly fallback, no raw text
+        }
+        return questions;
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — Data Extraction Sheet: load, edit, persist
+    // =====================================================================
+
+    // Loads the open project's variables into the live grid and refreshes every
+    // part of the tab. The grid holds the same ResearchVariable instances, so
+    // in-cell edits mutate them directly; CommitGrid copies the order back.
+    private void LoadExtractionSheet(ResearchProject p)
+    {
+        p.Variables ??= new List<ResearchVariable>();
+
+        // One-time cleanup: drop fully-blank rows (no name AND no label) left over
+        // from the earlier add bug. Named variables are never removed. Persist only
+        // if something was actually cleaned so we don't rewrite files needlessly.
+        int before = p.Variables.Count;
+        p.Variables = p.Variables
+            .Where(v => v is not null && (!string.IsNullOrWhiteSpace(v.VariableName) || !string.IsNullOrWhiteSpace(v.QuestionLabel)))
+            .ToList();
+        bool cleaned = p.Variables.Count != before;
+
+        _extractionVariables.Clear();
+        foreach (var v in p.Variables)
+            _extractionVariables.Add(v);
+
+        if (DxGrid.ItemsSource is null)
+            DxGrid.ItemsSource = _extractionVariables;
+
+        if (cleaned)
+        {
+            try { SaveResearch(); } catch { /* non-fatal */ }
+        }
+
+        // Undo/redo history is per project and per session.
+        _dxUndo.Clear();
+        _dxRedo.Clear();
+        UpdateUndoRedoButtons();
+
+        RefreshExtractionSummary();
+        RefreshExtractionChips(p);
+        UpdateExtractionStatus(p);
+        RenderValidation(p.ExtractionValidationReport);
+    }
+
+    private void CommitGrid(ResearchProject p) => p.Variables = _extractionVariables.ToList();
+
+    // Copies the grid into the project, stamps the status/time, saves, refreshes.
+    private void PersistExtraction(ResearchProject p)
+    {
+        CommitGrid(p);
+        p.ExtractionSheetUpdatedAt = DateTime.UtcNow;
+        p.UpdatedAt = DateTime.UtcNow;
+        UpdateExtractionStatus(p);
+        SaveResearch();
+        RefreshExtractionSummary();
+        RefreshExtractionChips(p);
+    }
+
+    private void RefreshExtractionSummary()
+    {
+        var vars = _extractionVariables;
+        int n = vars.Count;
+        DxVarCountText.Text = n == 1 ? "1 variable" : $"{n} variables";
+        DxEmptyState.Visibility = n == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        int RoleCount(params string[] roles) => vars.Count(v => roles.Any(r => string.Equals(v.Role, r, StringComparison.OrdinalIgnoreCase)));
+
+        DxSumTotal.Text = n.ToString();
+        DxSumOutcome.Text = RoleCount("Outcome").ToString();
+        DxSumExposure.Text = RoleCount("Exposure", "Predictor").ToString();
+        DxSumConfounder.Text = RoleCount("Confounder").ToString();
+        DxSumDemographic.Text = RoleCount("Demographic").ToString();
+        DxSumIdentifier.Text = (RoleCount("Identifier") + vars.Count(v => string.Equals(v.VariableType, "ID", StringComparison.OrdinalIgnoreCase) && !string.Equals(v.Role, "Identifier", StringComparison.OrdinalIgnoreCase))).ToString();
+        DxSumRequired.Text = vars.Count(v => v.IsRequired).ToString();
+    }
+
+    // Populates the Data Samples card from the project's CSV summary, Google Form
+    // status, and any target sample size. (Kept the old name — many call sites.)
+    private void RefreshExtractionChips(ResearchProject p)
+    {
+        DxSamplesFormBadge.Visibility = string.IsNullOrWhiteSpace(p.GoogleFormUrl) ? Visibility.Collapsed : Visibility.Visible;
+
+        int? target = p.TargetSampleSize;
+        if (target is null && TryExtractTargetSampleSize(p, out int detected)) { target = detected; p.TargetSampleSize = detected; }
+
+        var csv = p.CsvSampleSummary;
+        bool hasCsv = csv is { Columns.Count: > 0 };
+        DxSamplesEmpty.Visibility = hasCsv ? Visibility.Collapsed : Visibility.Visible;
+        DxSamplesInfo.Visibility = hasCsv ? Visibility.Visible : Visibility.Collapsed;
+        DxViewCsvBtn.IsEnabled = hasCsv;
+        DxClearSampleBtn.IsEnabled = hasCsv;
+
+        if (hasCsv)
+        {
+            var sheetNames = _extractionVariables.Select(v => NormalizeKey(v.VariableName)).Where(s => s.Length > 0).ToHashSet();
+            var csvNames = csv!.Columns.Select(c => NormalizeKey(c.Name)).Where(s => s.Length > 0).ToHashSet();
+            int matched = csvNames.Count(n => sheetNames.Contains(n));
+            int csvOnly = csvNames.Count(n => !sheetNames.Contains(n));
+            int sheetOnly = sheetNames.Count(n => !csvNames.Contains(n));
+
+            DxSampFile.Text = csv.FileName;
+            DxSampRows.Text = csv.TotalRows.ToString();
+            DxSampCols.Text = csv.Columns.Count.ToString();
+            DxSampMatched.Text = matched.ToString();
+            DxSampCsvOnly.Text = csvOnly.ToString();
+            DxSampSheetOnly.Text = sheetOnly.ToString();
+            DxSampTarget.Text = target is > 0 ? target.ToString() : "—";
+
+            if (target is > 0 && csv.TotalRows > 0 && csv.TotalRows < target)
+            {
+                int remaining = target.Value - csv.TotalRows;
+                DxSampRemaining.Text = remaining.ToString();
+                DxSampWarnText.Text = $"Your uploaded sample contains {csv.TotalRows} rows. The proposal target appears to be {target}. You may need {remaining} additional samples.";
+                DxSampWarn.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                DxSampRemaining.Text = target is > 0 ? "0" : "—";
+                DxSampWarn.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+
+    private void UpdateExtractionStatus(ResearchProject p)
+    {
+        int n = _extractionVariables.Count;
+        string status;
+        if (n == 0) status = "Not started";
+        else if (p.ExtractionValidationReport is { } r) status = r.IsReady ? "Ready" : "Needs review";
+        else status = "Draft";
+
+        p.ExtractionSheetStatus = status;
+        DxStatusChipText.Text = status;
+
+        var (fg, bg) = status switch
+        {
+            "Ready" => ("SuccessBrush", "SuccessSoftBrush"),
+            "Needs review" => ("WarningBrush", "WarningSoftBrush"),
+            "Draft" => ("PrimaryBrush", "PrimarySoftBrush"),
+            _ => ("MutedBrush", "SoftCardBrush")
+        };
+        DxStatusChipText.Foreground = (Brush)FindResource(fg);
+        DxStatusChip.Background = (Brush)FindResource(bg);
+    }
+
+    // ---- Add / edit / duplicate / delete / reorder ------------------------
+
+    private static ResearchVariable? RowVar(object sender) => (sender as FrameworkElement)?.DataContext as ResearchVariable;
+
+    // Logs the details (no keys) and shows a friendly toast. Combined with the
+    // App-level DispatcherUnhandledException handler, no Data Extraction action
+    // can ever hard-close the app.
+    private void HandleDxError(string action, Exception ex)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(dataDir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dataDir, "crash.log"), $"[{DateTime.Now:u}] Data Extraction — {action}: {ex}\n\n");
+        }
+        catch { /* logging must never itself throw */ }
+        HideLoading();
+        ShowToast($"Couldn't {action}. Please try again.");
+    }
+
+    // Turns free text into a safe machine name (letters/numbers/underscores,
+    // no leading digit). Empty => caller treats as invalid.
+    private static string SanitizeVarName(string input)
+    {
+        string s = (input ?? "").Trim();
+        s = Regex.Replace(s, @"\s+", "_");
+        s = Regex.Replace(s, @"[^A-Za-z0-9_]", "");
+        s = Regex.Replace(s, @"_+", "_").Trim('_');
+        if (s.Length > 0 && char.IsDigit(s[0])) s = "_" + s;
+        return s;
+    }
+
+    // Comparison key for matching sheet variables against CSV columns: both sides
+    // are sanitized and lower-cased, so "Sleep Hours" (CSV) matches sleep_hours.
+    private static string NormalizeKey(string s) => SanitizeVarName(s).ToLowerInvariant();
+
+    // Add Variable opens the premium editor in "add" mode (no blank rows are
+    // created in the grid until the user saves a named variable).
+    private void AddVariable_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (CurrentResearchProject() is null) { ShowToast("Open a project first."); return; }
+            OpenVariableEditor(null);
+        }
+        catch (Exception ex) { HandleDxError("add a variable", ex); }
+    }
+
+    private void EditVariable_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (RowVar(sender) is { } v) OpenVariableEditor(v); }
+        catch (Exception ex) { HandleDxError("open the variable editor", ex); }
+    }
+
+    // existing == null -> add mode; otherwise edit that variable.
+    private void OpenVariableEditor(ResearchVariable? existing)
+    {
+        _editingVariable = existing;
+
+        VeType.ItemsSource = ResearchVariableOptions.VariableTypes;
+        VeLevel.ItemsSource = ResearchVariableOptions.MeasurementLevels;
+        VeRole.ItemsSource = ResearchVariableOptions.Roles;
+        VeSource.ItemsSource = ResearchVariableOptions.Sources;
+        VeValidationBorder.Visibility = Visibility.Collapsed;
+
+        VeHeaderText.Text = existing is null ? "Add variable" : "Edit variable";
+        VeName.Text = existing?.VariableName ?? "";
+        VeLabel.Text = existing?.QuestionLabel ?? "";
+        VeType.SelectedItem = existing != null && ResearchVariableOptions.VariableTypes.Contains(existing.VariableType) ? existing.VariableType : "Unknown";
+        VeLevel.SelectedItem = existing != null && ResearchVariableOptions.MeasurementLevels.Contains(existing.MeasurementLevel) ? existing.MeasurementLevel : "NotApplicable";
+        VeRole.SelectedItem = existing != null && ResearchVariableOptions.Roles.Contains(existing.Role) ? existing.Role : "Unknown";
+        VeSource.SelectedItem = existing != null && ResearchVariableOptions.Sources.Contains(existing.Source) ? existing.Source : "Manual";
+        VeCoding.Text = existing?.Coding ?? "";
+        VeValueLabels.Text = existing?.ValueLabels ?? "";
+        VeMissing.Text = existing?.MissingValueRule ?? "";
+        VeNotes.Text = existing?.Notes ?? "";
+        VeRequired.IsChecked = existing?.IsRequired ?? false;
+
+        VariableEditOverlay.Visibility = Visibility.Visible;
+        FadeIn(VariableEditOverlay, 150);
+        VeName.Focus();
+    }
+
+    private void DuplicateVariable_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null || RowVar(sender) is not { } v) return;
+            PushDxUndo();
+            int idx = _extractionVariables.IndexOf(v);
+            var copy = v.Clone();
+            copy.VariableName = MakeUniqueName(string.IsNullOrWhiteSpace(copy.VariableName) ? "variable" : copy.VariableName + "_copy");
+            _extractionVariables.Insert(idx < 0 ? _extractionVariables.Count : idx + 1, copy);
+            p.ExtractionValidationReport = null;
+            RenderValidation(null);
+            PersistExtraction(p);
+            ShowToast("Variable duplicated.");
+        }
+        catch (Exception ex) { HandleDxError("duplicate the variable", ex); }
+    }
+
+    // Ensures a name is not already used (appends _2, _3, ... if needed).
+    private string MakeUniqueName(string baseName)
+    {
+        string name = SanitizeVarName(baseName);
+        if (name.Length == 0) name = "variable";
+        var used = _extractionVariables.Select(v => v.VariableName.Trim().ToLowerInvariant()).ToHashSet();
+        if (!used.Contains(name.ToLowerInvariant())) return name;
+        for (int i = 2; i < 1000; i++)
+        {
+            string candidate = $"{name}_{i}";
+            if (!used.Contains(candidate.ToLowerInvariant())) return candidate;
+        }
+        return name;
+    }
+
+    private void DeleteVariable_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null || RowVar(sender) is not { } v) return;
+            string label = string.IsNullOrWhiteSpace(v.VariableName) ? "this variable" : $"“{v.VariableName.Trim()}”";
+            ShowRlConfirm("Delete variable?",
+                $"Remove {label} from the extraction sheet? This cannot be undone.",
+                "Delete",
+                onConfirm: () =>
+                {
+                    try
+                    {
+                        PushDxUndo();
+                        _extractionVariables.Remove(v);
+                        p.ExtractionValidationReport = null;
+                        RenderValidation(null);
+                        PersistExtraction(p);
+                        ShowToast("Variable removed.");
+                    }
+                    catch (Exception ex) { HandleDxError("delete the variable", ex); }
+                });
+        }
+        catch (Exception ex) { HandleDxError("delete the variable", ex); }
+    }
+
+    private void MoveVariableUp_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null || RowVar(sender) is not { } v) return;
+            int idx = _extractionVariables.IndexOf(v);
+            if (idx > 0) { _extractionVariables.Move(idx, idx - 1); PersistExtraction(p); }
+        }
+        catch (Exception ex) { HandleDxError("reorder the variable", ex); }
+    }
+
+    private void MoveVariableDown_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null || RowVar(sender) is not { } v) return;
+            int idx = _extractionVariables.IndexOf(v);
+            if (idx >= 0 && idx < _extractionVariables.Count - 1) { _extractionVariables.Move(idx, idx + 1); PersistExtraction(p); }
+        }
+        catch (Exception ex) { HandleDxError("reorder the variable", ex); }
+    }
+
+    private void CancelEditVariable_Click(object sender, RoutedEventArgs e)
+    {
+        VariableEditOverlay.Visibility = Visibility.Collapsed;
+        _editingVariable = null;
+    }
+
+    private void ShowVeValidation(string msg)
+    {
+        VeValidation.Text = msg;
+        VeValidationBorder.Visibility = Visibility.Visible;
+    }
+
+    private void SaveEditVariable_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { VariableEditOverlay.Visibility = Visibility.Collapsed; return; }
+
+            string rawName = (VeName.Text ?? "").Trim();
+            if (rawName.Length == 0) { ShowVeValidation("Variable name is required."); return; }
+
+            string name = SanitizeVarName(rawName);
+            if (name.Length == 0) { ShowVeValidation("Use letters, numbers, or underscores (e.g. sleep_hours)."); return; }
+            bool changedName = !string.Equals(name, rawName, StringComparison.Ordinal);
+
+            bool duplicate = _extractionVariables.Any(x => !ReferenceEquals(x, _editingVariable)
+                && string.Equals(x.VariableName.Trim(), name, StringComparison.OrdinalIgnoreCase));
+            if (duplicate)
+            {
+                if (changedName) VeName.Text = name;
+                ShowVeValidation($"A variable named “{name}” already exists. Choose a different name.");
+                return;
+            }
+
+            PushDxUndo();
+            bool isNew = _editingVariable is null;
+            var v = _editingVariable ?? new ResearchVariable();
+
+            v.VariableName = name;
+            v.QuestionLabel = (VeLabel.Text ?? "").Trim();
+            v.VariableType = VeType.SelectedItem as string ?? "Unknown";
+            v.MeasurementLevel = VeLevel.SelectedItem as string ?? "NotApplicable";
+            v.Role = VeRole.SelectedItem as string ?? "Unknown";
+            v.Source = VeSource.SelectedItem as string ?? "Manual";
+            v.Coding = (VeCoding.Text ?? "").Trim();
+            v.ValueLabels = (VeValueLabels.Text ?? "").Trim();
+            v.MissingValueRule = (VeMissing.Text ?? "").Trim();
+            v.Notes = (VeNotes.Text ?? "").Trim();
+            v.IsRequired = VeRequired.IsChecked == true;
+
+            if (isNew) _extractionVariables.Add(v);
+
+            VariableEditOverlay.Visibility = Visibility.Collapsed;
+            _editingVariable = null;
+
+            DxGrid.Items.Refresh();
+            p.ExtractionValidationReport = null;   // sheet changed
+            RenderValidation(null);
+            PersistExtraction(p);
+
+            ShowToast(isNew
+                ? (changedName ? $"Variable added as “{name}”." : "Variable added.")
+                : (changedName ? $"Variable saved as “{name}”." : "Variable updated."));
+        }
+        catch (Exception ex) { HandleDxError("save the variable", ex); }
+    }
+
+    private void SaveExtractionSheet_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            // Commit any in-progress cell edit before saving.
+            TryCommitGridEdit();
+            PersistExtraction(p);
+            ShowToast("Extraction sheet saved.");
+        }
+        catch (Exception ex) { HandleDxError("save the sheet", ex); }
+    }
+
+    // Commits an in-flight cell/row edit without ever throwing (a mid-edit grid
+    // can refuse CommitEdit; that must not crash the action).
+    private void TryCommitGridEdit()
+    {
+        try { DxGrid.CommitEdit(DataGridEditingUnit.Cell, true); DxGrid.CommitEdit(DataGridEditingUnit.Row, true); }
+        catch { /* ignore — best effort */ }
+    }
+
+    // ---- Generate by AI + review ------------------------------------------
+
+    private void GenerateExtractionSheet_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            TryCommitGridEdit();
+            CommitGrid(p);
+            if (!_researchAi.IsConfigured) { ShowToast("Research AI is not set up yet. Add an endpoint or enable a development provider in AI Settings, then try again."); return; }
+
+            // One active AI-generated sheet per project: if a sheet already exists,
+            // never silently spend another AI request. Require an explicit clear
+            // first. Edit manually / Validate / Resolve Conflicts stay available
+            // on the existing sheet without any AI call.
+            if (_extractionVariables.Count > 0)
+            {
+                ShowRlConfirm("Extraction sheet already exists",
+                    "You already have an extraction sheet. To generate a new one with AI, the current sheet must be cleared first. "
+                    + "This will remove all current variables. You can also just edit it manually, or run Validate / Resolve Conflicts. Continue?",
+                    "Clear & Generate",
+                    onConfirm: () =>
+                    {
+                        try
+                        {
+                            var pp = CurrentResearchProject();
+                            if (pp is null) return;
+                            PushDxUndo();
+                            _extractionVariables.Clear();
+                            pp.ExtractionValidationReport = null;
+                            RenderValidation(null);
+                            PersistExtraction(pp);
+                            StartAiWithDelay("Generate extraction sheet", () => _ = RunGenerateExtractionSheet(pp));
+                        }
+                        catch (Exception ex) { HandleDxError("clear and generate", ex); }
+                    });
+                return;
+            }
+
+            StartAiWithDelay("Generate extraction sheet", () => _ = RunGenerateExtractionSheet(p));
+        }
+        catch (Exception ex) { HandleDxError("start the AI generation", ex); }
+    }
+
+    private async Task RunGenerateExtractionSheet(ResearchProject p)
+    {
+        ShowLoading("Research AI is building your extraction sheet...");
+        try
+        {
+            var result = await _researchAi.GenerateExtractionSheetAsync(p, "", CancellationToken.None);
+            _pendingSheet = result;
+            ShowExtractionReview(result, "Review the suggested variables before applying. Nothing changes until you choose an action below.", "Apply Suggested Sheet");
+        }
+        catch (ResearchAiNotConfiguredException) { ShowToast("Research AI is not configured yet."); }
+        catch (ResearchAiException ex) { ShowToast(ex.Message); }
+        catch (Exception) { ShowToast("Research AI could not build the sheet. Please try again."); }
+        finally { HideLoading(); }
+    }
+
+    private void ShowExtractionReview(ExtractionSheetResult result, string subtitle, string applyLabel = "Apply to Sheet")
+    {
+        DxReviewSubtitle.Text = subtitle;
+        // Edit-before-apply: bind the editable review grid to a working copy so the
+        // student can change any field or remove rows before applying. Apply uses
+        // this edited collection, never the raw AI output.
+        _reviewVariables.Clear();
+        foreach (var v in result.Variables) _reviewVariables.Add(v);
+        DxReviewGrid.ItemsSource = _reviewVariables;
+        DxReviewValidation.Visibility = Visibility.Collapsed;
+        DxReviewCountText.Text = _reviewVariables.Count == 1 ? "1 suggested variable" : $"{_reviewVariables.Count} suggested variables";
+
+        // One clear action: the review modal only offers Apply + Cancel (no
+        // Regenerate — regenerating from here wastes API calls; the workflow is
+        // Clear Sheet then Generate). Applying to an empty sheet sets it; applying
+        // to a non-empty sheet (e.g. Paste Questions) adds the missing rows
+        // non-destructively.
+        DxReviewApplyText.Text = applyLabel;
+
+        if (!string.IsNullOrWhiteSpace(result.ConfidenceSummary))
+        {
+            DxReviewConfidence.Text = result.ConfidenceSummary;
+            DxReviewConfidenceCard.Visibility = Visibility.Visible;
+        }
+        else DxReviewConfidenceCard.Visibility = Visibility.Collapsed;
+
+        if (result.MissingExpectedVariables.Count > 0)
+        {
+            DxReviewMissingList.ItemsSource = result.MissingExpectedVariables;
+            DxReviewMissingSection.Visibility = Visibility.Visible;
+        }
+        else DxReviewMissingSection.Visibility = Visibility.Collapsed;
+
+        if (result.ExtraOrUnexplainedColumns.Count > 0)
+        {
+            DxReviewExtraList.ItemsSource = result.ExtraOrUnexplainedColumns;
+            DxReviewExtraSection.Visibility = Visibility.Visible;
+        }
+        else DxReviewExtraSection.Visibility = Visibility.Collapsed;
+
+        ExtractionReviewOverlay.Visibility = Visibility.Visible;
+        FadeIn(ExtractionReviewOverlay, 150);
+    }
+
+    private void ExtractionReviewCancel_Click(object sender, RoutedEventArgs e)
+    {
+        ExtractionReviewOverlay.Visibility = Visibility.Collapsed;
+        _pendingSheet = null;
+        _reviewVariables.Clear();
+    }
+
+    // Escape closes the topmost visible Data Extraction overlay (dismiss only —
+    // never applies changes). Highest ZIndex first.
+    private void DataExtraction_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Escape) return;
+
+        // Generic confirm sits on top (ZIndex 60): dismiss without running either action.
+        if (RlConfirmOverlay.Visibility == Visibility.Visible)
+        {
+            RlConfirmOverlay.Visibility = Visibility.Collapsed;
+            _rlConfirmAction = null;
+            _rlConfirmCancelAction = null;
+            e.Handled = true;
+            return;
+        }
+
+        // The conflict window has staged decisions — Escape must fully discard
+        // them (same as its Cancel button), not just hide the overlay.
+        if (ConflictOverlay.Visibility == Visibility.Visible)
+        {
+            ConflictCancel_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+
+        var overlays = new (UIElement O, Action? OnClose)[]
+        {
+            (AiDelayOverlay, CancelAiDelayCore),   // Escape = cancel, no AI request
+            (VariableEditOverlay, () => _editingVariable = null),
+            (ExtractionReviewOverlay, () => { _pendingSheet = null; _reviewVariables.Clear(); }),
+            (ExtractionFixReviewOverlay, () => _pendingFixes = null),
+            (CsvSummaryOverlay, null),
+            (PasteQuestionsOverlay, null),
+            (GoogleFormOverlay, null),
+        };
+        foreach (var (o, onClose) in overlays)
+        {
+            if (o.Visibility == Visibility.Visible)
+            {
+                o.Visibility = Visibility.Collapsed;
+                onClose?.Invoke();
+                e.Handled = true;
+                return;
+            }
+        }
+    }
+
+    private void ReviewDeleteRow_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (RowVar(sender) is { } v)
+            {
+                _reviewVariables.Remove(v);
+                DxReviewCountText.Text = _reviewVariables.Count == 1 ? "1 suggested variable" : $"{_reviewVariables.Count} suggested variables";
+            }
+        }
+        catch (Exception ex) { HandleDxError("remove the suggestion", ex); }
+    }
+
+    private void ExtractionReviewApply_Click(object sender, RoutedEventArgs e)
+    {
+        // Single apply action: set the sheet when empty; otherwise add the new
+        // rows without discarding the student's existing ones. Regeneration and
+        // full replacement are intentionally not offered from this modal.
+        if (_extractionVariables.Count == 0) ApplySuggested(ApplyMode.Replace);
+        else ApplySuggested(ApplyMode.AddMissing);
+    }
+
+    private enum ApplyMode { Replace, AddMissing }
+
+    // Validates the EDITED suggestions before they are applied: every row needs a
+    // name, and names must be unique. Type/role gaps are advisory (not blocking).
+    private bool ValidateReviewBeforeApply()
+    {
+        try { DxReviewGrid.CommitEdit(DataGridEditingUnit.Cell, true); DxReviewGrid.CommitEdit(DataGridEditingUnit.Row, true); } catch { }
+
+        var blocking = new List<string>();
+        var seen = new HashSet<string>();
+        int rowNo = 0;
+        foreach (var v in _reviewVariables)
+        {
+            rowNo++;
+            string name = SanitizeVarName(v.VariableName);
+            if (name.Length == 0) { blocking.Add($"Row {rowNo} has no variable name."); continue; }
+            if (!seen.Add(name.ToLowerInvariant())) blocking.Add($"Duplicate variable name '{name}'.");
+        }
+        if (_reviewVariables.Count == 0) blocking.Add("There are no variables to apply.");
+
+        if (blocking.Count > 0)
+        {
+            DxReviewValidationText.Text = "Fix these before applying:  " + string.Join("   •  ", blocking.Take(6));
+            DxReviewValidation.Visibility = Visibility.Visible;
+            return false;
+        }
+        DxReviewValidation.Visibility = Visibility.Collapsed;
+        return true;
+    }
+
+    private void ApplySuggested(ApplyMode mode, bool skipValidation = false)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ExtractionReviewOverlay.Visibility = Visibility.Collapsed; return; }
+        if (!skipValidation && !ValidateReviewBeforeApply()) return;
+
+        PushDxUndo();   // applying an AI sheet is undoable
+
+        // Normalize names on the edited suggestions before applying.
+        foreach (var v in _reviewVariables)
+        {
+            string n = SanitizeVarName(v.VariableName);
+            if (n.Length > 0) v.VariableName = n;
+        }
+
+        int added = 0;
+        if (mode == ApplyMode.Replace)
+        {
+            _extractionVariables.Clear();
+            foreach (var v in _reviewVariables) { _extractionVariables.Add(v); added++; }
+        }
+        else
+        {
+            var existing = _extractionVariables.Select(v => v.VariableName.Trim().ToLowerInvariant()).Where(s => s.Length > 0).ToHashSet();
+            foreach (var v in _reviewVariables)
+            {
+                string key = v.VariableName.Trim().ToLowerInvariant();
+                if (key.Length > 0 && existing.Contains(key)) continue;
+                _extractionVariables.Add(v);
+                if (key.Length > 0) existing.Add(key);
+                added++;
+            }
+        }
+
+        // If the AI reported a target sample size in free text, keep a numeric copy.
+        if (p.TargetSampleSize is null && _pendingSheet is not null && !string.IsNullOrWhiteSpace(_pendingSheet.TargetSampleSizeText))
+        {
+            var m = Regex.Match(_pendingSheet.TargetSampleSizeText, @"(\d{2,7})");
+            if (m.Success && int.TryParse(m.Value, out int t) && t is >= 10 and <= 1_000_000) p.TargetSampleSize = t;
+        }
+
+        ExtractionReviewOverlay.Visibility = Visibility.Collapsed;
+        _pendingSheet = null;
+        _reviewVariables.Clear();
+        // Applying new variables invalidates the last validation run.
+        p.ExtractionValidationReport = null;
+        RenderValidation(null);
+        PersistExtraction(p);
+        ShowToast(mode == ApplyMode.Replace ? $"Applied {added} variables to the sheet." : (added == 0 ? "No new variables to add." : $"Added {added} new variable{(added == 1 ? "" : "s")}."));
+    }
+
+    // ---- CSV import -------------------------------------------------------
+
+    private void ImportCsv_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+
+            var ofd = new OpenFileDialog
+            {
+                Title = "Choose a CSV sample or data export",
+                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                CheckFileExists = true
+            };
+            if (ofd.ShowDialog() != true) return;
+
+            if (!TryLoadCsvSample(ofd.FileName, out var summary, out string error))
+            {
+                ShowToast(error);
+                return;
+            }
+
+            TryCommitGridEdit();
+            CommitGrid(p);
+            p.CsvSampleSummary = summary;
+            p.ExtractionValidationReport = null;   // sheet context changed
+            RenderValidation(null);
+            SaveResearch();
+            RefreshExtractionChips(p);
+
+            if (_researchAi.IsConfigured)
+                StartAiWithDelay("Map CSV columns to variables", () => _ = RunGenerateExtractionSheet(p));   // review before applying
+            else
+                ShowToast($"CSV summary saved ({summary.Columns.Count} columns, {summary.TotalRows} rows). Set up Research AI to map columns, or add variables manually.");
+        }
+        catch (Exception ex) { HandleDxError("import the CSV", ex); }
+    }
+
+    private void ClearSample_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null || p.CsvSampleSummary is null) { ShowToast("No CSV sample to clear."); return; }
+        ShowRlConfirm("Clear the CSV sample?",
+            "This removes the uploaded CSV summary. Your variable sheet is not changed.",
+            "Clear sample",
+            onConfirm: () =>
+            {
+                try
+                {
+                    p.CsvSampleSummary = null;
+                    p.ExtractionValidationReport = null;
+                    RenderValidation(null);
+                    SaveResearch();
+                    RefreshExtractionChips(p);
+                    ShowToast("CSV sample cleared.");
+                }
+                catch (Exception ex) { HandleDxError("clear the sample", ex); }
+            });
+    }
+
+    private void ViewCsvSummary_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p?.CsvSampleSummary is not { } csv) { ShowToast("Import a CSV sample first."); return; }
+        CsvSummaryTitle.Text = $"{csv.FileName} — {csv.CountSummary}";
+        CsvSummarySub.Text = $"First {csv.SampledRows} rows sampled for column profiling. Only this summary (never the raw data) is used.";
+        CsvSummaryList.ItemsSource = csv.Columns;
+        CsvSummaryOverlay.Visibility = Visibility.Visible;
+        FadeIn(CsvSummaryOverlay, 150);
+    }
+
+    private void CloseCsvSummary_Click(object sender, RoutedEventArgs e)
+        => CsvSummaryOverlay.Visibility = Visibility.Collapsed;
+
+    // ---- Clear the whole sheet --------------------------------------------
+
+    private void ClearSheet_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+        if (_extractionVariables.Count == 0) { ShowToast("The sheet is already empty."); return; }
+        ShowRlConfirm("Clear the extraction sheet?",
+            "This will remove all variables from the extraction sheet. This cannot be undone. Your CSV sample is kept.",
+            "Clear Sheet",
+            onConfirm: () =>
+            {
+                try
+                {
+                    PushDxUndo();
+                    _extractionVariables.Clear();
+                    p.ExtractionValidationReport = null;
+                    RenderValidation(null);
+                    PersistExtraction(p);
+                    ShowToast("Extraction sheet cleared. Use Undo to restore it.");
+                }
+                catch (Exception ex) { HandleDxError("clear the sheet", ex); }
+            });
+    }
+
+    // ---- Paste questions --------------------------------------------------
+
+    private void OpenPasteQuestions_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentResearchProject() is null) { ShowToast("Open a project first."); return; }
+        DxQuestionsBox.Text = "";
+        DxQuestionsValidation.Visibility = Visibility.Collapsed;
+        PasteQuestionsOverlay.Visibility = Visibility.Visible;
+        FadeIn(PasteQuestionsOverlay, 150);
+        DxQuestionsBox.Focus();
+    }
+
+    private void CancelPasteQuestions_Click(object sender, RoutedEventArgs e)
+        => PasteQuestionsOverlay.Visibility = Visibility.Collapsed;
+
+    private void ExtractVariablesFromQuestions_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { PasteQuestionsOverlay.Visibility = Visibility.Collapsed; return; }
+
+        string text = (DxQuestionsBox.Text ?? "").Trim();
+        DxQuestionsValidation.Foreground = (Brush)FindResource("DangerBrush");   // messages below are errors
+        if (text.Length < 4)
+        {
+            DxQuestionsValidation.Text = "Paste at least one question (one per line).";
+            DxQuestionsValidation.Visibility = Visibility.Visible;
+            return;
+        }
+        if (!_researchAi.IsConfigured)
+        {
+            DxQuestionsValidation.Text = "Research AI is not configured yet. Add an endpoint or enable a development provider in Settings.";
+            DxQuestionsValidation.Visibility = Visibility.Visible;
+            return;
+        }
+
+        DxQuestionsValidation.Visibility = Visibility.Collapsed;
+        StartAiWithDelay("Extract variables from questions", () => _ = RunExtractQuestions(p, text));
+    }
+
+    private async Task RunExtractQuestions(ResearchProject p, string text)
+    {
+        DxExtractQuestionsBtn.IsEnabled = false;
+        ShowLoading("Research AI is turning your questions into variables...");
+        try
+        {
+            var result = await _researchAi.ExtractVariablesFromQuestionsAsync(p, text, CancellationToken.None);
+            _pendingSheet = result;
+            PasteQuestionsOverlay.Visibility = Visibility.Collapsed;
+            ShowExtractionReview(result, "Review the variables built from your questions before applying.", "Apply to Sheet");
+        }
+        catch (ResearchAiException ex)
+        {
+            DxQuestionsValidation.Text = ex.Message;
+            DxQuestionsValidation.Visibility = Visibility.Visible;
+        }
+        catch (Exception)
+        {
+            DxQuestionsValidation.Text = "Research AI could not read those questions. Please try again.";
+            DxQuestionsValidation.Visibility = Visibility.Visible;
+        }
+        finally
+        {
+            HideLoading();
+            DxExtractQuestionsBtn.IsEnabled = true;
+        }
+    }
+
+    // ---- Google Form link -------------------------------------------------
+
+    private void OpenGoogleForm_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+        DxFormUrlBox.Text = p.GoogleFormUrl ?? "";
+        DxFormMessage.Visibility = Visibility.Collapsed;
+        GoogleFormOverlay.Visibility = Visibility.Visible;
+        FadeIn(GoogleFormOverlay, 150);
+        DxFormUrlBox.Focus();
+    }
+
+    private void CancelGoogleForm_Click(object sender, RoutedEventArgs e)
+        => GoogleFormOverlay.Visibility = Visibility.Collapsed;
+
+    private void ShowFormMessage(string message, bool error)
+    {
+        DxFormMessage.Text = message;
+        DxFormMessage.Foreground = (Brush)FindResource(error ? "DangerBrush" : "SuccessBrush");
+        DxFormMessage.Visibility = Visibility.Visible;
+    }
+
+    private void SaveFormLink_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) { GoogleFormOverlay.Visibility = Visibility.Collapsed; return; }
+
+        string url = (DxFormUrlBox.Text ?? "").Trim();
+        if (url.Length == 0)
+        {
+            p.GoogleFormUrl = "";
+            SaveResearch();
+            RefreshExtractionChips(p);
+            GoogleFormOverlay.Visibility = Visibility.Collapsed;
+            ShowToast("Google Form link cleared.");
+            return;
+        }
+        if (!IsGoogleFormUrl(url))
+        {
+            ShowFormMessage("That does not look like a Google Form link (docs.google.com/forms or forms.gle).", true);
+            return;
+        }
+        p.GoogleFormUrl = url;
+        SaveResearch();
+        RefreshExtractionChips(p);
+        GoogleFormOverlay.Visibility = Visibility.Collapsed;
+        ShowToast("Google Form link saved.");
+    }
+
+    private async void TryReadForm_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null) return;
+        string url = (DxFormUrlBox.Text ?? "").Trim();
+        if (!IsGoogleFormUrl(url))
+        {
+            ShowFormMessage("Enter a valid Google Form link first (docs.google.com/forms or forms.gle).", true);
+            return;
+        }
+
+        DxReadFormBtn.IsEnabled = false;
+        ShowLoading("Trying to read your form...");
+        List<string> questions;
+        try { questions = await TryFetchGoogleFormQuestionsAsync(url, CancellationToken.None); }
+        catch { questions = new List<string>(); }
+        finally { HideLoading(); DxReadFormBtn.IsEnabled = true; }
+
+        // Save the link regardless of whether reading succeeded.
+        p.GoogleFormUrl = url;
+        SaveResearch();
+        RefreshExtractionChips(p);
+
+        if (questions.Count == 0)
+        {
+            ShowFormMessage("Could not read this form link. Please paste the questions or upload a CSV/Google Sheets export.", true);
+            return;
+        }
+
+        // Hand the detected questions to the paste-questions flow for review.
+        GoogleFormOverlay.Visibility = Visibility.Collapsed;
+        DxQuestionsBox.Text = string.Join(Environment.NewLine, questions);
+        DxQuestionsValidation.Text = $"Loaded {questions.Count} possible question(s) from the form. Review/trim them, then extract variables.";
+        DxQuestionsValidation.Foreground = (Brush)FindResource("MutedBrush");
+        DxQuestionsValidation.Visibility = Visibility.Visible;
+        PasteQuestionsOverlay.Visibility = Visibility.Visible;
+        FadeIn(PasteQuestionsOverlay, 150);
+    }
+
+    // ---- Validate ---------------------------------------------------------
+
+    private void ValidateSheet_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            TryCommitGridEdit();
+            CommitGrid(p);
+
+            if (TryExtractTargetSampleSize(p, out int target)) p.TargetSampleSize = target;
+
+            var report = ValidateExtractionSheet(p);
+            p.ExtractionValidationReport = report;
+            UpdateExtractionStatus(p);
+            p.UpdatedAt = DateTime.UtcNow;
+            SaveResearch();
+            RenderValidation(report);
+            RefreshExtractionChips(p);
+
+            ShowToast(report.IsReady
+                ? (report.Warnings.Count == 0 ? "Validation passed — your sheet is ready." : "Validation passed with some warnings to review.")
+                : $"Validation found {report.Errors.Count} issue{(report.Errors.Count == 1 ? "" : "s")} to fix.");
+        }
+        catch (Exception ex) { HandleDxError("validate the sheet", ex); }
+    }
+
+    private void RenderValidation(ExtractionValidationReport? report)
+    {
+        if (report is null)
+        {
+            DxValEmpty.Visibility = Visibility.Visible;
+            DxErrorsSection.Visibility = Visibility.Collapsed;
+            DxWarningsSection.Visibility = Visibility.Collapsed;
+            DxSuggestionsSection.Visibility = Visibility.Collapsed;
+            DxReadyBanner.Visibility = Visibility.Collapsed;
+            DxResolveConflictsBtn.Visibility = Visibility.Collapsed;
+            DxValStatusText.Text = "Not checked";
+            DxValStatusText.Foreground = (Brush)FindResource("MutedBrush");
+            DxValStatusPill.Background = (Brush)FindResource("SoftCardBrush");
+            return;
+        }
+
+        // Conflicts entry point: anything flagged as an error or warning can be
+        // worked through in the Resolve Conflicts window.
+        DxResolveConflictsBtn.Visibility = (report.Errors.Count + report.Warnings.Count) > 0
+            ? Visibility.Visible : Visibility.Collapsed;
+
+        DxValEmpty.Visibility = Visibility.Collapsed;
+
+        DxErrorsList.ItemsSource = report.Errors;
+        DxErrorsHeader.Text = $"Errors ({report.Errors.Count})";
+        DxErrorsSection.Visibility = report.Errors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        DxWarningsList.ItemsSource = report.Warnings;
+        DxWarningsHeader.Text = $"Warnings ({report.Warnings.Count})";
+        DxWarningsSection.Visibility = report.Warnings.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        DxSuggestionsList.ItemsSource = report.Suggestions;
+        DxSuggestionsHeader.Text = $"Suggestions ({report.Suggestions.Count})";
+        DxSuggestionsSection.Visibility = report.Suggestions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        DxValStatusText.Text = report.StatusText;
+        if (report.IsReady)
+        {
+            DxValStatusText.Foreground = (Brush)FindResource("SuccessBrush");
+            DxValStatusPill.Background = (Brush)FindResource("SuccessSoftBrush");
+            DxReadyBanner.Visibility = Visibility.Visible;
+            DxReadyBannerText.Text = report.Warnings.Count == 0
+                ? "Your extraction sheet is ready for the next phase."
+                : "Your extraction sheet is ready for the next phase. Review the warnings above when you can.";
+        }
+        else
+        {
+            DxValStatusText.Foreground = (Brush)FindResource("DangerBrush");
+            DxValStatusPill.Background = (Brush)FindResource("DangerSoftBrush");
+            DxReadyBanner.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — Extraction Sheet undo / redo (session-only)
+    // =====================================================================
+
+    // Exact snapshot of the current sheet (Ids preserved so restore is faithful).
+    private List<ResearchVariable> SnapshotSheet()
+        => _extractionVariables.Select(v => { var c = v.Clone(); c.Id = v.Id; return c; }).ToList();
+
+    // Call BEFORE any mutation of the sheet (add/edit/delete/duplicate/clear/
+    // apply AI sheet/apply AI fixes/conflict actions). A new action clears redo.
+    private void PushDxUndo()
+    {
+        _dxUndo.Push(SnapshotSheet());
+        _dxRedo.Clear();
+        UpdateUndoRedoButtons();
+    }
+
+    private void UpdateUndoRedoButtons()
+    {
+        DxUndoBtn.IsEnabled = _dxUndo.Count > 0;
+        DxRedoBtn.IsEnabled = _dxRedo.Count > 0;
+    }
+
+    private void RestoreSheetSnapshot(ResearchProject p, List<ResearchVariable> snap)
+    {
+        _extractionVariables.Clear();
+        foreach (var v in snap) _extractionVariables.Add(v);
+        p.ExtractionValidationReport = null;   // restored sheet needs re-validation
+        RenderValidation(null);
+        DxGrid.Items.Refresh();
+        PersistExtraction(p);
+    }
+
+    private void UndoSheet_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            if (_dxUndo.Count == 0) { ShowToast("Nothing to undo."); return; }
+            _dxRedo.Push(SnapshotSheet());
+            RestoreSheetSnapshot(p, _dxUndo.Pop());
+            UpdateUndoRedoButtons();
+            ShowToast("Undone.");
+        }
+        catch (Exception ex) { HandleDxError("undo the change", ex); }
+    }
+
+    private void RedoSheet_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            if (_dxRedo.Count == 0) { ShowToast("Nothing to redo."); return; }
+            _dxUndo.Push(SnapshotSheet());
+            RestoreSheetSnapshot(p, _dxRedo.Pop());
+            UpdateUndoRedoButtons();
+            ShowToast("Redone.");
+        }
+        catch (Exception ex) { HandleDxError("redo the change", ex); }
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — pre-run delay for AI actions
+    //
+    // Every Data Extraction AI action passes through a 5-second countdown with
+    // Cancel / Start Now, so a stray click never costs API usage.
+    // =====================================================================
+
+    private void StartAiWithDelay(string title, Action action)
+    {
+        CancelAiDelayCore();   // never stack two pending actions
+        _aiDelayAction = action;
+        _aiDelaySecondsLeft = 5;
+        AiDelayTitle.Text = title;
+        AiDelayCountText.Text = "Starting in 5 seconds…";
+        AiDelayOverlay.Visibility = Visibility.Visible;
+        FadeIn(AiDelayOverlay, 150);
+
+        _aiDelayTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _aiDelayTimer.Tick += (_, _) =>
+        {
+            _aiDelaySecondsLeft--;
+            if (_aiDelaySecondsLeft <= 0)
+            {
+                var action2 = _aiDelayAction;
+                CancelAiDelayCore();
+                action2?.Invoke();
+            }
+            else
+            {
+                AiDelayCountText.Text = $"Starting in {_aiDelaySecondsLeft} second{(_aiDelaySecondsLeft == 1 ? "" : "s")}…";
+            }
+        };
+        _aiDelayTimer.Start();
+    }
+
+    // Stops the timer and hides the overlay WITHOUT running the action.
+    private void CancelAiDelayCore()
+    {
+        _aiDelayTimer?.Stop();
+        _aiDelayTimer = null;
+        _aiDelayAction = null;
+        AiDelayOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void AiDelayCancel_Click(object sender, RoutedEventArgs e)
+    {
+        CancelAiDelayCore();
+        ShowToast("Cancelled — no AI request was sent.");
+    }
+
+    private void AiDelayStartNow_Click(object sender, RoutedEventArgs e)
+    {
+        var action = _aiDelayAction;
+        CancelAiDelayCore();
+        action?.Invoke();
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 3) — Resolve Sheet–Sample Conflicts
+    //
+    // Conflicts are rebuilt from live project state (never persisted). Every
+    // conflict can be fixed manually; Fix with Research AI is optional and its
+    // proposals are always reviewed before applying. No statistics anywhere.
+    // =====================================================================
+
+    private static ExtractionConflict? ConflictOf(object sender)
+        => (sender as FrameworkElement)?.DataContext as ExtractionConflict;
+
+    private static string ConflictKey(ExtractionConflict c)
+        => c.Kind + "|" + (c.Variable?.Id ?? "") + "|" + (c.Column?.Name ?? "") + "|" + c.Title;
+
+    private static string MapCsvType(string inferred) => inferred switch
+    {
+        "Numeric" => "Numeric",
+        "Binary" => "Binary",
+        "Categorical" => "Categorical",
+        "Date" => "Date",
+        "Text" => "Text",
+        _ => "Unknown"
+    };
+
+    // Conservative type-mismatch check: only flags combinations that cannot be
+    // right (e.g. text data in a numeric variable), never guesses.
+    private static bool IsCsvTypeMismatch(CsvColumnSummary col, ResearchVariable v)
+    {
+        string t = (v.VariableType ?? "").Trim();
+        if (t.Length == 0 || t.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("ID", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("Text", StringComparison.OrdinalIgnoreCase)) return false;
+        return col.InferredType switch
+        {
+            "Text" => t is "Numeric" or "Continuous" or "Date" or "Binary" or "Ordinal",
+            "Date" => t is "Numeric" or "Continuous" or "Binary",
+            _ => false
+        };
+    }
+
+    private List<ExtractionConflict> BuildConflicts(ResearchProject p)
+    {
+        var list = new List<ExtractionConflict>();
+        var vars = _extractionVariables.ToList();
+
+        // --- Sheet-internal issues ---
+        foreach (var grp in vars.Where(v => !string.IsNullOrWhiteSpace(v.VariableName))
+                                .GroupBy(v => v.VariableName.Trim().ToLowerInvariant())
+                                .Where(g => g.Count() > 1))
+            foreach (var v in grp.Skip(1))
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "Duplicate",
+                    Severity = "Error",
+                    Title = $"Duplicate variable name “{v.VariableName.Trim()}”",
+                    Detail = "Two or more rows share this name. Rename this row or delete it.",
+                    Variable = v,
+                    RenameVis = Visibility.Visible,
+                    DeleteVis = Visibility.Visible
+                });
+
+        int rowNo = 0;
+        foreach (var v in vars)
+        {
+            rowNo++;
+            string name = (v.VariableName ?? "").Trim();
+            if (name.Length == 0)
+            {
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "Name",
+                    Severity = "Error",
+                    Title = $"Row {rowNo} has no variable name",
+                    Detail = "Give it a short machine name (e.g. sleep_hours) or delete the row.",
+                    Variable = v,
+                    RenameVis = Visibility.Visible,
+                    DeleteVis = Visibility.Visible
+                });
+                continue;
+            }
+            if (!ValidNameRegex.IsMatch(name))
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "Name",
+                    Severity = "Error",
+                    Title = $"Variable name “{name}” is invalid",
+                    Detail = "Use letters, numbers and underscores only, with no spaces or symbols (e.g. sleep_hours).",
+                    Variable = v,
+                    RenameVis = Visibility.Visible,
+                    DeleteVis = Visibility.Visible
+                });
+
+            bool unknownType = string.IsNullOrWhiteSpace(v.VariableType) || v.VariableType.Equals("Unknown", StringComparison.OrdinalIgnoreCase);
+            bool unknownRole = string.IsNullOrWhiteSpace(v.Role) || v.Role.Equals("Unknown", StringComparison.OrdinalIgnoreCase);
+            if (unknownType || unknownRole)
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "Meta",
+                    Title = $"“{name}” has an unknown {(unknownType && unknownRole ? "type and role" : unknownType ? "type" : "role")}",
+                    Detail = "Set the specific type and role so the sheet is unambiguous.",
+                    Variable = v,
+                    EditVis = Visibility.Visible
+                });
+
+            bool needsCoding = v.VariableType is "Categorical" or "Binary" or "Ordinal";
+            if (needsCoding && string.IsNullOrWhiteSpace(v.Coding) && string.IsNullOrWhiteSpace(v.ValueLabels))
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "Coding",
+                    Title = $"“{name}” has no value labels",
+                    Detail = $"A {v.VariableType.ToLowerInvariant()} variable needs coding (e.g. 0 = No, 1 = Yes).",
+                    Variable = v,
+                    EditVis = Visibility.Visible
+                });
+        }
+
+        if (vars.Count > 0 && !vars.Any(v => string.Equals(v.Role, "Outcome", StringComparison.OrdinalIgnoreCase)))
+            list.Add(new ExtractionConflict
+            {
+                Kind = "Outcome",
+                Title = "No primary outcome variable is marked",
+                Detail = "Mark the variable that answers your research question as “Outcome”, or ignore this if intentional."
+            });
+
+        // --- Plan/recommendation variables not yet in the sheet ---
+        if (p.Recommendations is { SuggestedVariables.Count: > 0 })
+        {
+            var sheetTokens = vars.SelectMany(v => new[] { v.VariableName, v.QuestionLabel })
+                                  .Where(s => !string.IsNullOrWhiteSpace(s))
+                                  .Select(s => s.Trim().ToLowerInvariant()).ToList();
+            foreach (var rv in p.Recommendations.SuggestedVariables)
+            {
+                string key = rv.HeaderDisplay.Trim().ToLowerInvariant();
+                if (key.Length < 3) continue;
+                if (sheetTokens.Any(t => t.Contains(key) || key.Contains(t))) continue;
+
+                string protoName = SanitizeVarName(rv.HeaderDisplay);
+                var proto = new ResearchVariable
+                {
+                    VariableName = protoName.Length == 0 ? "variable" : protoName,
+                    QuestionLabel = rv.VariableLabel,
+                    VariableType = ResearchVariableOptions.VariableTypes.FirstOrDefault(t => string.Equals(t, rv.VariableType, StringComparison.OrdinalIgnoreCase)) ?? "Unknown",
+                    Role = ResearchVariableOptions.Roles.FirstOrDefault(r => string.Equals(r, rv.Role, StringComparison.OrdinalIgnoreCase)) ?? "Unknown",
+                    Coding = rv.SuggestedCoding,
+                    Source = "AI Recommendation",
+                    Notes = rv.Notes
+                };
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "PlanVar",
+                    Severity = "Suggestion",
+                    Source = "Recommendations",
+                    Title = $"The research plan mentions “{rv.HeaderDisplay.Trim()}”, but no matching variable was found",
+                    Detail = "Add it to the sheet so the plan and the sheet stay aligned, or ignore it if it is covered by another variable.",
+                    Variable = proto,   // prototype — not in the sheet until added
+                    AddVis = Visibility.Visible
+                });
+            }
+        }
+
+        // --- Sheet ↔ CSV sample conflicts ---
+        if (p.CsvSampleSummary is { Columns.Count: > 0 } csv)
+        {
+            var sheetByKey = vars.Where(v => !string.IsNullOrWhiteSpace(v.VariableName))
+                                 .GroupBy(v => NormalizeKey(v.VariableName))
+                                 .ToDictionary(g => g.Key, g => g.First());
+            var csvKeys = csv.Columns.Select(c => NormalizeKey(c.Name)).Where(k => k.Length > 0).ToHashSet();
+            var sheetOnlyNames = vars.Where(v => !string.IsNullOrWhiteSpace(v.VariableName) && !csvKeys.Contains(NormalizeKey(v.VariableName)))
+                                     .Select(v => v.VariableName.Trim()).Distinct().ToList();
+
+            foreach (var col in csv.Columns)
+            {
+                string key = NormalizeKey(col.Name);
+                if (key.Length == 0) continue;
+                if (!sheetByKey.TryGetValue(key, out var matchVar))
+                {
+                    list.Add(new ExtractionConflict
+                    {
+                        Kind = "CsvOnly",
+                        Source = "CSV",
+                        Title = $"CSV column “{col.Name}” is not in the extraction sheet",
+                        Detail = $"Detected as {col.InferredType} with {col.UniqueCount} unique values ({col.MissingPercent}% missing). Add it as a new variable, match it to an existing one, or ignore it.",
+                        Column = col,
+                        AddVis = Visibility.Visible,
+                        MatchVis = sheetOnlyNames.Count > 0 ? Visibility.Visible : Visibility.Collapsed,
+                        MatchCandidates = new List<string>(sheetOnlyNames)
+                    });
+                }
+                else if (IsCsvTypeMismatch(col, matchVar))
+                {
+                    list.Add(new ExtractionConflict
+                    {
+                        Kind = "Type",
+                        Source = "CSV",
+                        Title = $"“{matchVar.VariableName.Trim()}”: type may not match the CSV data",
+                        Detail = $"The CSV column looks {col.InferredType}, but the sheet says {matchVar.VariableType}. Edit the variable if the sheet is wrong, or ignore if the CSV sample is unusual.",
+                        Variable = matchVar,
+                        Column = col,
+                        EditVis = Visibility.Visible
+                    });
+                }
+            }
+
+            foreach (var v in vars.Where(v => !string.IsNullOrWhiteSpace(v.VariableName)))
+                if (!csvKeys.Contains(NormalizeKey(v.VariableName)))
+                    list.Add(new ExtractionConflict
+                    {
+                        Kind = "SheetOnly",
+                        Title = $"Variable “{v.VariableName.Trim()}” is missing from the CSV",
+                        Detail = "The uploaded sample has no matching column. Rename it to match a CSV column, delete it, or ignore it if that data comes later.",
+                        Variable = v,
+                        RenameVis = Visibility.Visible,
+                        DeleteVis = Visibility.Visible
+                    });
+
+            int? target = p.TargetSampleSize;
+            if (target is > 0 && csv.TotalRows > 0 && csv.TotalRows < target)
+                list.Add(new ExtractionConflict
+                {
+                    Kind = "Sample",
+                    Severity = "Suggestion",
+                    Source = "Proposal",
+                    Title = $"Sample is below the proposal target ({csv.TotalRows} of {target})",
+                    Detail = $"You may need {target - csv.TotalRows} additional samples. Nothing to fix in the sheet — keep collecting data."
+                });
+        }
+
+        return list.Where(c => !_ignoredConflictKeys.Contains(ConflictKey(c))).ToList();
+    }
+
+    private void RefreshConflicts(ResearchProject p)
+    {
+        var conflicts = BuildConflicts(p);
+        _conflicts.Clear();
+        foreach (var c in conflicts) _conflicts.Add(c);
+
+        DxConflictCountText.Text = conflicts.Count == 0 ? "No conflicts"
+            : conflicts.Count == 1 ? "1 conflict" : $"{conflicts.Count} conflicts";
+        DxConflictEmptyText.Text = p.ExtractionValidationReport?.IsReady == true
+            ? "No conflicts remaining — your extraction sheet is ready for the next phase."
+            : "No conflicts detected between the sheet, your sample, and the plan.";
+        DxConflictEmpty.Visibility = conflicts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Opens the Resolve Conflicts window. Manual resolution is the default path
+    // (Part F): validate first, and if there is nothing to resolve, say so
+    // instead of opening an empty modal or pushing the user toward AI.
+    private void OpenConflicts_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            TryCommitGridEdit();
+            CommitGrid(p);
+            if (_extractionVariables.Count == 0) { ShowToast("Add or generate variables first, then resolve conflicts."); return; }
+            if (TryExtractTargetSampleSize(p, out int target)) p.TargetSampleSize = target;
+
+            p.ExtractionValidationReport = ValidateExtractionSheet(p);
+            UpdateExtractionStatus(p);
+            RenderValidation(p.ExtractionValidationReport);
+            SaveResearch();
+
+            if (ConflictList.ItemsSource is null) ConflictList.ItemsSource = _conflicts;
+            RefreshConflicts(p);
+
+            if (_conflicts.Count == 0)
+            {
+                ShowToast("No conflicts found. Your extraction sheet is ready for the next step.");
+                return;
+            }
+
+            // Snapshot so Cancel can discard all staged decisions + any immediate
+            // manual edits made while the window is open.
+            _conflictSnapshot = SnapshotSheet();
+            _conflictIgnoredSnapshot = new HashSet<string>(_ignoredConflictKeys);
+
+            ConflictOverlay.Visibility = Visibility.Visible;
+            FadeIn(ConflictOverlay, 150);
+        }
+        catch (Exception ex) { HandleDxError("open the conflict window", ex); }
+    }
+
+    private void UpdateConflictCountText()
+        => DxConflictCountText.Text = _conflicts.Count == 0 ? "No conflicts"
+            : _conflicts.Count == 1 ? "1 conflict" : $"{_conflicts.Count} conflicts";
+
+    // ---- Staged manual actions (nothing touches the sheet until Save) ------
+
+    private void ConflictAdd_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConflictOf(sender) is not { } c) return;
+        if (c.Column is null && !(c.Kind == "PlanVar" && c.Variable is not null)) return;
+        c.StagedAction = "Add";
+        c.Status = "Resolved";
+        ShowToast("Staged: add to sheet. Choose Save and Close to apply.");
+    }
+
+    private void ConflictMatch_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConflictOf(sender) is not { Column: not null } c) return;
+        if (string.IsNullOrWhiteSpace(c.SelectedMatch)) { ShowToast("Choose a variable to match first."); return; }
+        c.StagedAction = "Match";
+        c.Status = "Resolved";
+        ShowToast($"Staged: match to “{c.SelectedMatch}”. Choose Save and Close to apply.");
+    }
+
+    // Rename / Edit manually open the full editor and apply immediately (a
+    // direct manual edit). Cancel still reverts everything via the snapshot.
+    private void ConflictEdit_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (ConflictOf(sender) is not { Variable: { } v } c) return;
+            c.Status = "Needs review";
+            OpenVariableEditor(v);
+        }
+        catch (Exception ex) { HandleDxError("open the variable editor", ex); }
+    }
+
+    private void ConflictDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConflictOf(sender) is not { Variable: not null } c) return;
+        c.StagedAction = "Delete";
+        c.Status = "Resolved";
+        ShowToast("Staged: delete from sheet. Choose Save and Close to apply.");
+    }
+
+    private void ConflictIgnore_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConflictOf(sender) is not { } c) return;
+        c.StagedAction = "Ignore";
+        c.Status = "Ignored";
+    }
+
+    private void ConflictMarkResolved_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConflictOf(sender) is not { } c) return;
+        c.StagedAction = "MarkResolved";
+        c.Status = "Resolved";
+    }
+
+    // Cancel: discard ALL staged decisions and any immediate edits, restoring the
+    // sheet + ignored set to how they were when the window opened.
+    private void ConflictCancel_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            ConflictOverlay.Visibility = Visibility.Collapsed;
+            if (p is null) return;
+
+            if (_conflictSnapshot is not null)
+            {
+                _extractionVariables.Clear();
+                foreach (var v in _conflictSnapshot) _extractionVariables.Add(v);
+                DxGrid.Items.Refresh();
+            }
+            if (_conflictIgnoredSnapshot is not null)
+            {
+                _ignoredConflictKeys.Clear();
+                foreach (var k in _conflictIgnoredSnapshot) _ignoredConflictKeys.Add(k);
+            }
+            _conflictSnapshot = null;
+            _conflictIgnoredSnapshot = null;
+
+            p.ExtractionValidationReport = null;
+            RenderValidation(null);
+            PersistExtraction(p);
+            _conflicts.Clear();
+            ShowToast("Changes discarded — no conflict decisions were saved.");
+        }
+        catch (Exception ex) { HandleDxError("cancel the conflicts", ex); }
+    }
+
+    // Save and Close: apply every staged decision to the sheet, then re-validate
+    // and refresh so the warning/conflict count reflects the new state.
+    private void ConflictSaveClose_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ConflictOverlay.Visibility = Visibility.Collapsed; return; }
+
+            // One undo step for the whole resolution session.
+            if (_conflictSnapshot is not null) { _dxUndo.Push(_conflictSnapshot); _dxRedo.Clear(); UpdateUndoRedoButtons(); }
+
+            int applied = 0;
+            foreach (var c in _conflicts.ToList())
+            {
+                switch (c.StagedAction)
+                {
+                    case "Add":
+                        ResearchVariable? nv = null;
+                        if (c.Column is { } col)
+                            nv = new ResearchVariable
+                            {
+                                VariableName = MakeUniqueName(col.Name),
+                                VariableType = MapCsvType(col.InferredType),
+                                MeasurementLevel = col.IsLikelyCategorical ? "Nominal" : (col.InferredType == "Numeric" ? "Scale" : "NotApplicable"),
+                                Role = "Unknown", Source = "CSV Sample",
+                                Notes = col.IsLikelyCategorical ? "Add value labels for each category." : ""
+                            };
+                        else if (c.Kind == "PlanVar" && c.Variable is { } proto)
+                        {
+                            nv = proto.Clone();
+                            nv.VariableName = MakeUniqueName(proto.VariableName);
+                        }
+                        if (nv is not null) { _extractionVariables.Add(nv); applied++; }
+                        break;
+
+                    case "Match" when c.Column is { } mcol && !string.IsNullOrWhiteSpace(c.SelectedMatch):
+                        var mv = _extractionVariables.FirstOrDefault(x => string.Equals(x.VariableName.Trim(), c.SelectedMatch!.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (mv is not null)
+                        {
+                            string newName = SanitizeVarName(mcol.Name);
+                            bool taken = _extractionVariables.Any(x => !ReferenceEquals(x, mv) && string.Equals(x.VariableName.Trim(), newName, StringComparison.OrdinalIgnoreCase));
+                            mv.VariableName = taken ? MakeUniqueName(newName) : newName;
+                            if (string.IsNullOrWhiteSpace(mv.VariableType) || mv.VariableType == "Unknown") mv.VariableType = MapCsvType(mcol.InferredType);
+                            applied++;
+                        }
+                        break;
+
+                    case "Delete" when c.Variable is { } dv:
+                        if (_extractionVariables.Remove(dv)) applied++;
+                        break;
+
+                    case "Ignore":
+                    case "MarkResolved":
+                        _ignoredConflictKeys.Add(ConflictKey(c));
+                        applied++;
+                        break;
+                }
+            }
+
+            DxGrid.Items.Refresh();
+            ConflictOverlay.Visibility = Visibility.Collapsed;
+            _conflictSnapshot = null;
+            _conflictIgnoredSnapshot = null;
+
+            // Re-validate from the new sheet state and refresh everything.
+            CommitGrid(p);
+            if (TryExtractTargetSampleSize(p, out int tt)) p.TargetSampleSize = tt;
+            var report = ValidateExtractionSheet(p);
+            p.ExtractionValidationReport = report;
+            UpdateExtractionStatus(p);
+            PersistExtraction(p);
+            RenderValidation(report);
+            _conflicts.Clear();   // window is closing; rebuilt fresh on next open
+
+            int remaining = report.Errors.Count + report.Warnings.Count;
+            ShowToast(applied == 0
+                ? "No changes to save."
+                : remaining == 0
+                    ? $"Saved. All conflicts resolved — your extraction sheet is ready for the next step."
+                    : $"Saved {applied} decision{(applied == 1 ? "" : "s")}. {remaining} item{(remaining == 1 ? "" : "s")} still need review.");
+        }
+        catch (Exception ex) { HandleDxError("save the conflict decisions", ex); }
+    }
+
+    private void ConflictFixAi_Click(object sender, RoutedEventArgs e)
+    {
+        ConflictOverlay.Visibility = Visibility.Collapsed;
+        _conflictSnapshot = null;
+        _conflictIgnoredSnapshot = null;
+        FixWithAi_Click(sender, e);   // ensures validation, shows Review AI Fixes (optional path)
+    }
+
+    // ---- Fix with Research AI --------------------------------------------
+
+    private void FixWithAi_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+            TryCommitGridEdit();
+            CommitGrid(p);
+            if (_extractionVariables.Count == 0) { ShowToast("Add or generate variables before asking for fixes."); return; }
+            if (!_researchAi.IsConfigured) { ShowToast("Research AI is not set up yet. Add an endpoint or enable a development provider in AI Settings, then try again."); return; }
+
+            // Make sure there is a validation report to act on.
+            var report = p.ExtractionValidationReport ?? ValidateExtractionSheet(p);
+            p.ExtractionValidationReport = report;
+            RenderValidation(report);
+            StartAiWithDelay("Fix with Research AI", () => _ = RunFixWithAi(p, report));
+        }
+        catch (Exception ex) { HandleDxError("start the AI fixes", ex); }
+    }
+
+    private async Task RunFixWithAi(ResearchProject p, ExtractionValidationReport report)
+    {
+        ShowLoading("Research AI is reviewing your sheet...");
+        try
+        {
+            var result = await _researchAi.SuggestExtractionFixesAsync(p, report, CancellationToken.None);
+            _pendingFixes = result;
+            DxFixSummaryList.ItemsSource = result.ChangeSummary.Count > 0 ? result.ChangeSummary : new List<string> { "No changes were suggested." };
+            if (result.Warnings.Count > 0) { DxFixWarningsList.ItemsSource = result.Warnings; DxFixWarningsSection.Visibility = Visibility.Visible; }
+            else DxFixWarningsSection.Visibility = Visibility.Collapsed;
+            ExtractionFixReviewOverlay.Visibility = Visibility.Visible;
+            FadeIn(ExtractionFixReviewOverlay, 150);
+        }
+        catch (ResearchAiException ex) { ShowToast(ex.Message); }
+        catch (Exception) { ShowToast("Research AI could not suggest fixes. Please try again."); }
+        finally { HideLoading(); }
+    }
+
+    private void ExtractionFixCancel_Click(object sender, RoutedEventArgs e)
+    {
+        ExtractionFixReviewOverlay.Visibility = Visibility.Collapsed;
+        _pendingFixes = null;
+    }
+
+    private void ExtractionFixApply_Click(object sender, RoutedEventArgs e)
+    {
+        var p = CurrentResearchProject();
+        if (p is null || _pendingFixes is null) { ExtractionFixReviewOverlay.Visibility = Visibility.Collapsed; return; }
+
+        PushDxUndo();   // applying AI fixes is undoable
+        _extractionVariables.Clear();
+        foreach (var v in _pendingFixes.Variables) _extractionVariables.Add(v);
+        _pendingFixes = null;
+        ExtractionFixReviewOverlay.Visibility = Visibility.Collapsed;
+
+        // Re-validate after applying the fixes.
+        CommitGrid(p);
+        if (TryExtractTargetSampleSize(p, out int target)) p.TargetSampleSize = target;
+        var report = ValidateExtractionSheet(p);
+        p.ExtractionValidationReport = report;
+        PersistExtraction(p);
+        RenderValidation(report);
+
+        ShowToast(report.IsReady
+            ? "Fixes applied — your extraction sheet is ready for the next phase."
+            : $"Fixes applied. {report.Errors.Count} item{(report.Errors.Count == 1 ? "" : "s")} still need review.");
     }
 
     // =====================================================================

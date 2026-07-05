@@ -1418,7 +1418,12 @@
 
                                         <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                                             <Button Content="Save Research AI Settings" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="SaveResearchAiConfig_Click" Width="230"/>
+                                            <Button x:Name="RaiTestBtn" Content="Test Research AI" Style="{StaticResource SoftButton}" Click="TestResearchAi_Click" Width="170" Margin="12,0,0,0"/>
                                         </StackPanel>
+
+                                        <Border x:Name="RaiTestResult" CornerRadius="10" Padding="14,11" Margin="0,12,0,0" Visibility="Collapsed" Background="{StaticResource SoftCardBrush}">
+                                            <TextBlock x:Name="RaiTestResultText" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                                        </Border>
 
                                         <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="16" Margin="0,18,0,0">
                                             <TextBlock Text="Do not enter any AI provider API keys here. Provider secrets belong only on your backend. This app only sends structured project data to the endpoint above."
@@ -2103,6 +2108,24 @@
                                                    Foreground="#9A5B12" FontSize="12.5" TextWrapping="Wrap"/>
                                     </Border>
 
+                                    <!-- Proposal already generated (one-time generation guard) -->
+                                    <Border x:Name="ProposalDraftExistsCard" Background="{StaticResource SuccessSoftBrush}" CornerRadius="12" Padding="18" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+                                                <TextBlock Text="Proposal draft already generated." Foreground="{StaticResource SuccessBrush}" FontSize="14" FontWeight="Bold"/>
+                                                <TextBlock Text="Edit the proposal sections below, or delete the draft to generate a new one. Generating again without deleting is disabled to avoid wasted AI usage."
+                                                           Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Style="{StaticResource GhostButton}" VerticalAlignment="Center" MinWidth="170" Click="DeleteProposalDraft_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconTrash}" Fill="{StaticResource DangerBrush}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                    <TextBlock Text="Delete Proposal Draft" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+
                                     <!-- Generate (fully in-app) -->
                                     <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
                                         <StackPanel>
@@ -2131,7 +2154,11 @@
                                             <Border x:Name="ProposalError" Background="{StaticResource DangerSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
                                                 <StackPanel>
                                                     <TextBlock x:Name="ProposalErrorText" Foreground="{StaticResource DangerBrush}" FontSize="13" TextWrapping="Wrap"/>
-                                                    <Button Content="Retry" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Margin="0,10,0,0" Click="GenerateProposalDraft_Click"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                        <Button Content="Retry" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="GenerateProposalDraft_Click"/>
+                                                        <Button Content="Open Research AI Settings" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
+                                                        <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </StackPanel>
@@ -2302,11 +2329,27 @@
                                                 </StackPanel>
                                             </Border>
 
-                                            <!-- Error state -->
+                                            <!-- Error state (first-time generation failed — nothing to lose) -->
                                             <Border x:Name="AiRecError" Background="{StaticResource DangerSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
                                                 <StackPanel>
                                                     <TextBlock x:Name="AiRecErrorText" Foreground="{StaticResource DangerBrush}" FontSize="13" TextWrapping="Wrap"/>
-                                                    <Button Content="Retry" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Margin="0,10,0,0" Click="GenerateRecommendations_Click"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                        <Button Content="Retry" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="GenerateRecommendations_Click"/>
+                                                        <Button Content="Open Research AI Settings" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
+                                                        <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Regeneration-failed, non-destructive state (previous recommendations kept and still shown below) -->
+                                            <Border x:Name="AiRecRegenFailedBanner" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="16" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="AiRecRegenFailedText" Foreground="{StaticResource WarningBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                        <Button Content="Retry" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="RetryRegenerateRecommendations_Click"/>
+                                                        <Button Content="Open Research AI Settings" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
+                                                        <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </StackPanel>
@@ -2395,7 +2438,7 @@
                                                 </StackPanel>
                                             </Border>
 
-                                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Padding="16" Margin="0,20,0,0">
+                                            <Border x:Name="AiRecAcceptRow" Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Padding="16" Margin="0,20,0,0">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                     <TextBlock Grid.Column="0" Text="Happy with these? Accept them to build your editable research plan below."
@@ -2403,6 +2446,27 @@
                                                     <Button Grid.Column="1" x:Name="AcceptRecBtn" Content="Accept Recommendations Into Plan"
                                                             Style="{StaticResource PremiumButton}" VerticalAlignment="Center" Click="AcceptRecommendations_Click"/>
                                                 </Grid>
+                                            </Border>
+
+                                            <!-- Accepted status (Phase 3 polish) -->
+                                            <Border x:Name="AiRecAcceptedBanner" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="16" Margin="0,20,0,0" Visibility="Collapsed">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Background="{StaticResource SuccessBrush}" CornerRadius="12" Padding="10,4" Margin="0,0,12,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="Accepted" Foreground="White" FontSize="11.5" FontWeight="Bold"/>
+                                                    </Border>
+                                                    <TextBlock Text="Recommendations accepted. Your research plan is ready."
+                                                               Foreground="{StaticResource SuccessBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border x:Name="AiRecNeedsReviewBanner" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="16" Margin="0,20,0,0" Visibility="Collapsed">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Background="{StaticResource WarningBrush}" CornerRadius="12" Padding="10,4" Margin="0,0,12,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="Needs review" Foreground="White" FontSize="11.5" FontWeight="Bold"/>
+                                                    </Border>
+                                                    <TextBlock Text="Project details changed after recommendations were accepted. Review or regenerate recommendations before continuing."
+                                                               Foreground="{StaticResource WarningBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="560"/>
+                                                </StackPanel>
                                             </Border>
                                         </StackPanel>
                                     </Border>
@@ -2468,22 +2532,392 @@
 
                                 </StackPanel>
 
-                                <!-- DATA EXTRACTION -->
-                                <Border x:Name="TabDataExt" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
-                                    <StackPanel MaxWidth="760">
+                                <!-- DATA EXTRACTION (Phase 3) -->
+                                <StackPanel x:Name="TabDataExt" Visibility="Collapsed" VerticalAlignment="Top">
+                                    <StackPanel.Resources>
+                                        <Style x:Key="DxCellText" TargetType="TextBlock">
+                                            <Setter Property="TextWrapping" Value="Wrap"/>
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        </Style>
+                                        <Style x:Key="DxSumLabel" TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Setter Property="FontSize" Value="13"/>
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                        </Style>
+                                        <Style x:Key="DxSumValue" TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                            <Setter Property="FontSize" Value="14"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                        </Style>
+                                    </StackPanel.Resources>
+
+                                    <!-- Header + status -->
+                                    <Grid Margin="0,0,0,16">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
                                             <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
-                                                <Path Data="{StaticResource IconImport}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <Path Data="{StaticResource IconTable}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Data Extraction" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                                <TextBlock Text="Data Extraction Sheet" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Create a structured variable sheet before uploading data or running statistics."
+                                                           Style="{StaticResource Caption}" TextWrapping="Wrap" MaxWidth="560"/>
                                             </StackPanel>
                                         </StackPanel>
-                                        <TextBlock Text="Paste Google Form questions or upload data later to build an editable extraction sheet."
-                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
-                                    </StackPanel>
-                                </Border>
+                                        <Border x:Name="DxStatusChip" Grid.Column="1" VerticalAlignment="Center" Background="{StaticResource SoftCardBrush}"
+                                                BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="20" Padding="14,7">
+                                            <TextBlock x:Name="DxStatusChipText" Text="Not started" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- SECTION A — Extraction Sheet: build & manage the variable sheet -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="22,18" Margin="0,0,0,16">
+                                        <Border.Resources>
+                                            <Style x:Key="DxGroupLabel" TargetType="TextBlock">
+                                                <Setter Property="FontSize" Value="10.5"/>
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                                <Setter Property="Foreground" Value="{StaticResource SoftMutedBrush}"/>
+                                                <Setter Property="Margin" Value="2,0,0,8"/>
+                                            </Style>
+                                            <!-- Uniform button sizing so groups line up and wrap cleanly -->
+                                            <Style x:Key="DxActionPrimary" TargetType="Button" BasedOn="{StaticResource PremiumButton}">
+                                                <Setter Property="Height" Value="42"/>
+                                                <Setter Property="MinWidth" Value="158"/>
+                                                <Setter Property="Margin" Value="0,0,10,2"/>
+                                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            </Style>
+                                            <Style x:Key="DxActionSoft" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+                                                <Setter Property="Height" Value="42"/>
+                                                <Setter Property="MinWidth" Value="158"/>
+                                                <Setter Property="Margin" Value="0,0,10,2"/>
+                                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            </Style>
+                                        </Border.Resources>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Data="{StaticResource IconGrid}" Fill="{StaticResource PrimaryBrush}" Width="17" Height="17" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                                <TextBlock Text="Extraction Sheet" Style="{StaticResource SectionHeader}" FontSize="16" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock Text="Each row is one variable you plan to collect. Build the sheet from your research plan, proposal, questionnaire, or form."
+                                                       Style="{StaticResource Caption}" TextWrapping="Wrap" MaxWidth="680" Margin="0,4,0,14"/>
+
+                                            <!-- BUILD -->
+                                            <TextBlock Text="BUILD" Style="{StaticResource DxGroupLabel}"/>
+                                            <WrapPanel>
+                                                <Button Style="{StaticResource DxActionPrimary}" Click="GenerateExtractionSheet_Click" ToolTip="Let Research AI build the sheet from your project, proposal, plan and sample summary">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconGenerate}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="Generate by AI" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource DxActionSoft}" Click="AddVariable_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconPlus}" Fill="{StaticResource PrimaryBrush}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Add Variable" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource DxActionSoft}" Click="OpenPasteQuestions_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconEdit}" Fill="{StaticResource PrimaryBrush}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Paste Questions" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource DxActionSoft}" Click="OpenGoogleForm_Click" Margin="0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconLink}" Fill="{StaticResource PrimaryBrush}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Google Form Link" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </WrapPanel>
+
+                                            <Border Height="1" Background="{StaticResource BorderBrushSoft}" Margin="0,16"/>
+
+                                            <!-- MANAGE -->
+                                            <TextBlock Text="MANAGE" Style="{StaticResource DxGroupLabel}"/>
+                                            <WrapPanel>
+                                                <Button Style="{StaticResource DxActionSoft}" Click="ValidateSheet_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconCheck}" Fill="{StaticResource PrimaryBrush}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Validate Sheet" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource DxActionSoft}" Click="OpenConflicts_Click" MinWidth="180" ToolTip="Review and resolve validation warnings and sheet/sample conflicts">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconWarn}" Fill="{StaticResource PrimaryBrush}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Resolve Conflicts" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource DxActionSoft}" Click="ClearSheet_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconTrash}" Fill="{StaticResource DangerBrush}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Clear Sheet" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button x:Name="DxUndoBtn" Style="{StaticResource DxActionSoft}" MinWidth="96" IsEnabled="False" Click="UndoSheet_Click" ToolTip="Undo the last sheet change (this session)">
+                                                    <TextBlock Text="Undo" VerticalAlignment="Center"/>
+                                                </Button>
+                                                <Button x:Name="DxRedoBtn" Style="{StaticResource DxActionSoft}" MinWidth="96" IsEnabled="False" Click="RedoSheet_Click" ToolTip="Redo the last undone change">
+                                                    <TextBlock Text="Redo" VerticalAlignment="Center"/>
+                                                </Button>
+                                                <Button Style="{StaticResource DxActionPrimary}" Click="SaveExtractionSheet_Click" Margin="0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconCheck}" Fill="White" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="Save" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Editable spreadsheet (part of SECTION A) -->
+                                    <Border Style="{StaticResource CardBorder}" Padding="0" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <Grid Margin="18,16,18,12">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="Variables" Style="{StaticResource SectionHeader}"/>
+                                                    <TextBlock Text="Every row is one field you plan to collect. Edit any cell; use the row actions to reorder, duplicate, edit, or delete."
+                                                               Style="{StaticResource Caption}" TextWrapping="Wrap" MaxWidth="640"/>
+                                                </StackPanel>
+                                                <Border Grid.Column="1" VerticalAlignment="Center" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Padding="12,6">
+                                                    <TextBlock x:Name="DxVarCountText" Text="0 variables" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
+                                                </Border>
+                                            </Grid>
+
+                                            <Grid>
+                                                <DataGrid x:Name="DxGrid" Style="{StaticResource ResearchDataGrid}" MaxHeight="430" Margin="0,0,0,0"
+                                                          BorderThickness="0,1,0,0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                    <DataGrid.Columns>
+                                                        <DataGridTextColumn Header="Variable name" Binding="{Binding VariableName}" Width="125">
+                                                            <DataGridTextColumn.ElementStyle>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource DxCellText}"><Setter Property="FontWeight" Value="SemiBold"/></Style>
+                                                            </DataGridTextColumn.ElementStyle>
+                                                        </DataGridTextColumn>
+                                                        <DataGridTextColumn Header="Question label" Binding="{Binding QuestionLabel}" Width="175" ElementStyle="{StaticResource DxCellText}"/>
+                                                        <DataGridComboBoxColumn Header="Type" SelectedItemBinding="{Binding VariableType}" ItemsSource="{x:Static local:ResearchVariableOptions.VariableTypes}" Width="100"/>
+                                                        <DataGridComboBoxColumn Header="Level" SelectedItemBinding="{Binding MeasurementLevel}" ItemsSource="{x:Static local:ResearchVariableOptions.MeasurementLevels}" Width="95"/>
+                                                        <DataGridComboBoxColumn Header="Role" SelectedItemBinding="{Binding Role}" ItemsSource="{x:Static local:ResearchVariableOptions.Roles}" Width="105"/>
+                                                        <DataGridTextColumn Header="Coding / value labels" Binding="{Binding Coding}" Width="135" ElementStyle="{StaticResource DxCellText}"/>
+                                                        <DataGridTextColumn Header="Missing rule" Binding="{Binding MissingValueRule}" Width="95" ElementStyle="{StaticResource DxCellText}"/>
+                                                        <DataGridComboBoxColumn Header="Source" SelectedItemBinding="{Binding Source}" ItemsSource="{x:Static local:ResearchVariableOptions.Sources}" Width="125"/>
+                                                        <DataGridCheckBoxColumn Header="Req." Binding="{Binding IsRequired}" Width="46"/>
+                                                        <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="125" ElementStyle="{StaticResource DxCellText}"/>
+                                                        <DataGridTemplateColumn Header="Actions" Width="150" CanUserSort="False">
+                                                            <DataGridTemplateColumn.CellTemplate>
+                                                                <DataTemplate>
+                                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                                        <Button Style="{StaticResource GridActionButton}" Click="MoveVariableUp_Click" ToolTip="Move up">
+                                                                            <Path Data="{StaticResource IconArrowUp}" Fill="{StaticResource MutedBrush}" Width="13" Height="13" Stretch="Uniform"/>
+                                                                        </Button>
+                                                                        <Button Style="{StaticResource GridActionButton}" Click="MoveVariableDown_Click" ToolTip="Move down">
+                                                                            <Path Data="{StaticResource IconArrowDown}" Fill="{StaticResource MutedBrush}" Width="13" Height="13" Stretch="Uniform"/>
+                                                                        </Button>
+                                                                        <Button Style="{StaticResource GridActionButton}" Click="EditVariable_Click" ToolTip="Edit details">
+                                                                            <Path Data="{StaticResource IconEdit}" Fill="{StaticResource PrimaryBrush}" Width="13" Height="13" Stretch="Uniform"/>
+                                                                        </Button>
+                                                                        <Button Style="{StaticResource GridActionButton}" Click="DuplicateVariable_Click" ToolTip="Duplicate">
+                                                                            <Path Data="{StaticResource IconCopy}" Fill="{StaticResource PrimaryBrush}" Width="13" Height="13" Stretch="Uniform"/>
+                                                                        </Button>
+                                                                        <Button Style="{StaticResource GridActionButton}" Click="DeleteVariable_Click" ToolTip="Delete">
+                                                                            <Path Data="{StaticResource IconTrash}" Fill="{StaticResource DangerBrush}" Width="13" Height="13" Stretch="Uniform"/>
+                                                                        </Button>
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </DataGridTemplateColumn.CellTemplate>
+                                                        </DataGridTemplateColumn>
+                                                    </DataGrid.Columns>
+                                                </DataGrid>
+
+                                                <!-- Empty state -->
+                                                <StackPanel x:Name="DxEmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24,40" IsHitTestVisible="False">
+                                                    <Path Data="{StaticResource IconGrid}" Fill="{StaticResource BorderBrushSoft}" Width="42" Height="42" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="No variables yet" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,12,0,4"/>
+                                                    <TextBlock Text="Generate by AI, add a variable, or import from your proposal / CSV to begin."
+                                                               FontSize="13" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="360" TextAlignment="Center"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- SECTION B — Data Samples: upload & compare collected sample data -->
+                                    <Border x:Name="DxSamplesCard" Style="{StaticResource CardBorder}" Padding="22" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconImport}" Fill="{StaticResource PrimaryBrush}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                        <TextBlock Text="Data Samples" Style="{StaticResource SectionHeader}" FontSize="16" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="Upload CSV sample data here. The app will compare CSV columns with your extraction sheet. Statistics will be calculated in a later phase."
+                                                               Style="{StaticResource Caption}" TextWrapping="Wrap" MaxWidth="620" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                                <Border x:Name="DxSamplesFormBadge" Grid.Column="1" VerticalAlignment="Top" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Padding="12,6" Visibility="Collapsed">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconLink}" Fill="{StaticResource PrimaryBrush}" Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="Google Form linked" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+
+                                            <WrapPanel Margin="0,16,0,0">
+                                                <Button Style="{StaticResource SoftButton}" Click="ImportCsv_Click" Margin="0,0,10,8">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconImport}" Fill="{StaticResource PrimaryBrush}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Import CSV Sample" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button x:Name="DxViewCsvBtn" Style="{StaticResource SoftButton}" Content="View CSV Summary" Margin="0,0,10,8" Click="ViewCsvSummary_Click"/>
+                                                <Button x:Name="DxClearSampleBtn" Style="{StaticResource GhostButton}" Content="Clear Sample" Margin="0,0,0,8" Click="ClearSample_Click"/>
+                                            </WrapPanel>
+
+                                            <!-- Empty state -->
+                                            <Border x:Name="DxSamplesEmpty" Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="16,14" Margin="0,6,0,0">
+                                                <TextBlock Text="No sample uploaded yet. Import a CSV to detect columns and compare them against your extraction sheet."
+                                                           Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap"/>
+                                            </Border>
+
+                                            <!-- Uploaded info -->
+                                            <StackPanel x:Name="DxSamplesInfo" Visibility="Collapsed" Margin="0,6,0,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="File" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampFile" Grid.Column="1" Text="—" Style="{StaticResource DxSumValue}" TextTrimming="CharacterEllipsis" MaxWidth="220"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Total rows / samples" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampRows" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Detected columns" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampCols" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Matched variables" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampMatched" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="CSV columns not in sheet" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampCsvOnly" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Sheet variables not in CSV" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampSheetOnly" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Target sample size" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampTarget" Grid.Column="1" Text="—" Style="{StaticResource DxSumValue}"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Remaining samples needed" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampRemaining" Grid.Column="1" Text="—" Style="{StaticResource DxSumValue}"/></Grid>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <Border x:Name="DxSampWarn" Background="{StaticResource WarningSoftBrush}" CornerRadius="9" Padding="13,10" Margin="0,12,0,0" Visibility="Collapsed">
+                                                    <TextBlock x:Name="DxSampWarnText" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Data dictionary summary + Validation -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="330"/>
+                                            <ColumnDefinition Width="18"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Data dictionary summary -->
+                                        <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="22" VerticalAlignment="Top">
+                                            <StackPanel>
+                                                <TextBlock Text="Data dictionary summary" Style="{StaticResource SectionHeader}" FontSize="15"/>
+                                                <TextBlock Text="A quick count of what your sheet covers." Style="{StaticResource Caption}" Margin="0,2,0,14"/>
+                                                <Grid Margin="0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Total variables" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumTotal" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                <Border Height="1" Background="{StaticResource BorderBrushSoft}" Margin="0,9"/>
+                                                <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Outcomes" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumOutcome" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Exposures / predictors" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumExposure" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Confounders" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumConfounder" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Demographics" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumDemographic" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Identifiers" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumIdentifier" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                                <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Required fields" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSumRequired" Grid.Column="1" Text="0" Style="{StaticResource DxSumValue}"/></Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Validation report -->
+                                        <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="22" VerticalAlignment="Top">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,4">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Validation report" Style="{StaticResource SectionHeader}" FontSize="15" VerticalAlignment="Center"/>
+                                                    <Border x:Name="DxValStatusPill" Grid.Column="1" Background="{StaticResource SoftCardBrush}" CornerRadius="16" Padding="12,6" VerticalAlignment="Center">
+                                                        <TextBlock x:Name="DxValStatusText" Text="Not checked" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                    </Border>
+                                                </Grid>
+
+                                                <TextBlock x:Name="DxValEmpty" Text="Run “Validate Sheet” to check for duplicate names, missing types, coding gaps, CSV mismatches, and more."
+                                                           Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0"/>
+
+                                                <!-- Errors -->
+                                                <StackPanel x:Name="DxErrorsSection" Visibility="Collapsed" Margin="0,14,0,0">
+                                                    <TextBlock x:Name="DxErrorsHeader" Text="Errors" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource DangerBrush}" Margin="0,0,0,6"/>
+                                                    <ItemsControl x:Name="DxErrorsList">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{StaticResource DangerSoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
+                                                                    <TextBlock Text="{Binding}" Foreground="{StaticResource DangerBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <!-- Warnings -->
+                                                <StackPanel x:Name="DxWarningsSection" Visibility="Collapsed" Margin="0,10,0,0">
+                                                    <TextBlock x:Name="DxWarningsHeader" Text="Warnings" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,6"/>
+                                                    <ItemsControl x:Name="DxWarningsList">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
+                                                                    <TextBlock Text="{Binding}" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <!-- Suggestions -->
+                                                <StackPanel x:Name="DxSuggestionsSection" Visibility="Collapsed" Margin="0,10,0,0">
+                                                    <TextBlock x:Name="DxSuggestionsHeader" Text="Suggestions" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource InfoBrush}" Margin="0,0,0,6"/>
+                                                    <ItemsControl x:Name="DxSuggestionsList">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
+                                                                    <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <!-- Conflicts entry point -->
+                                                <Button x:Name="DxResolveConflictsBtn" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Margin="0,14,0,0" MinWidth="180" Visibility="Collapsed" Click="OpenConflicts_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconWarn}" Fill="{StaticResource PrimaryBrush}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Resolve Conflicts" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+
+                                                <!-- Ready banner -->
+                                                <Border x:Name="DxReadyBanner" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="14,12" Margin="0,14,0,0" Visibility="Collapsed">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconCheck}" Fill="{StaticResource SuccessBrush}" Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                        <TextBlock x:Name="DxReadyBannerText" Text="Your extraction sheet is ready for the next phase." Foreground="{StaticResource SuccessBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
 
                                 <!-- STATISTICS -->
                                 <Border x:Name="TabStats" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
@@ -2870,6 +3304,466 @@
                                         <Button x:Name="RlConfirmOkBtn" Style="{StaticResource PremiumButton}" MinWidth="150" Margin="0" Click="RlConfirmOk_Click">
                                             <TextBlock x:Name="RlConfirmOkText" Text="Confirm"/>
                                         </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- PASTE QUESTIONS overlay (Phase 3)            -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="PasteQuestionsOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="52">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="620" MaxHeight="600" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Paste questionnaire / form questions" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="One question per line. Research AI will turn each into a draft variable for you to review." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Margin="26,6,26,4">
+                                        <TextBox x:Name="DxQuestionsBox" Style="{StaticResource EditorTextBox}" MinHeight="220" AcceptsReturn="True" TextWrapping="Wrap"
+                                                 local:Watermark.Text="e.g.&#x0a;How many hours do you sleep per night?&#x0a;Do you have chronic headaches? (Yes/No)&#x0a;What is your academic year?"/>
+                                        <TextBlock x:Name="DxQuestionsValidation" Foreground="{StaticResource DangerBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="26,10,26,22">
+                                        <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="110" Click="CancelPasteQuestions_Click"/>
+                                        <Button x:Name="DxExtractQuestionsBtn" Style="{StaticResource PremiumButton}" Content="Extract Variables from Questions" MinWidth="240" Margin="0" Click="ExtractVariablesFromQuestions_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- GOOGLE FORM LINK overlay (Phase 3)           -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="GoogleFormOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="52">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="580" MaxHeight="520" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Google Form link" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Paste your form link. We save it with the project and can try to read visible questions from a public form." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Margin="26,6,26,4">
+                                        <TextBlock Text="Form URL" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox x:Name="DxFormUrlBox" local:Watermark.Text="https://docs.google.com/forms/…  or  https://forms.gle/…"/>
+                                        <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="9" Padding="13,11" Margin="0,14,0,0">
+                                            <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"
+                                                       Text="No Google sign-in is required or used. Private forms cannot be read — if a form can't be read automatically, paste its questions instead. Nothing is submitted to the form."/>
+                                        </Border>
+                                        <TextBlock x:Name="DxFormMessage" FontSize="12.5" TextWrapping="Wrap" Margin="0,12,0,0" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="26,12,26,22">
+                                        <Button Style="{StaticResource GhostButton}" Content="Close" MinWidth="90" Click="CancelGoogleForm_Click"/>
+                                        <Button x:Name="DxReadFormBtn" Style="{StaticResource SoftButton}" Content="Try to read questions" MinWidth="170" Click="TryReadForm_Click"/>
+                                        <Button Style="{StaticResource PremiumButton}" Content="Save link" MinWidth="120" Margin="0" Click="SaveFormLink_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- VARIABLE EDIT overlay (Phase 3)              -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="VariableEditOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="57">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="640" MaxHeight="660" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock x:Name="VeHeaderText" Text="Edit variable" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="All fields for this variable. Use a short machine name (letters, numbers, underscores)." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,0,20,0">
+                                        <StackPanel Margin="0,6,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Variable name" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="VeName" local:Watermark.Text="e.g. sleep_hours"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Question label" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="VeLabel" local:Watermark.Text="Human wording / question"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,14,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Type" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="VeType"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Measurement level" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="VeLevel"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="4">
+                                                    <TextBlock Text="Role" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="VeRole"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,14,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Coding" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="VeCoding" local:Watermark.Text="e.g. 0 = No, 1 = Yes"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Value labels" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="VeValueLabels" local:Watermark.Text="Category → meaning"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,14,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Missing value rule" Style="{StaticResource FieldLabel}"/>
+                                                    <TextBox x:Name="VeMissing" local:Watermark.Text="e.g. blank = missing"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Source" Style="{StaticResource FieldLabel}"/>
+                                                    <ComboBox x:Name="VeSource"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="Notes" Style="{StaticResource FieldLabel}" Margin="0,14,0,0"/>
+                                            <TextBox x:Name="VeNotes" Style="{StaticResource EditorTextBox}" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"/>
+                                            <CheckBox x:Name="VeRequired" Content="Required field" Margin="0,14,0,0"/>
+                                            <Border x:Name="VeValidationBorder" Background="{StaticResource DangerSoftBrush}" CornerRadius="8" Padding="12,10" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <TextBlock x:Name="VeValidation" Foreground="{StaticResource DangerBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="26,10,26,22">
+                                        <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="110" Click="CancelEditVariable_Click"/>
+                                        <Button Style="{StaticResource PremiumButton}" Content="Save variable" MinWidth="150" Margin="0" Click="SaveEditVariable_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- REVIEW AI EXTRACTION SHEET overlay (Phase 3) -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="ExtractionReviewOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="56">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="880" MaxHeight="680" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Review AI Extraction Sheet" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock x:Name="DxReviewSubtitle" Text="Review the suggested variables before applying. Nothing changes until you choose an action below."
+                                                   Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        <Border x:Name="DxReviewConfidenceCard" Background="{StaticResource SoftCardBrush}" CornerRadius="9" Padding="13,10" Margin="0,12,0,0" Visibility="Collapsed">
+                                            <TextBlock x:Name="DxReviewConfidence" FontSize="12.5" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,4,20,0">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,8">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="DxReviewCountText" Text="Suggested variables" FontWeight="Bold" FontSize="13.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="Edit any cell, or remove a row, before applying." FontSize="12" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <DataGrid x:Name="DxReviewGrid" Style="{StaticResource ResearchDataGrid}" MaxHeight="320" AutoGenerateColumns="False"
+                                                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="Variable name" Binding="{Binding VariableName}" Width="130">
+                                                        <DataGridTextColumn.ElementStyle>
+                                                            <Style TargetType="TextBlock"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
+                                                        </DataGridTextColumn.ElementStyle>
+                                                    </DataGridTextColumn>
+                                                    <DataGridTextColumn Header="Label" Binding="{Binding QuestionLabel}" Width="160"/>
+                                                    <DataGridComboBoxColumn Header="Type" SelectedItemBinding="{Binding VariableType}" ItemsSource="{x:Static local:ResearchVariableOptions.VariableTypes}" Width="100"/>
+                                                    <DataGridComboBoxColumn Header="Level" SelectedItemBinding="{Binding MeasurementLevel}" ItemsSource="{x:Static local:ResearchVariableOptions.MeasurementLevels}" Width="95"/>
+                                                    <DataGridComboBoxColumn Header="Role" SelectedItemBinding="{Binding Role}" ItemsSource="{x:Static local:ResearchVariableOptions.Roles}" Width="105"/>
+                                                    <DataGridTextColumn Header="Coding" Binding="{Binding Coding}" Width="120"/>
+                                                    <DataGridComboBoxColumn Header="Source" SelectedItemBinding="{Binding Source}" ItemsSource="{x:Static local:ResearchVariableOptions.Sources}" Width="120"/>
+                                                    <DataGridCheckBoxColumn Header="Req." Binding="{Binding IsRequired}" Width="46"/>
+                                                    <DataGridTemplateColumn Header="" Width="44" CanUserSort="False">
+                                                        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                                            <Button Style="{StaticResource GridActionButton}" Click="ReviewDeleteRow_Click" ToolTip="Remove this suggestion">
+                                                                <Path Data="{StaticResource IconTrash}" Fill="{StaticResource DangerBrush}" Width="13" Height="13" Stretch="Uniform"/>
+                                                            </Button>
+                                                        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                    </DataGridTemplateColumn>
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+
+                                            <StackPanel x:Name="DxReviewMissingSection" Visibility="Collapsed" Margin="0,16,0,0">
+                                                <TextBlock Text="Concepts to double-check (not yet represented)" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,6"/>
+                                                <ItemsControl x:Name="DxReviewMissingList">
+                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+
+                                            <StackPanel x:Name="DxReviewExtraSection" Visibility="Collapsed" Margin="0,12,0,0">
+                                                <TextBlock Text="CSV columns not mapped to a planned variable" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource InfoBrush}" Margin="0,0,0,6"/>
+                                                <ItemsControl x:Name="DxReviewExtraList">
+                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,14,26,18">
+                                        <StackPanel>
+                                            <Border x:Name="DxReviewValidation" Background="{StaticResource DangerSoftBrush}" CornerRadius="8" Padding="12,10" Margin="0,0,0,12" Visibility="Collapsed">
+                                                <TextBlock x:Name="DxReviewValidationText" Foreground="{StaticResource DangerBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                            </Border>
+                                            <WrapPanel HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="110" Click="ExtractionReviewCancel_Click"/>
+                                                <Button x:Name="DxReviewApplyBtn" Style="{StaticResource PremiumButton}" MinWidth="200" Margin="0" Click="ExtractionReviewApply_Click">
+                                                    <TextBlock x:Name="DxReviewApplyText" Text="Apply to Sheet"/>
+                                                </Button>
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- REVIEW AI FIXES overlay (Phase 3)            -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="ExtractionFixReviewOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="56">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="620" MaxHeight="600" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="Review AI Fixes" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="Research AI proposes these corrections to your sheet. Review them, then apply or cancel." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,6,20,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Proposed changes" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
+                                            <ItemsControl x:Name="DxFixSummaryList">
+                                                <ItemsControl.ItemTemplate><DataTemplate>
+                                                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
+                                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                    </Border>
+                                                </DataTemplate></ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <StackPanel x:Name="DxFixWarningsSection" Visibility="Collapsed" Margin="0,10,0,0">
+                                                <TextBlock Text="Notes" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,6"/>
+                                                <ItemsControl x:Name="DxFixWarningsList">
+                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="26,12,26,22">
+                                        <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="110" Click="ExtractionFixCancel_Click"/>
+                                        <Button Style="{StaticResource PremiumButton}" Content="Apply Fixes" MinWidth="150" Margin="0" Click="ExtractionFixApply_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- CSV SUMMARY overlay (Phase 3)                -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="CsvSummaryOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="55">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="700" MaxHeight="620" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <StackPanel Margin="26,24,26,8">
+                                        <TextBlock Text="CSV Summary" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock x:Name="CsvSummaryTitle" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="CsvSummarySub" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,6,20,0">
+                                        <ItemsControl x:Name="CsvSummaryList">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="8" Padding="14,10" Margin="0,0,0,7">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextBrush}"/>
+                                                                <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0">
+                                                                    <Run Text="{Binding InferredType, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding UniqueCount, Mode=OneWay}"/><Run Text=" unique · "/><Run Text="{Binding MissingPercent, Mode=OneWay}"/><Run Text="% missing"/>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                            <TextBlock Grid.Column="1" FontSize="11.5" Foreground="{StaticResource SoftMutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="240">
+                                                                <Run Text="e.g. "/><Run Text="{Binding SampleValuesDisplay, Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="26,12,26,22">
+                                        <Button Style="{StaticResource PremiumButton}" Content="Close" MinWidth="120" Margin="0" Click="CloseCsvSummary_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- RESOLVE CONFLICTS overlay (Phase 3)          -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="ConflictOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="54">
+                            <Grid.Resources>
+                                <Style x:Key="ConflictBtn" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+                                    <Setter Property="Height" Value="32"/>
+                                    <Setter Property="MinWidth" Value="0"/>
+                                    <Setter Property="Padding" Value="13,0"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                    <Setter Property="Margin" Value="0,0,8,6"/>
+                                </Style>
+                                <Style x:Key="ConflictGhostBtn" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                                    <Setter Property="Height" Value="32"/>
+                                    <Setter Property="MinWidth" Value="0"/>
+                                    <Setter Property="Padding" Value="13,0"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                    <Setter Property="Margin" Value="0,0,8,6"/>
+                                </Style>
+                            </Grid.Resources>
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="780" MaxHeight="680" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <Grid Margin="26,24,26,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Resolve Sheet–Sample Conflicts" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Differences between your extraction sheet, sample data, and plan. Fix each one manually, or let Research AI propose fixes — nothing is applied without your review."
+                                                       Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" VerticalAlignment="Top" Background="{StaticResource WarningSoftBrush}" CornerRadius="16" Padding="12,6">
+                                            <TextBlock x:Name="DxConflictCountText" Text="0 conflicts" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}"/>
+                                        </Border>
+                                    </Grid>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,4,20,0">
+                                        <StackPanel>
+                                            <Border x:Name="DxConflictEmpty" Background="{StaticResource SuccessSoftBrush}" CornerRadius="10" Padding="16,14" Visibility="Collapsed" Margin="0,0,0,10">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconCheck}" Fill="{StaticResource SuccessBrush}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                                    <TextBlock x:Name="DxConflictEmptyText" Text="No conflicts detected." Foreground="{StaticResource SuccessBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="600"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <ItemsControl x:Name="ConflictList">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="10" Padding="16,12" Margin="0,0,0,8">
+                                                            <StackPanel>
+                                                                <Grid Margin="0,0,0,6">
+                                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <Border CornerRadius="8" Padding="9,3" Margin="0,0,6,0">
+                                                                            <Border.Style>
+                                                                                <Style TargetType="Border">
+                                                                                    <Setter Property="Background" Value="{StaticResource WarningSoftBrush}"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Severity}" Value="Error"><Setter Property="Background" Value="{StaticResource DangerSoftBrush}"/></DataTrigger>
+                                                                                        <DataTrigger Binding="{Binding Severity}" Value="Suggestion"><Setter Property="Background" Value="{StaticResource InfoSoftBrush}"/></DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Border.Style>
+                                                                            <TextBlock Text="{Binding Severity}" FontSize="10.5" FontWeight="Bold">
+                                                                                <TextBlock.Style>
+                                                                                    <Style TargetType="TextBlock">
+                                                                                        <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding Severity}" Value="Error"><Setter Property="Foreground" Value="{StaticResource DangerBrush}"/></DataTrigger>
+                                                                                            <DataTrigger Binding="{Binding Severity}" Value="Suggestion"><Setter Property="Foreground" Value="{StaticResource InfoBrush}"/></DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </TextBlock.Style>
+                                                                            </TextBlock>
+                                                                        </Border>
+                                                                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="8" Padding="9,3">
+                                                                            <TextBlock Text="{Binding Source}" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                        </Border>
+                                                                    </StackPanel>
+                                                                    <!-- Staged status chip -->
+                                                                    <Border Grid.Column="1" CornerRadius="8" Padding="9,3">
+                                                                        <Border.Style>
+                                                                            <Style TargetType="Border">
+                                                                                <Setter Property="Background" Value="{StaticResource SoftCardBrush}"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Status}" Value="Resolved"><Setter Property="Background" Value="{StaticResource SuccessSoftBrush}"/></DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding Status}" Value="Ignored"><Setter Property="Background" Value="{StaticResource SoftCardBrush}"/></DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding Status}" Value="Needs review"><Setter Property="Background" Value="{StaticResource WarningSoftBrush}"/></DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </Border.Style>
+                                                                        <TextBlock Text="{Binding Status}" FontSize="10.5" FontWeight="Bold">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Status}" Value="Resolved"><Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger>
+                                                                                        <DataTrigger Binding="{Binding Status}" Value="Needs review"><Setter Property="Foreground" Value="{StaticResource WarningBrush}"/></DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+                                                                    </Border>
+                                                                </Grid>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                                                <TextBlock Text="{Binding Detail}" FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,3,0,10"/>
+                                                                <WrapPanel>
+                                                                    <Button Style="{StaticResource ConflictBtn}" Content="Add to sheet" Visibility="{Binding AddVis}" Click="ConflictAdd_Click"/>
+                                                                    <ComboBox Width="180" Height="32" MinHeight="32" FontSize="12" Margin="0,0,8,6" Visibility="{Binding MatchVis}"
+                                                                              ItemsSource="{Binding MatchCandidates}" SelectedItem="{Binding SelectedMatch}"/>
+                                                                    <Button Style="{StaticResource ConflictBtn}" Content="Match with existing" Visibility="{Binding MatchVis}" Click="ConflictMatch_Click"/>
+                                                                    <Button Style="{StaticResource ConflictBtn}" Content="Rename variable" Visibility="{Binding RenameVis}" Click="ConflictEdit_Click"/>
+                                                                    <Button Style="{StaticResource ConflictBtn}" Content="Edit manually" Visibility="{Binding EditVis}" Click="ConflictEdit_Click"/>
+                                                                    <Button Style="{StaticResource ConflictGhostBtn}" Foreground="{StaticResource DangerBrush}" Content="Delete from sheet" Visibility="{Binding DeleteVis}" Click="ConflictDelete_Click"/>
+                                                                    <Button Style="{StaticResource ConflictGhostBtn}" Content="Mark resolved" Click="ConflictMarkResolved_Click"/>
+                                                                    <Button Style="{StaticResource ConflictGhostBtn}" Content="Ignore" Click="ConflictIgnore_Click"/>
+                                                                </WrapPanel>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,14,26,18">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Resolve manually and Save. Fix with Research AI is optional." FontSize="12" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="280"/>
+                                            <WrapPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="100" Margin="0,0,10,0" Click="ConflictCancel_Click"/>
+                                                <Button Style="{StaticResource SoftButton}" MinWidth="170" Margin="0,0,10,0" Click="ConflictFixAi_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                        <TextBlock Text="Fix with Research AI" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Style="{StaticResource PremiumButton}" Content="Save and Close" MinWidth="160" Margin="0" Click="ConflictSaveClose_Click"/>
+                                            </WrapPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- AI DELAY / CANCEL overlay (Phase 3 polish)   -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="AiDelayOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="58">
+                            <Border Style="{StaticResource CardBorder}" Padding="28" Width="460" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="42" Height="42" Background="{StaticResource PrimarySoftBrush}" CornerRadius="10" Margin="0,0,13,0" VerticalAlignment="Center">
+                                            <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="19" Height="19" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="AiDelayTitle" Text="Research AI" Style="{StaticResource SectionHeader}" FontSize="16"/>
+                                            <TextBlock Text="Research AI will start in 5 seconds. You can cancel now." Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" MaxWidth="330" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="9" Padding="13,10" Margin="0,16,0,0">
+                                        <TextBlock x:Name="AiDelayCountText" Text="Starting in 5 seconds…" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                                        <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="110" Click="AiDelayCancel_Click"/>
+                                        <Button Style="{StaticResource PremiumButton}" Content="Start Now" MinWidth="130" Margin="0" Click="AiDelayStartNow_Click"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

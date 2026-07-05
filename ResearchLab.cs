@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Data;
@@ -59,6 +61,32 @@ public sealed class ResearchProject
     // optional/defaulted so older files load unchanged.
     public bool ProposalImported { get; set; }
     public string ImportedProposalText { get; set; } = "";
+
+    // ---- Phase 3 additions (Data Extraction Sheet) ------------------------
+    // The variable sheet / data dictionary the student builds before uploading
+    // real data. All optional/defaulted so older research_projects.json files
+    // load unchanged (a missing Variables array deserializes to an empty list).
+    public List<ResearchVariable> Variables { get; set; } = new();
+    public DateTime? ExtractionSheetUpdatedAt { get; set; }
+
+    // "Not started" | "Draft" | "Needs review" | "Ready"
+    public string ExtractionSheetStatus { get; set; } = "Not started";
+
+    // Optional Google Form link (stored only; never used to scrape private forms).
+    public string GoogleFormUrl { get; set; } = "";
+
+    // Local, privacy-safe summary of an uploaded CSV sample. The full CSV is
+    // never stored here or sent to the AI — only headers, inferred types, a few
+    // sample values, and counts.
+    public CsvSampleSummary? CsvSampleSummary { get; set; }
+
+    // Last validation run for the extraction sheet.
+    public ExtractionValidationReport? ExtractionValidationReport { get; set; }
+
+    // Target sample size, if one was clearly stated in the imported proposal or
+    // research plan. Only ever used to compare against an uploaded sample count —
+    // never as statistical/sample-size advice.
+    public int? TargetSampleSize { get; set; }
 
     // ---- Display helpers (not persisted) ----------------------------------
     // Used by the project-card DataTemplate so the XAML stays clean and we
@@ -388,6 +416,231 @@ public sealed class ExtractedProposalSections
         || !string.IsNullOrWhiteSpace(Ethics)
         || !string.IsNullOrWhiteSpace(Timeline)
         || !string.IsNullOrWhiteSpace(Limitations);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Data Extraction Sheet (variable sheet / data dictionary only).
+//
+// These models describe the *plan* for data — the variables, their types,
+// roles and coding — NOT any statistics, results, or p-values. Nothing here
+// computes anything on real data; that is a later phase. All models are plain,
+// serializable, and backward compatible.
+// ---------------------------------------------------------------------------
+
+// A single row in the extraction sheet. Implements INotifyPropertyChanged so the
+// editable DataGrid reflects both user edits and programmatic updates (AI
+// generation / fixes / the edit modal).
+public sealed class ResearchVariable : INotifyPropertyChanged
+{
+    private string _variableName = "";
+    private string _questionLabel = "";
+    private string _variableType = "Unknown";
+    private string _measurementLevel = "NotApplicable";
+    private string _role = "Unknown";
+    private string _coding = "";
+    private string _valueLabels = "";
+    private string _missingValueRule = "";
+    private string _source = "Manual";
+    private string _notes = "";
+    private bool _isRequired;
+
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    public string VariableName { get => _variableName; set => Set(ref _variableName, value); }
+    public string QuestionLabel { get => _questionLabel; set => Set(ref _questionLabel, value); }
+    public string VariableType { get => _variableType; set => Set(ref _variableType, value); }
+    public string MeasurementLevel { get => _measurementLevel; set => Set(ref _measurementLevel, value); }
+    public string Role { get => _role; set => Set(ref _role, value); }
+    public string Coding { get => _coding; set => Set(ref _coding, value); }
+    public string ValueLabels { get => _valueLabels; set => Set(ref _valueLabels, value); }
+    public string MissingValueRule { get => _missingValueRule; set => Set(ref _missingValueRule, value); }
+    public string Source { get => _source; set => Set(ref _source, value); }
+    public string Notes { get => _notes; set => Set(ref _notes, value); }
+    public bool IsRequired { get => _isRequired; set => Set(ref _isRequired, value); }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public ResearchVariable Clone() => new()
+    {
+        // New Id on purpose — a clone is a distinct row.
+        VariableName = VariableName,
+        QuestionLabel = QuestionLabel,
+        VariableType = VariableType,
+        MeasurementLevel = MeasurementLevel,
+        Role = Role,
+        Coding = Coding,
+        ValueLabels = ValueLabels,
+        MissingValueRule = MissingValueRule,
+        Source = Source,
+        Notes = Notes,
+        IsRequired = IsRequired,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        UpdatedAt = DateTime.UtcNow;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+}
+
+// Central lists of allowed values for the DataGrid combo columns and the edit
+// modal. Kept as strings (not enums) so the sheet serializes to readable JSON
+// and older/newer option sets never break deserialization.
+public static class ResearchVariableOptions
+{
+    public static string[] VariableTypes { get; } =
+    {
+        "Text", "Numeric", "Binary", "Categorical", "Ordinal",
+        "Continuous", "Date", "ID", "Unknown"
+    };
+
+    public static string[] MeasurementLevels { get; } =
+    {
+        "Nominal", "Ordinal", "Scale", "NotApplicable"
+    };
+
+    public static string[] Roles { get; } =
+    {
+        "Outcome", "Exposure", "Predictor", "Confounder", "Demographic",
+        "Identifier", "Eligibility", "Other", "Unknown"
+    };
+
+    public static string[] Sources { get; } =
+    {
+        "Manual", "AI Recommendation", "Imported Proposal", "Questionnaire",
+        "Google Form", "CSV Sample", "Dataset"
+    };
+}
+
+// Privacy-safe summary of an uploaded CSV. Never holds the full dataset — only
+// headers, inferred types, a handful of sample values, and counts.
+public sealed class CsvSampleSummary
+{
+    public string FileName { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int TotalRows { get; set; }
+    public int SampledRows { get; set; }
+    public List<CsvColumnSummary> Columns { get; set; } = new();
+
+    [JsonIgnore]
+    public string HeaderSummary =>
+        Columns.Count == 0 ? "No columns" : string.Join(", ", Columns.Select(c => c.Name));
+
+    [JsonIgnore]
+    public string CountSummary =>
+        $"{Columns.Count} column{(Columns.Count == 1 ? "" : "s")} · {TotalRows} row{(TotalRows == 1 ? "" : "s")}";
+}
+
+public sealed class CsvColumnSummary
+{
+    public string Name { get; set; } = "";
+    public string InferredType { get; set; } = "";     // Text/Numeric/Date/Binary/Categorical/Empty
+    public int MissingCount { get; set; }
+    public int MissingPercent { get; set; }
+    public int UniqueCount { get; set; }
+    public bool IsLikelyCategorical { get; set; }
+    public List<string> SampleValues { get; set; } = new();   // a few example values only
+
+    [JsonIgnore]
+    public string Display =>
+        $"{Name} — {InferredType}, {UniqueCount} unique, {MissingPercent}% missing";
+
+    [JsonIgnore]
+    public string SampleValuesDisplay =>
+        SampleValues is { Count: > 0 } ? string.Join(", ", SampleValues) : "—";
+}
+
+// One validation run over the extraction sheet. Local only — no statistics.
+public sealed class ExtractionValidationReport
+{
+    public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+    public List<string> Errors { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+    public List<string> Suggestions { get; set; } = new();
+
+    // Ready = no hard errors. Warnings/suggestions are advisory.
+    public bool IsReady => Errors.Count == 0;
+
+    [JsonIgnore] public int TotalIssues => Errors.Count + Warnings.Count + Suggestions.Count;
+
+    [JsonIgnore]
+    public string StatusText => IsReady
+        ? (Warnings.Count == 0 ? "Ready for the next phase" : "Ready, with some warnings to review")
+        : $"{Errors.Count} issue{(Errors.Count == 1 ? "" : "s")} to fix before continuing";
+}
+
+// Result of an AI extraction-sheet generation or fix pass. Carries the proposed
+// variable rows plus advisory notes. Never contains data, statistics, or results.
+public sealed class ExtractionSheetResult
+{
+    public ResearchSourceMode SourceMode { get; set; } = ResearchSourceMode.AiGenerated;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public List<ResearchVariable> Variables { get; set; } = new();
+    public List<string> MissingExpectedVariables { get; set; } = new();
+    public List<string> ExtraOrUnexplainedColumns { get; set; } = new();
+    public List<string> ChangeSummary { get; set; } = new();   // populated by the Fix pass
+    public List<string> Warnings { get; set; } = new();
+    public string ConfidenceSummary { get; set; } = "";
+    public string TargetSampleSizeText { get; set; } = "";     // free text if the AI spotted one
+
+    [JsonIgnore]
+    public bool HasAnyContent =>
+        Variables.Count > 0
+        || MissingExpectedVariables.Count > 0
+        || ExtraOrUnexplainedColumns.Count > 0
+        || ChangeSummary.Count > 0;
+}
+
+// One difference between the extraction sheet, the uploaded CSV sample, and the
+// plan, shown as a card in the Resolve Conflicts window. Not persisted — rebuilt
+// from project state each time. The Visibility flags drive which action buttons
+// the card offers; every conflict can also simply be ignored.
+public sealed class ExtractionConflict : INotifyPropertyChanged
+{
+    public string Kind { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+
+    // "Error" | "Warning" | "Suggestion" — colors the severity chip.
+    public string Severity { get; set; } = "Warning";
+    // "Sheet" | "CSV" | "Proposal" | "Recommendations" — where the conflict came from.
+    public string Source { get; set; } = "Sheet";
+
+    public ResearchVariable? Variable { get; set; }
+    public CsvColumnSummary? Column { get; set; }
+
+    // For "match with existing": candidate sheet variables to align with the
+    // CSV column; the ComboBox writes the user's pick into SelectedMatch.
+    public List<string> MatchCandidates { get; set; } = new();
+    public string? SelectedMatch { get; set; }
+
+    public Visibility AddVis { get; set; } = Visibility.Collapsed;
+    public Visibility MatchVis { get; set; } = Visibility.Collapsed;
+    public Visibility RenameVis { get; set; } = Visibility.Collapsed;
+    public Visibility DeleteVis { get; set; } = Visibility.Collapsed;
+    public Visibility EditVis { get; set; } = Visibility.Collapsed;
+
+    // ---- Staged manual resolution (Phase 3 polish) ------------------------
+    // A conflict action stages a decision; nothing is applied to the sheet
+    // until "Save and Close". Cancel discards all staged decisions.
+    // StagedAction: "" | "Add" | "Match" | "Delete" | "Ignore" | "MarkResolved".
+    public string StagedAction { get; set; } = "";
+
+    private string _status = "Pending";   // "Pending" | "Resolved" | "Ignored" | "Needs review"
+    public string Status
+    {
+        get => _status;
+        set { if (_status != value) { _status = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status))); } }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }
 
 // Maps a 0-100 progress value to a pixel width for the mini progress bar on a
