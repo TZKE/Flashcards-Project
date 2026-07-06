@@ -83,6 +83,13 @@ public sealed class ResearchProject
     // Last validation run for the extraction sheet.
     public ExtractionValidationReport? ExtractionValidationReport { get; set; }
 
+    // Stable keys of conflicts/warnings the student has resolved or chosen to
+    // ignore, so they do not reappear on the next Validate run or after a
+    // restart (unless the underlying variable/column actually changes). Each key
+    // is "kind|normalizedIdentity" (see MainWindow.ConflictKey). Optional/
+    // defaulted so older research_projects.json files load unchanged.
+    public List<string> IgnoredConflictKeys { get; set; } = new();
+
     // Target sample size, if one was clearly stated in the imported proposal or
     // research plan. Only ever used to compare against an uploaded sample count —
     // never as statistical/sample-size advice.
@@ -446,6 +453,19 @@ public sealed class ResearchVariable : INotifyPropertyChanged
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
 
+    // ---- Phase 3 stabilization: source-column aliases ---------------------
+    // Original header text(s) this variable was derived from — e.g. the exact
+    // Google Form / questionnaire question wording. Used ONLY to match this
+    // variable against uploaded CSV column headers (which, for a Google Forms
+    // export, are the full question text). Optional/defaulted so older
+    // research_projects.json files load unchanged.
+    private List<string> _sourceColumnAliases = new();
+    public List<string> SourceColumnAliases
+    {
+        get => _sourceColumnAliases;
+        set => _sourceColumnAliases = value ?? new List<string>();
+    }
+
     public string VariableName { get => _variableName; set => Set(ref _variableName, value); }
     public string QuestionLabel { get => _questionLabel; set => Set(ref _questionLabel, value); }
     public string VariableType { get => _variableType; set => Set(ref _variableType, value); }
@@ -475,6 +495,7 @@ public sealed class ResearchVariable : INotifyPropertyChanged
         Source = Source,
         Notes = Notes,
         IsRequired = IsRequired,
+        SourceColumnAliases = new List<string>(SourceColumnAliases),
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
@@ -565,6 +586,11 @@ public sealed class ExtractionValidationReport
     public List<string> Warnings { get; set; } = new();
     public List<string> Suggestions { get; set; } = new();
 
+    // Set when the uploaded CSV has fewer rows than the proposal target sample
+    // size. This is a HARD blocker for Statistics (an error), so the project is
+    // not "ready for the next phase" until a complete CSV is uploaded.
+    public bool SampleSizeIncomplete { get; set; }
+
     // Ready = no hard errors. Warnings/suggestions are advisory.
     public bool IsReady => Errors.Count == 0;
 
@@ -596,6 +622,165 @@ public sealed class ExtractionSheetResult
         || MissingExpectedVariables.Count > 0
         || ExtraOrUnexplainedColumns.Count > 0
         || ChangeSummary.Count > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Structured "Fix with Research AI" proposals (Phase 3 final stabilization).
+// The AI no longer returns a rewritten sheet; it returns ONE proposal PER
+// active conflict, which the student reviews (accept / edit / delete) before
+// anything is applied. Never contains data, samples, statistics, or results.
+// ---------------------------------------------------------------------------
+
+// Compact description of one active conflict sent TO the AI (key + titles only,
+// no raw CSV rows, no proposal text).
+public sealed class ConflictFixInput
+{
+    public string ConflictKey { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Severity { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string VariableName { get; set; } = "";
+    public string ColumnName { get; set; } = "";
+}
+
+// One proposed fix returned BY the AI for one conflict. Action is one of:
+// add_variable | map_csv_column_to_variable | rename_variable | add_alias |
+// update_coding | mark_resolved | ignore | no_safe_fix.
+public sealed class ConflictFixProposal : INotifyPropertyChanged
+{
+    public string ConflictKey { get; set; } = "";
+    public string ConflictTitle { get; set; } = "";
+    public string Action { get; set; } = "no_safe_fix";
+    public string Explanation { get; set; } = "";
+    public string Confidence { get; set; } = "low";        // high | medium | low
+    public string TargetVariable { get; set; } = "";
+    public string TargetColumn { get; set; } = "";
+
+    // Triage bucket returned by the AI (or derived from Action if it omitted one):
+    // "safe_fix" | "safe_ignore" | "manual_review" | "no_safe_fix". Drives the
+    // grouped review UI and the default selection.
+    public string Category { get; set; } = "";
+
+    private static readonly string[] ApplicableActions =
+    {
+        "add_variable", "map_csv_column_to_variable", "rename_variable",
+        "add_alias", "update_coding", "mark_resolved", "ignore"
+    };
+
+    // Effective category: honor an explicit AI category, else derive from action.
+    [JsonIgnore]
+    public string EffectiveCategory
+    {
+        get
+        {
+            string c = (Category ?? "").Trim().ToLowerInvariant();
+            if (c is "safe_fix" or "safe_ignore" or "manual_review" or "no_safe_fix") return c;
+            return Action switch
+            {
+                "ignore" => "safe_ignore",
+                "no_safe_fix" or "" => "no_safe_fix",
+                _ when ApplicableActions.Contains(Action) => "safe_fix",
+                _ => "no_safe_fix"
+            };
+        }
+    }
+
+    [JsonIgnore] public int CategoryOrder => EffectiveCategory switch { "safe_fix" => 0, "safe_ignore" => 1, "manual_review" => 2, _ => 3 };
+    [JsonIgnore]
+    public string CategoryDisplay => EffectiveCategory switch
+    {
+        "safe_fix" => "Safe fixes",
+        "safe_ignore" => "Routine — safe to ignore",
+        "manual_review" => "Needs manual review",
+        _ => "No safe fix"
+    };
+
+    // The single user-editable value the action needs (new name for rename,
+    // alias text for add_alias/map, coding for update_coding, variable name for
+    // add_variable). Bound TwoWay in the review list so the student can edit
+    // each fix before applying.
+    private string _proposedValue = "";
+    public string ProposedValue
+    {
+        get => _proposedValue;
+        set { if (_proposedValue != value) { _proposedValue = value; Raise(nameof(ProposedValue)); } }
+    }
+
+    private bool _accepted;
+    public bool Accepted
+    {
+        get => _accepted;
+        set { if (_accepted != value) { _accepted = value; Raise(nameof(Accepted)); } }
+    }
+
+    // Only safe_fix / safe_ignore proposals with a real action can be applied;
+    // manual_review and no_safe_fix are shown for reference only.
+    [JsonIgnore]
+    public bool IsApplicable =>
+        EffectiveCategory is "safe_fix" or "safe_ignore"
+        && Action is not ("no_safe_fix" or "")
+        && ApplicableActions.Contains(Action);
+
+    // Default checkbox state: high-confidence safe fixes and safe ignores are
+    // pre-selected; everything else (lower confidence, manual review) is not.
+    [JsonIgnore] public bool DefaultSelected => IsApplicable && Confidence == "high";
+
+    [JsonIgnore]
+    public string ActionDisplay => Action switch
+    {
+        "add_variable" => "Add variable",
+        "map_csv_column_to_variable" => "Map CSV column",
+        "rename_variable" => "Rename variable",
+        "add_alias" => "Add alias",
+        "update_coding" => "Update coding",
+        "mark_resolved" => "Mark resolved",
+        "ignore" => "Safe to ignore",
+        _ => "Needs manual review"
+    };
+    [JsonIgnore]
+    public string TargetDisplay =>
+        !string.IsNullOrWhiteSpace(TargetVariable) && !string.IsNullOrWhiteSpace(TargetColumn)
+            ? $"{TargetVariable} ↔ {TargetColumn}"
+            : !string.IsNullOrWhiteSpace(TargetVariable) ? TargetVariable
+            : !string.IsNullOrWhiteSpace(TargetColumn) ? TargetColumn : "—";
+    [JsonIgnore] public string ConfidenceDisplay => Confidence switch { "high" => "High", "medium" => "Medium", _ => "Low" };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+// The full AI conflict-fix response: one proposal per conflict it addressed.
+public sealed class ConflictFixResult
+{
+    public List<ConflictFixProposal> Fixes { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+}
+
+// One row of the "Research AI is working" progress checklist. State drives the
+// glyph/colors via DataTriggers: "Pending" | "Current" | "Done".
+public sealed class AiWorkStep : INotifyPropertyChanged
+{
+    public AiWorkStep(string label) => Label = label;
+
+    public string Label { get; }
+
+    private string _state = "Pending";
+    public string State
+    {
+        get => _state;
+        set
+        {
+            if (_state == value) return;
+            _state = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(State)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Glyph)));
+        }
+    }
+
+    [JsonIgnore] public string Glyph => State switch { "Done" => "✓", "Current" => "●", _ => "○" };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }
 
 // One difference between the extraction sheet, the uploaded CSV sample, and the

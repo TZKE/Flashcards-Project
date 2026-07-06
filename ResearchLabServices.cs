@@ -12,17 +12,27 @@ namespace AIFlashcardMaker;
 // ---------------------------------------------------------------------------
 // Shared timeout policy for every Research AI call path (dev provider + the
 // production backend HTTP client). Centralized so no single call site can
-// silently use a lower timeout than the others: a saved UI value below the
-// floor (e.g. an old 60s config) never cuts off a legitimate long-running
-// request, but the user can still raise it up to 300s.
+// silently use a lower timeout than the others.
+//
+// IMPORTANT: complex research tasks (large proposals, big extraction sheets)
+// can legitimately take many minutes. 180 seconds is kept only as a UI
+// "this is taking a while" notice threshold — it is NOT a cutoff. The actual
+// hard ceiling is 45 minutes (2700s); the default per-request ceiling is 15
+// minutes (900s), and the user can raise it (up to the 45-minute max) in
+// Research AI Settings. A saved low value from an older build (e.g. 60/180s)
+// never cuts off a legitimate long-running request — Resolve() always floors
+// at DefaultLongRunningSeconds.
 // ---------------------------------------------------------------------------
 internal static class ResearchAiTimeouts
 {
-    public const int DefaultFloorSeconds = 180;
-    public const int MaxSeconds = 300;
+    // UI-only "still working" notice threshold — never used as a cancellation limit.
+    public const int StillWorkingNoticeSeconds = 180;
 
-    public static int Resolve(int configuredSeconds, int floorSeconds = DefaultFloorSeconds)
-        => Math.Clamp(Math.Max(configuredSeconds, floorSeconds), 30, MaxSeconds);
+    public const int DefaultLongRunningSeconds = 900;    // 15 minutes
+    public const int MaxLongRunningSeconds = 2700;       // 45 minutes
+
+    public static int Resolve(int configuredSeconds, int floorSeconds = DefaultLongRunningSeconds)
+        => Math.Clamp(Math.Max(configuredSeconds, floorSeconds), 30, MaxLongRunningSeconds);
 }
 
 // ---------------------------------------------------------------------------
@@ -37,12 +47,15 @@ internal static class ResearchAiDiagnostics
     public static string? LastEntry { get; private set; }
 
     public static string Log(string action, string providerMode, int timeoutSeconds, double elapsedSeconds,
-        int? statusCode = null, bool bodyEmpty = false, string? parseError = null, string? outcome = null)
+        int? statusCode = null, bool bodyEmpty = false, string? parseError = null, string? outcome = null,
+        string? model = null, int? inputChars = null, int? maxTokens = null, string? category = null)
     {
         string entry =
-            $"[{DateTime.Now:u}] action={action} provider={providerMode} timeout={timeoutSeconds}s " +
-            $"elapsed={elapsedSeconds:F1}s status={(statusCode?.ToString() ?? "n/a")} " +
-            $"emptyBody={bodyEmpty} parseError={(parseError ?? "none")} outcome={(outcome ?? "n/a")}";
+            $"[{DateTime.Now:u}] action={action} provider={providerMode} " +
+            $"model={(string.IsNullOrWhiteSpace(model) ? "n/a" : model)} " +
+            $"inputChars={(inputChars?.ToString() ?? "n/a")} maxTokens={(maxTokens?.ToString() ?? "n/a")} " +
+            $"timeout={timeoutSeconds}s elapsed={elapsedSeconds:F1}s status={(statusCode?.ToString() ?? "n/a")} " +
+            $"category={(category ?? "n/a")} emptyBody={bodyEmpty} parseError={(parseError ?? "none")} outcome={(outcome ?? "n/a")}";
 
         LastEntry = entry;
         try
@@ -85,7 +98,7 @@ public enum ResearchAiTaskType
 public sealed class ResearchAiOptions
 {
     public string EndpointBaseUrl { get; set; } = "";
-    public int TimeoutSeconds { get; set; } = 180;
+    public int TimeoutSeconds { get; set; } = ResearchAiTimeouts.DefaultLongRunningSeconds;
     public bool UseDevelopmentMock { get; set; }
 
     // DEVELOPMENT-ONLY switch. When enabled, the in-app Research AI workflow is
@@ -201,8 +214,24 @@ public sealed class ResearchAiException : Exception
     // behind an "Open details" action. Never contains keys or request content.
     public string? Diagnostics { get; }
 
-    public ResearchAiException(string message, string? diagnostics = null) : base(message)
-        => Diagnostics = diagnostics;
+    // True when this failure is specifically "ran out of the allowed time"
+    // (our own timeout, or a provider/gateway timeout). The UI uses this flag
+    // instead of matching against message text, so wording can change freely
+    // without breaking the Retry/Continue-manually decision logic.
+    public bool IsTimeout { get; }
+
+    // Machine-readable failure category so the UI and diagnostics never have to
+    // guess from message text. One of: "timeout" | "provider_error" |
+    // "overload" | "rate_limit" | "prompt_too_long" | "empty_response" |
+    // "parse_failure" | "network" | "auth" | "unknown".
+    public string Category { get; }
+
+    public ResearchAiException(string message, string? diagnostics = null, bool isTimeout = false, string category = "unknown") : base(message)
+    {
+        Diagnostics = diagnostics;
+        IsTimeout = isTimeout;
+        Category = category;
+    }
 }
 
 // ---- Service abstraction --------------------------------------------------
@@ -230,6 +259,11 @@ public interface IResearchAiService
     Task<ExtractionSheetResult> GenerateExtractionSheetAsync(ResearchProject project, string extraQuestionsContext, CancellationToken cancellationToken);
     Task<ExtractionSheetResult> ExtractVariablesFromQuestionsAsync(ResearchProject project, string questionsText, CancellationToken cancellationToken);
     Task<ExtractionSheetResult> SuggestExtractionFixesAsync(ResearchProject project, ExtractionValidationReport report, CancellationToken cancellationToken);
+
+    // Phase 3 final stabilization — structured conflict fixes: ONE proposal per
+    // active conflict (never a rewritten sheet), reviewed by the student before
+    // anything is applied. Receives only compact conflict/sheet/header metadata.
+    Task<ConflictFixResult> SuggestConflictFixesAsync(ResearchProject project, List<ConflictFixInput> conflicts, CancellationToken cancellationToken);
 
     // Lightweight connectivity check for Settings ("Test Research AI"). Minimal
     // tokens/payload; never throws.
@@ -285,6 +319,9 @@ public sealed class ResearchAiService : IResearchAiService
 
     public Task<ExtractionSheetResult> SuggestExtractionFixesAsync(ResearchProject project, ExtractionValidationReport report, CancellationToken cancellationToken)
         => Route(_options()).SuggestExtractionFixesAsync(project, report, cancellationToken);
+
+    public Task<ConflictFixResult> SuggestConflictFixesAsync(ResearchProject project, List<ConflictFixInput> conflicts, CancellationToken cancellationToken)
+        => Route(_options()).SuggestConflictFixesAsync(project, conflicts, cancellationToken);
 
     // Health check tolerates "not configured" gracefully instead of throwing,
     // since Settings should always get a status back.
@@ -378,7 +415,23 @@ public sealed class ResearchAiHttpClient : IResearchAiService
             if (!httpResp.IsSuccessStatusCode)
             {
                 string diag = ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException($"The Research AI service returned an error ({(int)httpResp.StatusCode}).", diag);
+                throw new ResearchAiException((int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
+                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
+                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
+                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
+                }, diag,
+                isTimeout: (int)httpResp.StatusCode is 504 or 408,
+                category: (int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "timeout",
+                    502 or 503 => "overload",
+                    429 => "rate_limit",
+                    401 or 403 => "auth",
+                    >= 500 => "provider_error",
+                    _ => "provider_error"
+                });
             }
 
             if (!_parser.TryParseExtraction(body, out var extraction) || !extraction.HasAnyContent)
@@ -395,7 +448,7 @@ public sealed class ResearchAiHttpClient : IResearchAiService
         {
             sw.Stop();
             string diag = ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException($"The Research AI request timed out after {sw.Elapsed.TotalSeconds:F0} seconds. Your existing content was not changed.", diag);
+            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true);
         }
         catch (HttpRequestException)
         {
@@ -416,6 +469,89 @@ public sealed class ResearchAiHttpClient : IResearchAiService
 
     public Task<ExtractionSheetResult> SuggestExtractionFixesAsync(ResearchProject project, ExtractionValidationReport report, CancellationToken cancellationToken)
         => PostExtractionSheetAsync("extraction-fixes", project, new { report }, cancellationToken);
+
+    // Structured per-conflict fixes. COMPACT payload only: the active conflicts,
+    // the sheet variables (name/label/type/role/coding/aliases), CSV column
+    // HEADERS, and short project context — never raw CSV rows or proposal text.
+    public async Task<ConflictFixResult> SuggestConflictFixesAsync(ResearchProject project, List<ConflictFixInput> conflicts, CancellationToken cancellationToken)
+    {
+        var o = _options();
+        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
+            throw new ResearchAiNotConfiguredException();
+
+        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/conflict-fixes";
+        var request = new
+        {
+            projectId = project.Id,
+            taskType = "conflict-fixes",
+            title = project.Title,
+            specialty = project.Specialty,
+            studyType = project.StudyType,
+            variables = (project.Variables ?? new List<ResearchVariable>()).Select(v => new
+            {
+                v.VariableName, v.QuestionLabel, type = v.VariableType, role = v.Role, v.Coding, aliases = v.SourceColumnAliases
+            }),
+            csvHeaders = project.CsvSampleSummary?.Columns.Select(c => c.Name) ?? Enumerable.Empty<string>(),
+            conflicts,
+            desiredOutputFormat = "json"
+        };
+
+        int timeoutSeconds = ResearchAiTimeouts.Resolve(o.TimeoutSeconds);
+        var sw = Stopwatch.StartNew();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        try
+        {
+            using var content = new StringContent(JsonSerializer.Serialize(request, Json), Encoding.UTF8, "application/json");
+            using var httpResp = await Http.PostAsync(url, content, cts.Token);
+            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
+            sw.Stop();
+
+            if (!httpResp.IsSuccessStatusCode)
+            {
+                string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
+                throw new ResearchAiException((int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
+                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
+                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
+                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
+                }, diag,
+                isTimeout: (int)httpResp.StatusCode is 504 or 408,
+                category: (int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "timeout",
+                    502 or 503 => "overload",
+                    429 => "rate_limit",
+                    401 or 403 => "auth",
+                    >= 500 => "provider_error",
+                    _ => "provider_error"
+                });
+            }
+
+            if (!_parser.TryParseConflictFixes(body, out var result) || result.Fixes.Count == 0)
+            {
+                string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body), "could not parse conflict fixes JSON", category: "parse_failure");
+                throw new ResearchAiException("The Research AI response could not be read as conflict fixes. Please try again.", diag, category: "parse_failure");
+            }
+
+            ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, outcome: "success");
+            return result;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            sw.Stop();
+            string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout", category: "timeout");
+            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true, category: "timeout");
+        }
+        catch (HttpRequestException)
+        {
+            sw.Stop();
+            string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "network error", category: "network");
+            throw new ResearchAiException("Could not reach the Research AI service. Check the endpoint in Settings and your connection.", diag, category: "network");
+        }
+    }
 
     private async Task<ExtractionSheetResult> PostExtractionSheetAsync(string path, ResearchProject project, object extra, CancellationToken cancellationToken)
     {
@@ -452,7 +588,23 @@ public sealed class ResearchAiHttpClient : IResearchAiService
             if (!httpResp.IsSuccessStatusCode)
             {
                 string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException($"The Research AI service returned an error ({(int)httpResp.StatusCode}).", diag);
+                throw new ResearchAiException((int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
+                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
+                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
+                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
+                }, diag,
+                isTimeout: (int)httpResp.StatusCode is 504 or 408,
+                category: (int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "timeout",
+                    502 or 503 => "overload",
+                    429 => "rate_limit",
+                    401 or 403 => "auth",
+                    >= 500 => "provider_error",
+                    _ => "provider_error"
+                });
             }
 
             if (!_parser.TryParseExtractionSheet(body, out var result) || !result.HasAnyContent)
@@ -469,7 +621,7 @@ public sealed class ResearchAiHttpClient : IResearchAiService
         {
             sw.Stop();
             string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException($"The Research AI request timed out after {sw.Elapsed.TotalSeconds:F0} seconds. Your existing content was not changed.", diag);
+            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true);
         }
         catch (HttpRequestException)
         {
@@ -516,7 +668,23 @@ public sealed class ResearchAiHttpClient : IResearchAiService
             if (!httpResp.IsSuccessStatusCode)
             {
                 string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException($"The Research AI service returned an error ({(int)httpResp.StatusCode}).", diag);
+                throw new ResearchAiException((int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
+                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
+                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
+                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
+                }, diag,
+                isTimeout: (int)httpResp.StatusCode is 504 or 408,
+                category: (int)httpResp.StatusCode switch
+                {
+                    504 or 408 => "timeout",
+                    502 or 503 => "overload",
+                    429 => "rate_limit",
+                    401 or 403 => "auth",
+                    >= 500 => "provider_error",
+                    _ => "provider_error"
+                });
             }
 
             ResearchAiResponse? parsed = null;
@@ -549,7 +717,7 @@ public sealed class ResearchAiHttpClient : IResearchAiService
         {
             sw.Stop();
             string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException($"The Research AI request timed out after {sw.Elapsed.TotalSeconds:F0} seconds. Your existing content was not changed.", diag);
+            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true);
         }
         catch (HttpRequestException)
         {
@@ -764,6 +932,64 @@ public sealed class MockResearchAiService : IResearchAiService
         if (result.ChangeSummary.Count == 0)
             result.ChangeSummary.Add("No automatic fixes were needed in development mode.");
 
+        return result;
+    }
+
+    public async Task<ConflictFixResult> SuggestConflictFixesAsync(ResearchProject project, List<ConflictFixInput> conflicts, CancellationToken cancellationToken)
+    {
+        await Task.Delay(400, cancellationToken);
+
+        // Deterministic offline proposals so the review/apply UI can be exercised
+        // without a provider: CSV-only columns become add-variable proposals,
+        // sheet-only variables get an alias suggestion, everything else is
+        // flagged for manual review. Clearly marked as development output.
+        var result = new ConflictFixResult
+        {
+            Warnings = { "Development-mode placeholder — connect the Research AI provider for real fix proposals." }
+        };
+        // Google Form / system metadata columns are routine safe-ignores.
+        var meta = new[] { "timestamp", "username", "email address", "email", "score" };
+        foreach (var c in conflicts ?? new List<ConflictFixInput>())
+        {
+            string colName = c.ColumnName ?? "";
+            string varName = c.VariableName ?? "";
+            bool isMeta = c.Kind == "CsvOnly" && meta.Contains(colName.Trim().ToLowerInvariant());
+            result.Fixes.Add(c.Kind switch
+            {
+                // Sample-size / outcome / required problems are never auto-handled.
+                "SampleIncomplete" or "Outcome" => new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title, Category = "manual_review", Action = "no_safe_fix",
+                    Explanation = "Development mock: this may affect statistics — review it manually.",
+                    Confidence = "high", TargetVariable = varName
+                },
+                "CsvOnly" when isMeta => new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title, Category = "safe_ignore", Action = "ignore",
+                    Explanation = "Development mock: Google Form system column — safe to ignore for analysis.",
+                    Confidence = "high", TargetColumn = colName
+                },
+                "CsvOnly" => new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title, Category = "safe_fix", Action = "add_variable",
+                    Explanation = "Development mock: add this CSV column as a new variable.",
+                    Confidence = "medium", TargetColumn = colName,
+                    ProposedValue = colName
+                },
+                "SheetOnly" => new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title, Category = "safe_fix", Action = "mark_resolved",
+                    Explanation = "Development mock: keep the variable; its data may come later.",
+                    Confidence = "low", TargetVariable = varName
+                },
+                _ => new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title, Category = "manual_review", Action = "no_safe_fix",
+                    Explanation = "Development mock: review this conflict manually.",
+                    Confidence = "low", TargetVariable = varName, TargetColumn = colName
+                }
+            });
+        }
         return result;
     }
 
@@ -1007,12 +1233,12 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
 
     public async Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
     {
-        string text = await CompleteAsync("Recommendations", RecommendationsSystemPrompt, BuildRecommendationsUserPrompt(project), cancellationToken);
+        string text = await CompleteAsync("Recommendations", RecommendationsSystemPrompt, BuildRecommendationsUserPrompt(project), cancellationToken, maxOutputTokens: 6000);
 
         if (!_parser.TryParseRecommendations(text, out var rec) || !rec.HasStructuredContent)
         {
-            string diag = ResearchAiDiagnostics.Log("Recommendations", "DevZai", ResearchAiTimeouts.DefaultFloorSeconds, 0, parseError: "could not parse recommendations JSON");
-            throw new ResearchAiException("The Research AI response could not be read as recommendations.", diag);
+            string diag = ResearchAiDiagnostics.Log("Recommendations", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse recommendations JSON", category: "parse_failure");
+            throw new ResearchAiException("The Research AI response could not be read as recommendations.", diag, category: "parse_failure");
         }
 
         rec.SourceMode = ResearchSourceMode.AiGenerated;
@@ -1025,8 +1251,8 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
 
         if (!_parser.TryParseProposal(text, out var draft))
         {
-            string diag = ResearchAiDiagnostics.Log("ProposalDraft", "DevZai", ResearchAiTimeouts.DefaultFloorSeconds, 0, parseError: "could not parse proposal JSON");
-            throw new ResearchAiException("The Research AI response could not be read as a proposal draft.", diag);
+            string diag = ResearchAiDiagnostics.Log("ProposalDraft", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse proposal JSON", category: "parse_failure");
+            throw new ResearchAiException("The Research AI response could not be read as a proposal draft.", diag, category: "parse_failure");
         }
 
         draft.SourceMode = ResearchSourceMode.AiGenerated;
@@ -1039,11 +1265,11 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         // Same working dev-provider pattern as recommendations/proposal: 180s
         // timeout floor, max_tokens 8000, strict-JSON prompt, tolerant parser.
         // Extraction measured ~100-150s in testing, comfortably within 180s.
-        string text = await CompleteAsync("ExtractProposal", ExtractionSystemPrompt, BuildExtractionUserPrompt(proposalText, existingProject), cancellationToken, minTimeoutSeconds: 180);
+        string text = await CompleteAsync("ExtractProposal", ExtractionSystemPrompt, BuildExtractionUserPrompt(proposalText, existingProject), cancellationToken);
 
         if (!_parser.TryParseExtraction(text, out var result) || !result.HasAnyContent)
         {
-            string diag = ResearchAiDiagnostics.Log("ExtractProposal", "DevZai", ResearchAiTimeouts.DefaultFloorSeconds, 0, parseError: "could not parse extraction JSON");
+            string diag = ResearchAiDiagnostics.Log("ExtractProposal", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse extraction JSON");
             throw new ResearchAiException("The Research AI response could not be read as extracted proposal details. Please try again.", diag);
         }
 
@@ -1055,23 +1281,86 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
 
     public async Task<ExtractionSheetResult> GenerateExtractionSheetAsync(ResearchProject project, string extraQuestionsContext, CancellationToken cancellationToken)
     {
-        string text = await CompleteAsync("ExtractionSheet", ExtractionSheetSystemPrompt, BuildExtractionSheetUserPrompt(project, extraQuestionsContext), cancellationToken, minTimeoutSeconds: 180);
-        if (!_parser.TryParseExtractionSheet(text, out var result) || !result.HasAnyContent)
+        // Variables-only output with a tight token cap: the old combination of a
+        // full-proposal prompt + one huge max_tokens made the provider generate
+        // for minutes and sometimes die with a 500 mid-way. Compact in, compact out.
+        string text = await CompleteAsync("ExtractionSheet", ExtractionSheetSystemPrompt, BuildExtractionSheetUserPrompt(project, extraQuestionsContext), cancellationToken, maxOutputTokens: 4000);
+        if (!_parser.TryParseExtractionSheet(text, out var result))
         {
-            string diag = ResearchAiDiagnostics.Log("ExtractionSheet", "DevZai", ResearchAiTimeouts.DefaultFloorSeconds, 0, parseError: "could not parse extraction sheet JSON");
-            throw new ResearchAiException("The Research AI response could not be read as an extraction sheet. Please try again.", diag);
+            string diag = ResearchAiDiagnostics.Log("ExtractionSheet", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse extraction sheet JSON", category: "parse_failure");
+            throw new ResearchAiException("The Research AI response could not be read as an extraction sheet. Please try again.", diag, category: "parse_failure");
+        }
+        // A sheet with zero variables is a failure, never a silent "success":
+        // the caller must be able to show a real message and offer Retry.
+        if (result.Variables.Count == 0)
+        {
+            string diag = ResearchAiDiagnostics.Log("ExtractionSheet", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "extraction sheet had no variables", category: "parse_failure");
+            throw new ResearchAiException("Research AI returned an incomplete extraction sheet. Please retry or continue manually.", diag, category: "parse_failure");
         }
         result.SourceMode = ResearchSourceMode.AiGenerated;
         return result;
     }
 
+    // Above this many question lines, a single request risks an oversized/slow
+    // call — split into batches instead so quality (per-question extraction
+    // accuracy) is preserved while no single request has to carry everything.
+    private const int QuestionBatchLineThreshold = 25;
+    private const int QuestionBatchSize = 20;
+
     public async Task<ExtractionSheetResult> ExtractVariablesFromQuestionsAsync(ResearchProject project, string questionsText, CancellationToken cancellationToken)
     {
-        string text = await CompleteAsync("QuestionsToVariables", QuestionsToVariablesSystemPrompt, BuildQuestionsUserPrompt(project, questionsText), cancellationToken, minTimeoutSeconds: 180);
+        questionsText ??= "";
+        var lines = questionsText.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n')
+            .Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+
+        if (lines.Count <= QuestionBatchLineThreshold)
+            return await ExtractVariablesFromQuestionsBatchAsync(project, questionsText, cancellationToken);
+
+        // Batch: same strict-JSON extraction per chunk, merged and deduped by
+        // normalized variable name afterward. No quality loss — every question
+        // still goes through the identical per-question extraction prompt; only
+        // the request size is capped so it stays fast and reliable.
+        var merged = new ExtractionSheetResult { SourceMode = ResearchSourceMode.AiGenerated };
+        var seenNames = new HashSet<string>();
+        int batchCount = (int)Math.Ceiling(lines.Count / (double)QuestionBatchSize);
+
+        for (int b = 0; b < batchCount; b++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var batchLines = lines.Skip(b * QuestionBatchSize).Take(QuestionBatchSize).ToList();
+            string batchText = string.Join("\n", batchLines);
+            string text = await CompleteAsync("QuestionsToVariables", QuestionsToVariablesSystemPrompt, BuildQuestionsUserPrompt(project, batchText), cancellationToken, maxOutputTokens: 4000);
+            if (!_parser.TryParseExtractionSheet(text, out var batchResult)) continue;
+
+            foreach (var v in batchResult.Variables)
+            {
+                string key = NormalizeVarKey(v.VariableName);
+                if (key.Length > 0 && !seenNames.Add(key)) continue;   // dedupe across batches
+                merged.Variables.Add(v);
+            }
+            merged.Warnings.AddRange(batchResult.Warnings);
+            merged.MissingExpectedVariables.AddRange(batchResult.MissingExpectedVariables);
+        }
+
+        if (!merged.HasAnyContent)
+        {
+            string diag = ResearchAiDiagnostics.Log("QuestionsToVariables", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "batched extraction produced no variables");
+            throw new ResearchAiException("The Research AI response could not be read as variable suggestions. Please try again.", diag);
+        }
+        merged.ConfidenceSummary = $"Built from {batchCount} batches of questions ({lines.Count} total lines).";
+        return merged;
+    }
+
+    private static string NormalizeVarKey(string s)
+        => string.IsNullOrWhiteSpace(s) ? "" : System.Text.RegularExpressions.Regex.Replace(s.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "_").Trim('_');
+
+    private async Task<ExtractionSheetResult> ExtractVariablesFromQuestionsBatchAsync(ResearchProject project, string questionsText, CancellationToken cancellationToken)
+    {
+        string text = await CompleteAsync("QuestionsToVariables", QuestionsToVariablesSystemPrompt, BuildQuestionsUserPrompt(project, questionsText), cancellationToken, maxOutputTokens: 4000);
         if (!_parser.TryParseExtractionSheet(text, out var result) || !result.HasAnyContent)
         {
-            string diag = ResearchAiDiagnostics.Log("QuestionsToVariables", "DevZai", ResearchAiTimeouts.DefaultFloorSeconds, 0, parseError: "could not parse variable suggestions JSON");
-            throw new ResearchAiException("The Research AI response could not be read as variable suggestions. Please try again.", diag);
+            string diag = ResearchAiDiagnostics.Log("QuestionsToVariables", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse variable suggestions JSON", category: "parse_failure");
+            throw new ResearchAiException("The Research AI response could not be read as variable suggestions. Please try again.", diag, category: "parse_failure");
         }
         result.SourceMode = ResearchSourceMode.AiGenerated;
         return result;
@@ -1079,13 +1368,37 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
 
     public async Task<ExtractionSheetResult> SuggestExtractionFixesAsync(ResearchProject project, ExtractionValidationReport report, CancellationToken cancellationToken)
     {
-        string text = await CompleteAsync("SuggestFixes", ExtractionFixSystemPrompt, BuildFixUserPrompt(project, report), cancellationToken, minTimeoutSeconds: 180);
+        string text = await CompleteAsync("SuggestFixes", ExtractionFixSystemPrompt, BuildFixUserPrompt(project, report), cancellationToken, maxOutputTokens: 4000);
         if (!_parser.TryParseExtractionSheet(text, out var result) || !result.HasAnyContent)
         {
-            string diag = ResearchAiDiagnostics.Log("SuggestFixes", "DevZai", ResearchAiTimeouts.DefaultFloorSeconds, 0, parseError: "could not parse suggested fixes JSON");
-            throw new ResearchAiException("The Research AI response could not be read as suggested fixes. Please try again.", diag);
+            string diag = ResearchAiDiagnostics.Log("SuggestFixes", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse suggested fixes JSON", category: "parse_failure");
+            throw new ResearchAiException("The Research AI response could not be read as suggested fixes. Please try again.", diag, category: "parse_failure");
         }
         result.SourceMode = ResearchSourceMode.AiGenerated;
+        return result;
+    }
+
+    // Above this many conflicts, prioritize (errors first) and cap the request —
+    // one fix proposal per conflict keeps the output small and reliable.
+    private const int ConflictFixMaxConflicts = 25;
+
+    public async Task<ConflictFixResult> SuggestConflictFixesAsync(ResearchProject project, List<ConflictFixInput> conflicts, CancellationToken cancellationToken)
+    {
+        conflicts ??= new List<ConflictFixInput>();
+        // Prioritize serious conflicts; cap the batch so the prompt stays small.
+        var prioritized = conflicts
+            .OrderBy(c => c.Severity == "Error" ? 0 : c.Severity == "Warning" ? 1 : 2)
+            .Take(ConflictFixMaxConflicts)
+            .ToList();
+
+        string text = await CompleteAsync("ConflictFixes", ConflictFixesSystemPrompt, BuildConflictFixesUserPrompt(project, prioritized), cancellationToken, maxOutputTokens: 3000);
+        if (!_parser.TryParseConflictFixes(text, out var result) || result.Fixes.Count == 0)
+        {
+            string diag = ResearchAiDiagnostics.Log("ConflictFixes", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse conflict fixes JSON", category: "parse_failure");
+            throw new ResearchAiException("The Research AI response could not be read as conflict fixes. Please try again.", diag, category: "parse_failure");
+        }
+        if (conflicts.Count > prioritized.Count)
+            result.Warnings.Add($"{conflicts.Count - prioritized.Count} lower-priority conflict(s) were not sent in this batch — run Fix with Research AI again after applying these fixes.");
         return result;
     }
 
@@ -1148,11 +1461,16 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         }
     }
 
-    private async Task<string> CompleteAsync(string action, string systemPrompt, string userPrompt, CancellationToken cancellationToken, int minTimeoutSeconds = 180)
+    // maxOutputTokens is per-action: variable lists and conflict fixes need far
+    // fewer output tokens than a full proposal extraction. A smaller cap keeps
+    // the provider's generation shorter and materially reduces mid-generation
+    // provider 500s on long outputs. Never one huge setting for every action.
+    private async Task<string> CompleteAsync(string action, string systemPrompt, string userPrompt, CancellationToken cancellationToken,
+        int minTimeoutSeconds = ResearchAiTimeouts.DefaultLongRunningSeconds, int maxOutputTokens = 8000)
     {
         var creds = _credentials();
         if (!creds.HasKey)
-            throw new ResearchAiException("No AI provider key is available. Add your API key in AI Settings, then try again.");
+            throw new ResearchAiException("No AI provider key is available. Add your API key in AI Settings, then try again.", category: "auth");
 
         var opts = _options();
         string baseUrl = string.IsNullOrWhiteSpace(creds.BaseUrl)
@@ -1169,20 +1487,26 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
                 new { role = "user", content = userPrompt }
             },
             temperature = 0.2,
-            max_tokens = 8000,   // headroom so the large research JSON is never truncated
+            max_tokens = maxOutputTokens,
             stream = false
         };
 
-        // GLM takes ~90-180s to produce the full structured JSON, so never let a
-        // small configured timeout cut it off. Floor at minTimeoutSeconds (180s for
-        // recommendations/proposal, higher for the larger extraction payload);
-        // users may raise the configured value up to 300s. Centralized via
+        // Complex research tasks can legitimately take many minutes — never let a
+        // small configured timeout cut off a genuine long-running request. Floors
+        // at minTimeoutSeconds (15 minutes by default); the student may raise the
+        // configured value up to the 45-minute maximum. Centralized via
         // ResearchAiTimeouts so every call path (dev provider + backend HTTP
         // client) applies the exact same floor/ceiling.
         int timeoutSeconds = ResearchAiTimeouts.Resolve(opts.TimeoutSeconds, minTimeoutSeconds);
+        int inputChars = systemPrompt.Length + userPrompt.Length;
         var sw = Stopwatch.StartNew();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        // Safe diagnostics helper for this call — sizes/status only, never content.
+        string LogCall(string? outcome = null, int? status = null, bool empty = false, string? parseErr = null, string? category = null)
+            => ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, status, empty, parseErr, outcome,
+                model, inputChars, maxOutputTokens, category);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
         // The key is attached only to the outgoing request header — never logged.
@@ -1199,39 +1523,46 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             sw.Stop();
-            string diag = ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException($"The Research AI request timed out after {sw.Elapsed.TotalSeconds:F0} seconds. Your existing content was not changed.", diag);
+            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.",
+                LogCall(outcome: "timeout", category: "timeout"), isTimeout: true, category: "timeout");
         }
         catch (HttpRequestException)
         {
             sw.Stop();
-            string diag = ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "network error");
-            throw new ResearchAiException("Could not reach the Research AI service. Check your connection and try again.", diag);
+            throw new ResearchAiException("Could not reach the Research AI service. Check your connection and try again.",
+                LogCall(outcome: "network error", category: "network"), category: "network");
         }
         sw.Stop();
 
         if (!response.IsSuccessStatusCode)
         {
-            string diag = ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)response.StatusCode);
-            // Map common statuses to friendly, key-free messages. The raw
-            // provider body is intentionally NOT included (it can echo details).
-            throw new ResearchAiException((int)response.StatusCode switch
+            int code = (int)response.StatusCode;
+            // Map statuses to friendly, key-free messages AND a machine-readable
+            // category so the UI never treats a provider failure as "timeout".
+            // The raw provider body is intentionally NOT included (it can echo
+            // request details).
+            (string msg, string category, bool isTimeout) = code switch
             {
-                401 or 403 => "The Research AI provider rejected the request. Check your API key in AI Settings.",
-                429 => "The Research AI provider is busy (rate limited). Wait a moment and try again.",
-                >= 500 => "The Research AI provider had a server error. Please try again shortly.",
-                _ => "The Research AI provider returned an error. Please try again."
-            }, diag);
+                504 or 408 => ("The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.", "timeout", true),
+                500 => ($"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.", "provider_error", false),
+                502 or 503 => ("The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.", "overload", false),
+                429 => ("The Research AI provider is busy (rate limited). Wait a moment and try again.", "rate_limit", false),
+                413 => ("The request was too large for the provider. Your content was kept. Retry sends compact input; if it persists, split the task.", "prompt_too_long", false),
+                401 or 403 => ("The Research AI provider rejected the request. Check your API key in AI Settings.", "auth", false),
+                >= 500 => ("The Research AI provider had a server error. Your content was kept. Please try again shortly.", "provider_error", false),
+                _ => ("The Research AI provider returned an error. Your content was kept. Please try again.", "provider_error", false)
+            };
+            throw new ResearchAiException(msg, LogCall(status: code, category: category), isTimeout, category);
         }
 
         string content = ExtractContent(json);
         if (string.IsNullOrWhiteSpace(content))
         {
-            string diag = ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)response.StatusCode, bodyEmpty: true);
-            throw new ResearchAiException("The Research AI service returned an empty response. Please try again.", diag);
+            throw new ResearchAiException("The Research AI service returned an empty response. Your content was kept. Please try again.",
+                LogCall(status: (int)response.StatusCode, empty: true, category: "empty_response"), category: "empty_response");
         }
 
-        ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)response.StatusCode, outcome: "success");
+        LogCall(outcome: "success", status: (int)response.StatusCode);
         return content;
     }
 
@@ -1487,23 +1818,170 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         "invent results. List every change you made in \"changeSummary\".\n\n" +
         ExtractionSheetJsonShape;
 
-    private static string BuildExtractionSheetUserPrompt(ResearchProject p, string extraQuestionsContext)
+    // Structured per-conflict fixes: strict JSON, one proposal per conflict,
+    // never a rewritten sheet, never fabricated data.
+    private const string ConflictFixesSystemPrompt =
+        "You are resolving VALIDATION CONFLICTS in a data extraction sheet (data " +
+        "dictionary) for a study that has NOT yet been run.\n\n" + ExtractionSheetSafetyRules + "\n\n" +
+        "You are given the sheet's variables, the uploaded CSV column HEADERS, and " +
+        "a list of active conflicts. For EVERY conflict, propose exactly ONE fix. " +
+        "Echo each conflict's conflictKey EXACTLY as given. Allowed actions:\n" +
+        "- add_variable: a CSV column has no variable — proposedValue = new snake_case variable name, targetColumn = the CSV column.\n" +
+        "- map_csv_column_to_variable: a CSV column belongs to an existing variable — targetVariable = that variable, targetColumn = the column, proposedValue = the column header to store as an alias.\n" +
+        "- rename_variable: an invalid/duplicate variable name — targetVariable = current name, proposedValue = new snake_case name.\n" +
+        "- add_alias: like map, when the variable should keep its name but match the column — proposedValue = alias text.\n" +
+        "- update_coding: a categorical/binary/ordinal variable lacks coding — targetVariable = the variable, proposedValue = the coding (e.g. \"0 = No, 1 = Yes\").\n" +
+        "- mark_resolved: the conflict is acceptable as-is and should stop being flagged.\n" +
+        "- ignore: the conflict is noise for this study.\n" +
+        "- no_safe_fix: you cannot safely fix it — the student must review manually. Never invent a fix.\n\n" +
+        "Also classify EVERY conflict into one \"category\":\n" +
+        "- \"safe_fix\": a routine correction you are confident about (add/map/rename/add_alias/update_coding/mark_resolved).\n" +
+        "- \"safe_ignore\": routine noise that does not affect analysis — Google Form metadata (Timestamp, Username, Email Address, Score) and optional/administrative columns. Use action \"ignore\".\n" +
+        "- \"manual_review\": important issues that could affect statistics and need the student's judgement — a MISSING OUTCOME variable, a MISSING REQUIRED variable, unclear important coding, a binary variable with more than two categories, a continuous variable with non-numeric values, or an INCOMPLETE SAMPLE SIZE. Use action \"no_safe_fix\" for these and explain what the student must decide.\n" +
+        "- \"no_safe_fix\": you are unsure or cannot confidently solve it.\n\n" +
+        "NEVER classify a missing outcome, a missing required variable, or an incomplete sample size as safe_ignore or mark_resolved — these are always manual_review. Never delete important variables, never invent sample data or statistics.\n\n" +
+        "Return ONLY this JSON (no markdown, no commentary):\n" +
+        "{\n" +
+        "  \"fixes\": [\n" +
+        "    {\"conflictKey\":\"string\",\"conflictTitle\":\"string\",\"category\":\"safe_fix|safe_ignore|manual_review|no_safe_fix\",\"action\":\"string\",\"explanation\":\"string\",\"confidence\":\"high|medium|low\",\"targetVariable\":\"string\",\"targetColumn\":\"string\",\"proposedValue\":\"string\"}\n" +
+        "  ],\n" +
+        "  \"warnings\": [\"string\"]\n" +
+        "}";
+
+    // Compact conflict-fix user prompt: short context + compact variables + CSV
+    // headers + the active conflicts only. Never raw CSV rows, never proposal
+    // text, never resolved/ignored conflicts.
+    private static string BuildConflictFixesUserPrompt(ResearchProject p, List<ConflictFixInput> conflicts)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Build a data extraction sheet (variable list / data dictionary) for this student research project.");
-        sb.AppendLine("Use only the information below. Where something is not provided, add it to missingExpectedVariables instead of inventing it.");
+        sb.AppendLine("Propose one fix per conflict below.");
         sb.AppendLine();
-        AppendProjectDetails(sb, p);
-        AppendExtractionContext(sb, p);
+        sb.AppendLine("Project context (brief):");
+        if (!string.IsNullOrWhiteSpace(p.Title)) sb.AppendLine("- Title: " + p.Title.Trim());
+        if (!string.IsNullOrWhiteSpace(p.Specialty)) sb.AppendLine("- Specialty: " + p.Specialty.Trim());
+        if (!string.IsNullOrWhiteSpace(p.StudyType)) sb.AppendLine("- Study type: " + p.StudyType.Trim());
 
+        sb.AppendLine();
+        sb.AppendLine("Extraction sheet variables (JSON):");
+        sb.AppendLine(JsonSerializer.Serialize((p.Variables ?? new List<ResearchVariable>()).Select(v => new
+        {
+            v.VariableName, v.QuestionLabel, type = v.VariableType, role = v.Role, v.Coding, aliases = v.SourceColumnAliases
+        })));
+
+        if (p.CsvSampleSummary is { Columns.Count: > 0 } csv)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Uploaded CSV column headers only (no data rows): "
+                + string.Join(", ", csv.Columns.Select(c => c.Name)));
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"Active conflicts ({conflicts.Count}):");
+        foreach (var c in conflicts)
+            sb.AppendLine($"- conflictKey={c.ConflictKey} | kind={c.Kind} | severity={c.Severity} | title={c.Title}"
+                + (string.IsNullOrWhiteSpace(c.VariableName) ? "" : $" | variable={c.VariableName}")
+                + (string.IsNullOrWhiteSpace(c.ColumnName) ? "" : $" | column={c.ColumnName}"));
+        return sb.ToString();
+    }
+
+    // COMPACT extraction-sheet prompt. The previous version appended the FULL
+    // imported proposal (references and all) plus CSV sample values plus the
+    // whole plan — a very heavy request that made the provider generate for
+    // minutes and sometimes fail with a 500 before finishing. This version sends
+    // only what variable generation actually needs: short project context, a
+    // summarized accepted plan, the proposal's VARIABLE-RELATED sections only
+    // (compact, capped), clean questionnaire questions, existing variable names,
+    // and CSV column headers (never sample values or rows).
+    private static string BuildExtractionSheetUserPrompt(ResearchProject p, string extraQuestionsContext)
+    {
+        static string Cap(string s, int max)
+        {
+            s = (s ?? "").Trim();
+            return s.Length <= max ? s : s.Substring(0, max).TrimEnd() + "…";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Build a data extraction sheet (variable list / data dictionary) for this student research project.");
+        sb.AppendLine("Return VARIABLES ONLY — no sample rows, no participant data, no statistics, no prose.");
+        sb.AppendLine("Use only the information below. Where something is not provided, add it to missingExpectedVariables instead of inventing it.");
+
+        sb.AppendLine();
+        sb.AppendLine("Project context (brief):");
+        if (!string.IsNullOrWhiteSpace(p.Title)) sb.AppendLine("- Title: " + Cap(p.Title, 300));
+        if (!string.IsNullOrWhiteSpace(p.Specialty)) sb.AppendLine("- Specialty: " + Cap(p.Specialty, 120));
+        if (!string.IsNullOrWhiteSpace(p.StudyType)) sb.AppendLine("- Study type: " + Cap(p.StudyType, 120));
+        if (!string.IsNullOrWhiteSpace(p.Aim)) sb.AppendLine("- Aim: " + Cap(p.Aim, 400));
+        if (!string.IsNullOrWhiteSpace(p.Population)) sb.AppendLine("- Population: " + Cap(p.Population, 300));
+        if (!string.IsNullOrWhiteSpace(p.Setting)) sb.AppendLine("- Setting: " + Cap(p.Setting, 300));
+
+        // Accepted research plan, summarized to short lines (never full prose).
+        if (p.Plan is { } plan)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Accepted research plan (summary):");
+            void Line(string label, string val) { if (!string.IsNullOrWhiteSpace(val)) sb.AppendLine("- " + label + ": " + Cap(val, 500)); }
+            Line("Research question", plan.ResearchQuestion);
+            Line("Study design", plan.StudyDesign);
+            Line("Primary objective", plan.PrimaryObjective);
+            Line("Secondary objectives", plan.SecondaryObjectives);
+            Line("Main variables", plan.MainVariables);
+            Line("Inclusion criteria", plan.InclusionCriteria);
+            Line("Exclusion criteria", plan.ExclusionCriteria);
+        }
+        else if (p.Recommendations is { HasStructuredContent: true } rec)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Research plan variables (from accepted recommendations):");
+            foreach (var v in rec.SuggestedVariables.Take(40))
+                sb.AppendLine("    • " + Cap(v.HeaderDisplay, 160) + " (" + Or2(v.Role, "role?") + ", " + Or2(v.VariableType, "type?") + ")");
+        }
+
+        // Proposal: VARIABLE-RELATED sections only, compact and capped — never the
+        // full proposal and never references.
+        var d = p.ProposalDraft;
+        bool draftHasVarSections = d is not null &&
+            (!string.IsNullOrWhiteSpace(d.Variables) || !string.IsNullOrWhiteSpace(d.DataCollection) || !string.IsNullOrWhiteSpace(d.StatisticalAnalysisPlan));
+        if (draftHasVarSections)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Variable-related proposal sections (compact):");
+            if (!string.IsNullOrWhiteSpace(d!.Variables)) sb.AppendLine("- Variables: " + Cap(d.Variables, 900));
+            if (!string.IsNullOrWhiteSpace(d.DataCollection)) sb.AppendLine("- Data collection: " + Cap(d.DataCollection, 900));
+            if (!string.IsNullOrWhiteSpace(d.StatisticalAnalysisPlan)) sb.AppendLine("- Planned analysis (for variable needs only): " + Cap(d.StatisticalAnalysisPlan, 900));
+        }
+        else if (!string.IsNullOrWhiteSpace(p.ImportedProposalText))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Imported proposal (compact extract, references removed):");
+            sb.AppendLine(CompactProposalForPrompt(p.ImportedProposalText, 4000));
+        }
+
+        // Clean questionnaire / Google Form questions (already extracted locally).
         if (!string.IsNullOrWhiteSpace(extraQuestionsContext))
         {
             sb.AppendLine();
-            sb.AppendLine("Additional questionnaire / form questions to incorporate:");
+            sb.AppendLine("Questionnaire / form questions to incorporate:");
             sb.AppendLine("===== BEGIN QUESTIONS =====");
-            sb.AppendLine(extraQuestionsContext.Trim());
+            sb.AppendLine(Cap(extraQuestionsContext, 8000));
             sb.AppendLine("===== END QUESTIONS =====");
         }
+
+        // Existing variables: NAMES only (do not duplicate them).
+        if (p.Variables is { Count: > 0 })
+        {
+            sb.AppendLine();
+            sb.AppendLine("Existing variables already in the sheet (do not duplicate): "
+                + string.Join(", ", p.Variables.Where(v => !string.IsNullOrWhiteSpace(v.VariableName)).Select(v => v.VariableName.Trim()).Take(80)));
+        }
+
+        // CSV column HEADERS + inferred types only — never sample values or rows.
+        if (p.CsvSampleSummary is { Columns.Count: > 0 } csv)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Uploaded CSV column headers only (no data rows): "
+                + string.Join("; ", csv.Columns.Select(c => $"{c.Name} ({c.InferredType})")));
+        }
+
         return sb.ToString();
     }
 
@@ -1525,87 +2003,65 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         return sb.ToString();
     }
 
+    // COMPACT payload for the optional "Fix with Research AI" action. Sends ONLY
+    // what is needed to correct conflicts — never the full proposal, never CSV
+    // sample values/rows, never old generated prose. Keeps the request small so
+    // it does not time out: short project context + the sheet variables (with
+    // aliases/mappings) + CSV column HEADERS only + the active conflicts (capped
+    // at 30, summarized beyond that).
     private static string BuildFixUserPrompt(ResearchProject p, ExtractionValidationReport report)
     {
+        const int MaxConflicts = 30;
         var sb = new StringBuilder();
-        sb.AppendLine("Correct the data extraction sheet below using the validation report. Return the full corrected variable list.");
-        sb.AppendLine();
-        AppendProjectDetails(sb, p);
-        AppendExtractionContext(sb, p);
+        sb.AppendLine("Correct the data extraction sheet using ONLY the active conflicts listed below.");
+        sb.AppendLine("Return the FULL corrected variable list as JSON. Do not invent data, results, statistics, or references.");
 
+        // Short project context only (no proposal, no plan prose).
         sb.AppendLine();
-        sb.AppendLine("Current variables (JSON):");
-        sb.AppendLine(JsonSerializer.Serialize(p.Variables.Select(v => new
+        sb.AppendLine("Project context (brief):");
+        if (!string.IsNullOrWhiteSpace(p.Title)) sb.AppendLine("- Title: " + p.Title.Trim());
+        if (!string.IsNullOrWhiteSpace(p.Specialty)) sb.AppendLine("- Specialty: " + p.Specialty.Trim());
+        if (!string.IsNullOrWhiteSpace(p.StudyType)) sb.AppendLine("- Study type: " + p.StudyType.Trim());
+
+        // Sheet variables, compact — includes source-column aliases so the model
+        // understands existing CSV/form mappings.
+        sb.AppendLine();
+        sb.AppendLine("Extraction sheet variables (JSON):");
+        sb.AppendLine(JsonSerializer.Serialize((p.Variables ?? new List<ResearchVariable>()).Select(v => new
         {
-            v.VariableName, v.QuestionLabel, type = v.VariableType, measurementLevel = v.MeasurementLevel,
-            v.Role, v.Coding, v.ValueLabels, missingRule = v.MissingValueRule, v.Source, required = v.IsRequired, v.Notes
+            v.VariableName, v.QuestionLabel, type = v.VariableType, level = v.MeasurementLevel,
+            v.Role, v.Coding, aliases = v.SourceColumnAliases
         })));
 
+        // CSV COLUMN HEADERS ONLY — never sample values or rows.
+        if (p.CsvSampleSummary is { Columns.Count: > 0 } csv)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Uploaded CSV column headers only (no data rows): "
+                + string.Join(", ", csv.Columns.Select(c => c.Name)));
+        }
+
+        // Active, unresolved conflicts (errors + warnings; already filtered of
+        // ignored/resolved items). Capped and summarized past the cap.
+        var items = new List<string>();
         if (report is not null)
         {
-            sb.AppendLine();
-            sb.AppendLine("Validation report to address:");
-            foreach (var e in report.Errors) sb.AppendLine("- ERROR: " + e);
-            foreach (var w in report.Warnings) sb.AppendLine("- WARNING: " + w);
-            foreach (var s in report.Suggestions) sb.AppendLine("- SUGGESTION: " + s);
+            foreach (var er in report.Errors) items.Add("ERROR: " + er);
+            foreach (var w in report.Warnings) items.Add("WARNING: " + w);
+        }
+        sb.AppendLine();
+        if (items.Count == 0)
+        {
+            sb.AppendLine("Active conflicts: none. Return the variables unchanged.");
+        }
+        else
+        {
+            sb.AppendLine($"Active conflicts to resolve ({items.Count}{(items.Count > MaxConflicts ? $", showing first {MaxConflicts}" : "")}):");
+            foreach (var it in items.Take(MaxConflicts)) sb.AppendLine("- " + it);
+            if (items.Count > MaxConflicts)
+                sb.AppendLine($"- …and {items.Count - MaxConflicts} more similar items — apply the same kinds of corrections to them.");
         }
         return sb.ToString();
-    }
-
-    // Appends the imported proposal, accepted plan, CSV column summary, existing
-    // variables, and Google Form link — everything the sheet should be built from.
-    // The CSV summary is columns/types/counts only; the full data is never sent.
-    private static void AppendExtractionContext(StringBuilder sb, ResearchProject p)
-    {
-        if (!string.IsNullOrWhiteSpace(p.ImportedProposalText))
-        {
-            sb.AppendLine();
-            sb.AppendLine("Imported proposal (extract variables consistent with it):");
-            sb.AppendLine("===== BEGIN PROPOSAL =====");
-            sb.AppendLine(p.ImportedProposalText.Trim());
-            sb.AppendLine("===== END PROPOSAL =====");
-        }
-
-        if (p.Plan is not null)
-        {
-            void Line(string label, string val) { if (!string.IsNullOrWhiteSpace(val)) sb.AppendLine("- " + label + ": " + val.Trim()); }
-            sb.AppendLine();
-            sb.AppendLine("Accepted research plan:");
-            Line("Research question", p.Plan.ResearchQuestion);
-            Line("Study design", p.Plan.StudyDesign);
-            Line("Primary objective", p.Plan.PrimaryObjective);
-            Line("Secondary objectives", p.Plan.SecondaryObjectives);
-            Line("Main variables", p.Plan.MainVariables);
-            Line("Inclusion criteria", p.Plan.InclusionCriteria);
-            Line("Exclusion criteria", p.Plan.ExclusionCriteria);
-        }
-        else if (p.Recommendations is { HasStructuredContent: true })
-        {
-            var r = p.Recommendations;
-            sb.AppendLine();
-            sb.AppendLine("Accepted AI recommendations (variables to align with):");
-            foreach (var v in r.SuggestedVariables)
-                sb.AppendLine("    • " + v.HeaderDisplay + " (" + Or2(v.Role, "role?") + ", " + Or2(v.VariableType, "type?") + ")");
-        }
-
-        if (p.CsvSampleSummary is { Columns.Count: > 0 })
-        {
-            sb.AppendLine();
-            sb.AppendLine($"Uploaded CSV sample summary ({p.CsvSampleSummary.TotalRows} rows, columns/types only — no raw data):");
-            foreach (var c in p.CsvSampleSummary.Columns)
-            {
-                string samples = c.SampleValues.Count > 0 ? "; examples: " + string.Join(", ", c.SampleValues.Take(5)) : "";
-                sb.AppendLine($"    • {c.Name} — type~{c.InferredType}, {c.UniqueCount} unique, {c.MissingPercent}% missing{samples}");
-            }
-        }
-
-        if (p.Variables is { Count: > 0 })
-        {
-            sb.AppendLine();
-            sb.AppendLine("Existing variables already in the sheet (keep and improve, do not duplicate):");
-            foreach (var v in p.Variables)
-                sb.AppendLine($"    • {Or2(v.VariableName, "(unnamed)")} — {Or2(v.VariableType, "type?")}, {Or2(v.Role, "role?")}");
-        }
     }
 
     private static string Or2(string v, string fallback) => string.IsNullOrWhiteSpace(v) ? fallback : v.Trim();
@@ -1622,6 +2078,9 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         // primarily on it — derive the research question, objectives, variables,
         // analyses, methods, criteria, and ethics from the proposal itself, not
         // just the raw project fields. Still extraction-based: nothing invented.
+        // The proposal is compacted first (references/DOIs/bibliography removed,
+        // length-capped) so regeneration stays fast and does not time out — those
+        // sections are never needed to produce methodological recommendations.
         if (!string.IsNullOrWhiteSpace(p.ImportedProposalText))
         {
             sb.AppendLine();
@@ -1630,11 +2089,47 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
                 + "inclusion/exclusion criteria, and ethics from THIS proposal and stay consistent with it. "
                 + "Do not invent anything that is not supported by the proposal or the project details.");
             sb.AppendLine("===== BEGIN EXISTING PROPOSAL =====");
-            sb.AppendLine(p.ImportedProposalText.Trim());
+            sb.AppendLine(CompactProposalForPrompt(p.ImportedProposalText, 12000));
             sb.AppendLine("===== END EXISTING PROPOSAL =====");
         }
 
         return sb.ToString();
+    }
+
+    // Lightweight, deterministic compaction used before sending an imported
+    // proposal to the model: drops the References/Bibliography section and any
+    // DOI/URL-heavy citation lines, collapses blank runs, and caps the length.
+    // Reduces token load (faster, avoids timeouts) without losing the study's
+    // methods/objectives — references are never needed for recommendations.
+    private static string CompactProposalForPrompt(string raw, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var lines = raw.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var kept = new List<string>(lines.Length);
+        var headingRe = new System.Text.RegularExpressions.Regex(
+            @"^\s*(?:\d+[\.\)]\s*)?(references|reference list|bibliography|works cited|literature cited|citations)\s*:?\s*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        foreach (var line in lines)
+        {
+            if (headingRe.IsMatch(line)) break;   // cut everything from References on
+            string t = line.Trim();
+            if (t.IndexOf("doi.org", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bdoi\s*:", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) continue;
+            var urls = System.Text.RegularExpressions.Regex.Matches(t, @"https?://\S+|www\.\S+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (urls.Count > 0)
+            {
+                int urlChars = 0;
+                foreach (System.Text.RegularExpressions.Match m in urls) urlChars += m.Value.Length;
+                int nonSpace = t.Count(c => !char.IsWhiteSpace(c));
+                if (nonSpace > 0 && (double)urlChars / nonSpace >= 0.5) continue;
+            }
+            kept.Add(line);
+        }
+
+        string result = System.Text.RegularExpressions.Regex.Replace(string.Join("\n", kept), @"(\r?\n){3,}", "\n\n").Trim();
+        if (result.Length > maxChars) result = result.Substring(0, maxChars).TrimEnd();
+        return result;
     }
 
     private static string BuildProposalUserPrompt(ResearchProject p, ResearchRecommendations? rec)
@@ -1750,6 +2245,7 @@ public interface IResearchRecommendationParser
     bool TryParseProposal(string text, out ResearchProposalDraft proposal);
     bool TryParseExtraction(string text, out ProposalExtractionResult extraction);
     bool TryParseExtractionSheet(string text, out ExtractionSheetResult sheet);
+    bool TryParseConflictFixes(string text, out ConflictFixResult fixes);
 }
 
 public sealed class ResearchRecommendationParser : IResearchRecommendationParser
@@ -2059,6 +2555,70 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
         return false;
     }
 
+    // Parses the structured per-conflict fix proposals. Unknown actions are
+    // normalized to "no_safe_fix" (needs manual review) — the parser never
+    // invents a fix the model did not clearly propose. Any sample rows, counts,
+    // or statistics the model might add are simply not mapped (discarded).
+    public bool TryParseConflictFixes(string text, out ConflictFixResult fixes)
+    {
+        fixes = new ConflictFixResult();
+        var allowedActions = new[]
+        {
+            "add_variable", "map_csv_column_to_variable", "rename_variable",
+            "add_alias", "update_coding", "mark_resolved", "ignore", "no_safe_fix"
+        };
+
+        foreach (string json in ExtractJsonCandidates(text))
+        {
+            try
+            {
+                var dto = JsonSerializer.Deserialize<ConflictFixesDto>(json, Opts);
+                if (dto?.Fixes is null) continue;
+
+                var r = new ConflictFixResult { Warnings = CleanList(dto.Warnings) };
+                foreach (var f in dto.Fixes)
+                {
+                    if (f is null) continue;
+                    string key = Clean(f.ConflictKey);
+                    if (key.Length == 0) continue;
+
+                    string action = Clean(f.Action).ToLowerInvariant().Replace(' ', '_');
+                    if (!allowedActions.Contains(action)) action = "no_safe_fix";
+
+                    string confidence = Clean(f.Confidence).ToLowerInvariant();
+                    if (confidence is not ("high" or "medium" or "low")) confidence = "low";
+
+                    string category = Clean(f.Category).ToLowerInvariant().Replace(' ', '_');
+                    if (category is not ("safe_fix" or "safe_ignore" or "manual_review" or "no_safe_fix")) category = "";
+
+                    r.Fixes.Add(new ConflictFixProposal
+                    {
+                        ConflictKey = key,
+                        ConflictTitle = Clean(f.ConflictTitle),
+                        Action = action,
+                        Category = category,
+                        Explanation = Clean(f.Explanation),
+                        Confidence = confidence,
+                        TargetVariable = Clean(f.TargetVariable),
+                        TargetColumn = Clean(f.TargetColumn),
+                        ProposedValue = Clean(f.ProposedValue)
+                    });
+                }
+
+                if (r.Fixes.Count > 0)
+                {
+                    fixes = r;
+                    return true;
+                }
+            }
+            catch
+            {
+                // Not this candidate — try the next one.
+            }
+        }
+        return false;
+    }
+
     // Snaps a free-text option to the nearest allowed value (case-insensitive,
     // then substring), falling back to a safe default. Keeps the sheet's combo
     // columns valid even if the model returns a slightly different spelling.
@@ -2242,5 +2802,24 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
         [JsonPropertyName("source")] public string? Source { get; set; }
         [JsonPropertyName("required")] public bool? Required { get; set; }
         [JsonPropertyName("notes")] public string? Notes { get; set; }
+    }
+
+    private sealed class ConflictFixesDto
+    {
+        [JsonPropertyName("fixes")] public List<ConflictFixDto?>? Fixes { get; set; }
+        [JsonPropertyName("warnings")] public List<string>? Warnings { get; set; }
+    }
+
+    private sealed class ConflictFixDto
+    {
+        [JsonPropertyName("conflictKey")] public string? ConflictKey { get; set; }
+        [JsonPropertyName("conflictTitle")] public string? ConflictTitle { get; set; }
+        [JsonPropertyName("category")] public string? Category { get; set; }
+        [JsonPropertyName("action")] public string? Action { get; set; }
+        [JsonPropertyName("explanation")] public string? Explanation { get; set; }
+        [JsonPropertyName("confidence")] public string? Confidence { get; set; }
+        [JsonPropertyName("targetVariable")] public string? TargetVariable { get; set; }
+        [JsonPropertyName("targetColumn")] public string? TargetColumn { get; set; }
+        [JsonPropertyName("proposedValue")] public string? ProposedValue { get; set; }
     }
 }

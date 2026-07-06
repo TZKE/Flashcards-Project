@@ -1397,7 +1397,9 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
                                                 <TextBlock Text="Timeout (seconds)" Style="{StaticResource FieldLabel}"/>
-                                                <TextBox x:Name="RaiTimeoutBox" Height="48" Text="180"/>
+                                                <TextBox x:Name="RaiTimeoutBox" Height="48" Text="900"/>
+                                                <TextBlock Text="Default 900s (15 min). Complex tasks may take longer — raise up to 2700s (45 min) if needed."
+                                                           Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="2,6,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Bottom">
                                                 <CheckBox x:Name="RaiMockToggle" Content="Use development mock (generate sample drafts offline, no backend)"
@@ -2607,7 +2609,9 @@
                                             <!-- BUILD -->
                                             <TextBlock Text="BUILD" Style="{StaticResource DxGroupLabel}"/>
                                             <WrapPanel>
-                                                <Button Style="{StaticResource DxActionPrimary}" Click="GenerateExtractionSheet_Click" ToolTip="Let Research AI build the sheet from your project, proposal, plan and sample summary">
+                                                <Button x:Name="DxGenerateAiBtn" Style="{StaticResource DxActionPrimary}" Click="GenerateExtractionSheet_Click"
+                                                        ToolTip="Let Research AI build the sheet from your research plan, proposal variable sections, and questions"
+                                                        ToolTipService.ShowOnDisabled="True">
                                                     <StackPanel Orientation="Horizontal">
                                                         <Path Data="{StaticResource IconGenerate}" Fill="White" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                                         <TextBlock Text="Generate by AI" VerticalAlignment="Center"/>
@@ -2642,12 +2646,6 @@
                                                     <StackPanel Orientation="Horizontal">
                                                         <Path Data="{StaticResource IconCheck}" Fill="{StaticResource PrimaryBrush}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
                                                         <TextBlock Text="Validate Sheet" VerticalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Style="{StaticResource DxActionSoft}" Click="OpenConflicts_Click" MinWidth="180" ToolTip="Review and resolve validation warnings and sheet/sample conflicts">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Path Data="{StaticResource IconWarn}" Fill="{StaticResource PrimaryBrush}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                                                        <TextBlock Text="Resolve Conflicts" VerticalAlignment="Center"/>
                                                     </StackPanel>
                                                 </Button>
                                                 <Button Style="{StaticResource DxActionSoft}" Click="ClearSheet_Click">
@@ -2689,7 +2687,8 @@
 
                                             <Grid>
                                                 <DataGrid x:Name="DxGrid" Style="{StaticResource ResearchDataGrid}" MaxHeight="430" Margin="0,0,0,0"
-                                                          BorderThickness="0,1,0,0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                          BorderThickness="0,1,0,0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                                          BeginningEdit="DxGrid_BeginningEdit" CellEditEnding="DxGrid_CellEditEnding">
                                                     <DataGrid.Columns>
                                                         <DataGridTextColumn Header="Variable name" Binding="{Binding VariableName}" Width="125">
                                                             <DataGridTextColumn.ElementStyle>
@@ -2803,10 +2802,15 @@
                                                             <TextBlock Text="Target sample size" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampTarget" Grid.Column="1" Text="—" Style="{StaticResource DxSumValue}"/></Grid>
                                                         <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                             <TextBlock Text="Remaining samples needed" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampRemaining" Grid.Column="1" Text="—" Style="{StaticResource DxSumValue}"/></Grid>
+                                                        <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock Text="Sample status" Style="{StaticResource DxSumLabel}"/><TextBlock x:Name="DxSampStatus" Grid.Column="1" Text="—" Style="{StaticResource DxSumValue}"/></Grid>
                                                     </StackPanel>
                                                 </Grid>
                                                 <Border x:Name="DxSampWarn" Background="{StaticResource WarningSoftBrush}" CornerRadius="9" Padding="13,10" Margin="0,12,0,0" Visibility="Collapsed">
-                                                    <TextBlock x:Name="DxSampWarnText" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                    <StackPanel>
+                                                        <TextBlock x:Name="DxSampWarnText" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                        <Button x:Name="DxUploadCompleteBtn" Content="Upload Complete CSV" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Margin="0,10,0,0" Visibility="Collapsed" Click="ImportCsv_Click"/>
+                                                    </StackPanel>
                                                 </Border>
                                             </StackPanel>
                                         </StackPanel>
@@ -3153,9 +3157,14 @@
                                             BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,16">
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="ImportValidationText" Grid.Column="0" Foreground="{StaticResource DangerBrush}"
-                                                       FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"
-                                                       Margin="0,0,14,0" Visibility="Collapsed"/>
+                                            <StackPanel Grid.Column="0" Margin="0,0,14,0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="ImportValidationText" Foreground="{StaticResource DangerBrush}"
+                                                           FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" Visibility="Collapsed"/>
+                                                <WrapPanel x:Name="ImportValidationAiActions" Visibility="Collapsed" Margin="0,8,0,0">
+                                                    <Button Content="Open Research AI Settings" Style="{StaticResource GhostButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
+                                                    <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
+                                                </WrapPanel>
+                                            </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                                 <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelImportProposal_Click"/>
                                                 <Button x:Name="AnalyzeProposalBtn" Style="{StaticResource PremiumButton}" Margin="0" Click="AnalyzeProposal_Click">
@@ -3523,41 +3532,126 @@
                         </Grid>
 
                         <!-- ============================================ -->
-                        <!-- REVIEW AI FIXES overlay (Phase 3)            -->
+                        <!-- REVIEW AI CONFLICT FIXES overlay (Phase 3 final) -->
+                        <!-- One proposal per conflict: accept / edit / delete each before applying. -->
                         <!-- ============================================ -->
                         <Grid x:Name="ExtractionFixReviewOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="56">
-                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="620" MaxHeight="600" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Border Style="{StaticResource CardBorder}" Padding="0" Width="760" MaxHeight="640" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <Grid>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <StackPanel Margin="26,24,26,8">
-                                        <TextBlock Text="Review AI Fixes" Style="{StaticResource SectionHeader}"/>
-                                        <TextBlock Text="Research AI proposes these corrections to your sheet. Review them, then apply or cancel." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,6,20,0">
+                                    <Grid Margin="26,24,26,8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel>
-                                            <TextBlock Text="Proposed changes" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
-                                            <ItemsControl x:Name="DxFixSummaryList">
-                                                <ItemsControl.ItemTemplate><DataTemplate>
-                                                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
-                                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"/>
-                                                    </Border>
-                                                </DataTemplate></ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <StackPanel x:Name="DxFixWarningsSection" Visibility="Collapsed" Margin="0,10,0,0">
-                                                <TextBlock Text="Notes" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,6"/>
+                                            <TextBlock Text="Review Research AI Conflict Cleanup" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Grouped by how Research AI triaged each conflict. Tick the ones to apply, edit any value, or remove proposals you disagree with. Nothing changes until you confirm."
+                                                       Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" MaxWidth="520"/>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" VerticalAlignment="Top" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Padding="12,6">
+                                            <TextBlock x:Name="DxFixCountText" Text="0 proposals" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
+                                        </Border>
+                                    </Grid>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="26,4,20,0">
+                                        <StackPanel>
+                                            <StackPanel x:Name="DxFixWarningsSection" Visibility="Collapsed" Margin="0,0,0,10">
                                                 <ItemsControl x:Name="DxFixWarningsList">
                                                     <ItemsControl.ItemTemplate><DataTemplate>
-                                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                                        <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
+                                                            <TextBlock Text="{Binding}" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                        </Border>
                                                     </DataTemplate></ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </StackPanel>
+                                            <ItemsControl x:Name="DxFixProposalsList">
+                                                <ItemsControl.GroupStyle>
+                                                    <GroupStyle>
+                                                        <GroupStyle.HeaderTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{StaticResource SoftCardBrush}" CornerRadius="7" Padding="12,7" Margin="0,4,0,8">
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource TextBrush}"/>
+                                                                        <TextBlock Text="{Binding ItemCount, StringFormat=' ({0})'}" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource MutedBrush}"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </GroupStyle.HeaderTemplate>
+                                                    </GroupStyle>
+                                                </ItemsControl.GroupStyle>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,0,8">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox IsChecked="{Binding Accepted, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                          IsEnabled="{Binding IsApplicable}" VerticalAlignment="Top" Margin="0,2,12,0"/>
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBlock Text="{Binding ConflictTitle}" FontWeight="Bold" FontSize="12.5" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                                                        <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="7" Padding="8,3" Margin="0,0,6,0">
+                                                                            <TextBlock Text="{Binding ActionDisplay}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
+                                                                        </Border>
+                                                                        <Border x:Name="ConfChip" Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="7" Padding="8,3" Margin="0,0,6,0">
+                                                                            <TextBlock Text="{Binding ConfidenceDisplay}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                        </Border>
+                                                                        <TextBlock Text="{Binding TargetDisplay}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding Explanation}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                                                    <StackPanel x:Name="ValueRow" Orientation="Horizontal" Margin="0,7,0,0">
+                                                                        <TextBlock Text="Value:" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                        <TextBox Text="{Binding ProposedValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                 Width="300" Height="30" MinHeight="30" FontSize="12" VerticalContentAlignment="Center"/>
+                                                                    </StackPanel>
+                                                                </StackPanel>
+                                                                <Button Grid.Column="2" Style="{StaticResource GhostButton}" Content="Remove" MinWidth="76" Height="30" MinHeight="30"
+                                                                        FontSize="11.5" VerticalAlignment="Top" Foreground="{StaticResource DangerBrush}" Click="ConflictFixRemove_Click"/>
+                                                            </Grid>
+                                                        </Border>
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding Confidence}" Value="high">
+                                                                <Setter TargetName="ConfChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsApplicable}" Value="False">
+                                                                <Setter TargetName="ValueRow" Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </DataTemplate.Triggers>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
                                         </StackPanel>
                                     </ScrollViewer>
-                                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="26,12,26,22">
-                                        <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="110" Click="ExtractionFixCancel_Click"/>
-                                        <Button Style="{StaticResource PremiumButton}" Content="Apply Fixes" MinWidth="150" Margin="0" Click="ExtractionFixApply_Click"/>
-                                    </StackPanel>
+                                    <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="26,12,26,16">
+                                        <StackPanel>
+                                            <WrapPanel Margin="0,0,0,8">
+                                                <Button Style="{StaticResource SoftButton}" Content="Accept all high-confidence safe fixes" MinWidth="230" Margin="0,0,10,6" Click="ConflictFixAcceptHighSafe_Click"/>
+                                                <Button Style="{StaticResource SoftButton}" Content="Accept all safe ignores" MinWidth="170" Margin="0,0,10,6" Click="ConflictFixAcceptIgnores_Click"/>
+                                            </WrapPanel>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="100" Margin="0,0,10,0" Click="ExtractionFixCancel_Click"/>
+                                                <Button Style="{StaticResource PremiumButton}" Content="Apply selected" MinWidth="150" Margin="0" Click="ExtractionFixApply_Click"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
                                 </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ============================================ -->
+                        <!-- AI CLEANUP SUMMARY modal (before applying)   -->
+                        <!-- Sits above the review overlay (Z57) so Go Back returns to it. -->
+                        <!-- ============================================ -->
+                        <Grid x:Name="AiCleanupSummaryOverlay" Grid.RowSpan="3" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="59">
+                            <Border Style="{StaticResource CardBorder}" Padding="28" Width="500" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <StackPanel>
+                                    <TextBlock Text="Research AI cleanup summary" Style="{StaticResource SectionHeader}" FontSize="16"/>
+                                    <TextBlock x:Name="AiCleanupSummaryText" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                    <TextBlock Text="Nothing will change until you confirm." Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <WrapPanel HorizontalAlignment="Right" Margin="0,20,0,0">
+                                        <Button Style="{StaticResource GhostButton}" Content="Cancel" MinWidth="100" Margin="0,0,10,6" Click="AiCleanupCancel_Click"/>
+                                        <Button Style="{StaticResource SoftButton}" Content="Go Back" MinWidth="110" Margin="0,0,10,6" Click="AiCleanupGoBack_Click"/>
+                                        <Button Style="{StaticResource PremiumButton}" Content="Confirm and Apply" MinWidth="170" Margin="0,0,0,6" Click="AiCleanupConfirm_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
                             </Border>
                         </Grid>
 
@@ -3644,6 +3738,24 @@
                                                     <TextBlock x:Name="DxConflictEmptyText" Text="No conflicts detected." Foreground="{StaticResource SuccessBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="600"/>
                                                 </StackPanel>
                                             </Border>
+
+                                            <!-- Fix with Research AI timeout/failure — stays inside the modal; clears nothing -->
+                                            <Border x:Name="DxConflictAiTimeout" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="16,14" Visibility="Collapsed" Margin="0,0,0,10">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="{StaticResource IconWarn}" Fill="{StaticResource WarningBrush}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                                        <TextBlock x:Name="DxConflictAiTimeoutText" Text="Research AI timed out while proposing conflict fixes. You can still resolve conflicts manually." Foreground="{StaticResource WarningBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="600"/>
+                                                    </StackPanel>
+                                                    <WrapPanel Margin="0,10,0,0">
+                                                        <Button Style="{StaticResource ConflictBtn}" Content="Retry AI Fix" Click="ConflictAiRetry_Click"/>
+                                                        <Button Style="{StaticResource ConflictBtn}" Content="Continue Manually" Click="ConflictAiContinueManually_Click"/>
+                                                        <Button Style="{StaticResource ConflictBtn}" Content="Open Research AI Settings" Click="OpenResearchAiSettings_Click"/>
+                                                        <Button Style="{StaticResource ConflictGhostBtn}" Content="Open details" Click="ShowAiDiagnostics_Click"/>
+                                                        <Button Style="{StaticResource ConflictGhostBtn}" Content="Close" Click="ConflictCloseAfterTimeout_Click"/>
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Border>
+
                                             <ItemsControl x:Name="ConflictList">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
@@ -3823,6 +3935,100 @@
                                TextAlignment="Center"
                                TextWrapping="Wrap"
                                Margin="0,12,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============================================ -->
+        <!-- RESEARCH AI — long-running work overlay      -->
+        <!-- Blocking, stays in front of the user (no background mode). -->
+        <!-- Shows a simple step checklist + elapsed timer + Cancel only. -->
+        <!-- ============================================ -->
+        <Grid x:Name="AiWorkingOverlay" Background="#88000000" Visibility="Collapsed" Panel.ZIndex="150">
+            <Border Background="{StaticResource CardBrush}" CornerRadius="20" Padding="34" Width="460"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
+                            <Path Data="{StaticResource IconBolt}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock x:Name="AiWorkTitleText" Text="Research AI is working" Style="{StaticResource SectionHeader}" FontSize="17"/>
+                            <TextBlock x:Name="AiWorkActionText" Text="Working…" Foreground="{StaticResource MutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Elapsed timer -->
+                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="14,10" Margin="0,16,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Elapsed time" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="AiWorkElapsedText" Grid.Column="1" Text="0:00" FontSize="15" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Step checklist: pending ○ / current ● / done ✓ -->
+                    <ItemsControl x:Name="AiWorkStepsList" Margin="4,14,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,3,0,3">
+                                    <TextBlock x:Name="StepGlyph" Text="{Binding Glyph}" Width="24" FontSize="13.5" FontWeight="Bold"
+                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="StepLabel" Text="{Binding Label}" FontSize="13"
+                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding State}" Value="Done">
+                                        <Setter TargetName="StepGlyph" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                        <Setter TargetName="StepLabel" Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding State}" Value="Current">
+                                        <Setter TargetName="StepGlyph" Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                        <Setter TargetName="StepLabel" Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                        <Setter TargetName="StepLabel" Property="FontWeight" Value="Bold"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="This may take several minutes for complex research tasks. Please keep the app open."
+                               Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
+
+                    <Border x:Name="AiWorkStillWorkingNote" Background="{StaticResource WarningSoftBrush}" CornerRadius="9" Padding="12,10" Margin="0,10,0,0" Visibility="Collapsed">
+                        <TextBlock Text="Still working — complex research tasks can take several minutes. Your content is safe; no need to restart." Foreground="{StaticResource WarningBrush}" FontSize="12" TextWrapping="Wrap"/>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource PremiumButton}" Background="{StaticResource DangerBrush}" Content="Cancel" MinWidth="110" Margin="0" Click="AiWorkCancel_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============================================ -->
+        <!-- RESEARCH AI — failure/timeout-after-max-duration overlay -->
+        <!-- Generic and reusable: Retry re-invokes whatever action failed via a -->
+        <!-- stored delegate (smart retry — never resends raw/huge data since -->
+        <!-- each action's retry re-runs the SAME compact-input pipeline). -->
+        <!-- ============================================ -->
+        <Grid x:Name="AiFailureOverlay" Background="#8A1B1B2A" Visibility="Collapsed" Panel.ZIndex="151">
+            <Border Style="{StaticResource CardBorder}" Padding="28" Width="480" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="42" Height="42" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Margin="0,0,13,0">
+                            <Path Data="{StaticResource IconWarn}" Fill="{StaticResource WarningBrush}" Width="19" Height="19" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="Research AI" Style="{StaticResource SectionHeader}" FontSize="16" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock x:Name="AiFailureMessageText" Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                    <WrapPanel Margin="0,18,0,0">
+                        <Button Style="{StaticResource PremiumButton}" Content="Retry" MinWidth="100" Margin="0,0,10,6" Click="AiFailureRetry_Click"/>
+                        <Button Style="{StaticResource SoftButton}" Content="Continue Manually" MinWidth="150" Margin="0,0,10,6" Click="AiFailureContinueManually_Click"/>
+                        <Button Style="{StaticResource SoftButton}" Content="Open Research AI Settings" MinWidth="180" Margin="0,0,10,6" Click="AiFailureOpenSettings_Click"/>
+                        <Button Style="{StaticResource GhostButton}" Content="Open details" MinWidth="100" Margin="0,0,10,6" Click="ShowAiDiagnostics_Click"/>
+                        <Button Style="{StaticResource GhostButton}" Content="Close" MinWidth="90" Margin="0,0,0,6" Click="AiFailureContinueManually_Click"/>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
         </Grid>
