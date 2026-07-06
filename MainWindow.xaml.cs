@@ -6898,46 +6898,205 @@ public sealed partial class MainWindow : Window
             var result = await _researchAi.SuggestConflictFixesAsync(p, inputs, ct);
             AiWorkAdvance();   // fixes received + parsed → validating
 
-            // One proposal per known conflict; drop any proposal whose echoed key
-            // we never sent. Belt-and-braces: a blocker (incomplete sample) can
-            // never be presented as safe_ignore/mark_resolved even if the model
-            // tried — force it to manual_review.
-            _fixProposals.Clear();
-            foreach (var f in result.Fixes.Where(f => _fixSentKeys.Contains(f.ConflictKey)))
+            if (PresentFixProposals(p, result, isLocalFallback: false))
             {
-                if (IsNonIgnorableKey(f.ConflictKey) && f.EffectiveCategory is not "manual_review")
-                {
-                    f.Category = "manual_review";
-                    f.Action = "no_safe_fix";
-                    if (string.IsNullOrWhiteSpace(f.Explanation))
-                        f.Explanation = "More samples are required before statistics can be run.";
-                }
-                f.Accepted = f.DefaultSelected;   // pre-select high-confidence safe fixes + safe ignores
-                _fixProposals.Add(f);
+                await CompleteAiWorkAsync();
             }
-
-            if (_fixProposals.Count == 0)
-                throw new ResearchAiException("Research AI did not return usable conflict fixes. Please retry or resolve the conflicts manually.", category: "parse_failure");
-            AiWorkAdvance();   // validated → preparing review
-
-            EnsureFixProposalsGrouped();
-            int manual = _fixProposals.Count(f => f.EffectiveCategory is "manual_review" or "no_safe_fix");
-            DxFixCountText.Text = (_fixProposals.Count == 1 ? "1 proposal" : $"{_fixProposals.Count} proposals")
-                + (manual > 0 ? $" · {manual} need review" : "");
-            if (result.Warnings.Count > 0) { DxFixWarningsList.ItemsSource = result.Warnings; DxFixWarningsSection.Visibility = Visibility.Visible; }
-            else DxFixWarningsSection.Visibility = Visibility.Collapsed;
-
-            ExtractionFixReviewOverlay.Visibility = Visibility.Visible;
-            FadeIn(ExtractionFixReviewOverlay, 150);
-            await CompleteAiWorkAsync();
+            else
+            {
+                // Provider replied, but nothing usable survived filtering — offer
+                // safe local suggestions rather than dropping the student.
+                ShowLocalFixFallback(p, inputs,
+                    "Research AI did not return usable conflict fixes, so the app prepared safe local cleanup suggestions instead.");
+            }
         }
         catch (OperationCanceledException)
         {
             ShowToast("Cancelled. Your existing content was kept.");
         }
-        catch (ResearchAiException ex) { HandleFixFailure(ex.Message, ex.Diagnostics, ex.IsTimeout); }
-        catch (Exception) { HandleFixFailure("Research AI could not suggest fixes. Please try again.", null, isTimeout: false); }
+        catch (ResearchAiException ex)
+        {
+            // Never dead-end. A missing key is a real config problem the student
+            // must fix, so keep the retry/manual banner for "auth". Every other
+            // failure (parse_failure, empty_response, provider_error, timeout,
+            // network, overload…) falls back to safe LOCAL cleanup suggestions
+            // shown in the same review screen, with the diagnostics still available.
+            _lastAiDiagnostics = ex.Diagnostics;
+            if (ex.Category == "auth")
+                HandleFixFailure(ex.Message, ex.Diagnostics, ex.IsTimeout);
+            else
+                ShowLocalFixFallback(p, inputs, LocalFallbackMessage(ex.Category));
+        }
+        catch (Exception)
+        {
+            ShowLocalFixFallback(p, inputs,
+                "Research AI could not suggest fixes, so the app prepared safe local cleanup suggestions instead.");
+        }
         finally { EndAiWork(); }
+    }
+
+    // Wording for the toast shown when local cleanup suggestions replace a failed
+    // Research AI response. Category-specific so the student knows what happened.
+    private static string LocalFallbackMessage(string? category) => category switch
+    {
+        "parse_failure" => "Research AI response could not be parsed, so the app prepared safe local cleanup suggestions instead.",
+        "empty_response" => "Research AI returned an empty response, so the app prepared safe local cleanup suggestions instead.",
+        "timeout" => "Research AI did not finish in time, so the app prepared safe local cleanup suggestions instead.",
+        "network" => "Research AI could not be reached, so the app prepared safe local cleanup suggestions instead.",
+        _ => "Research AI could not suggest fixes, so the app prepared safe local cleanup suggestions instead."
+    };
+
+    // Fills the review list from a fix result (AI or local), applying the same
+    // guards for both: keep only proposals for conflicts we actually sent, force
+    // hard blockers to manual_review, and pre-select the high-confidence safe
+    // items. Toggles the "Local cleanup suggestions" label. Returns false when
+    // nothing usable remains, so the caller can offer a local fallback instead.
+    private bool PresentFixProposals(ResearchProject p, ConflictFixResult result, bool isLocalFallback)
+    {
+        _fixProposals.Clear();
+        foreach (var f in (result?.Fixes ?? new List<ConflictFixProposal>()).Where(f => _fixSentKeys.Contains(f.ConflictKey)))
+        {
+            // Belt-and-braces: a blocker (incomplete sample) can never be
+            // presented as safe_ignore/mark_resolved even if the model tried.
+            if (IsNonIgnorableKey(f.ConflictKey) && f.EffectiveCategory is not "manual_review")
+            {
+                f.Category = "manual_review";
+                f.Action = "no_safe_fix";
+                if (string.IsNullOrWhiteSpace(f.Explanation))
+                    f.Explanation = "More samples are required before statistics can be run.";
+            }
+            f.Accepted = f.DefaultSelected;   // pre-select high-confidence safe fixes + safe ignores
+            _fixProposals.Add(f);
+        }
+
+        if (_fixProposals.Count == 0) return false;
+
+        EnsureFixProposalsGrouped();
+        int manual = _fixProposals.Count(f => f.EffectiveCategory is "manual_review" or "no_safe_fix");
+        DxFixCountText.Text = (_fixProposals.Count == 1 ? "1 proposal" : $"{_fixProposals.Count} proposals")
+            + (manual > 0 ? $" · {manual} need review" : "");
+
+        DxFixSourceLabel.Text = "Local cleanup suggestions";
+        DxFixSourceLabel.Visibility = isLocalFallback ? Visibility.Visible : Visibility.Collapsed;
+
+        var warnings = result?.Warnings ?? new List<string>();
+        if (warnings.Count > 0) { DxFixWarningsList.ItemsSource = warnings; DxFixWarningsSection.Visibility = Visibility.Visible; }
+        else DxFixWarningsSection.Visibility = Visibility.Collapsed;
+
+        ExtractionFixReviewOverlay.Visibility = Visibility.Visible;
+        FadeIn(ExtractionFixReviewOverlay, 150);
+        return true;
+    }
+
+    // Builds safe, deterministic local cleanup suggestions and shows them in the
+    // SAME review screen, labeled "Local cleanup suggestions". If even the local
+    // logic produces nothing (or anything goes wrong), keep the non-destructive
+    // manual banner so the student is never dropped out of the workflow.
+    private void ShowLocalFixFallback(ResearchProject p, List<ConflictFixInput> inputs, string message)
+    {
+        try
+        {
+            var local = BuildLocalConflictFallback(p, inputs);
+            if (PresentFixProposals(p, local, isLocalFallback: true))
+                ShowToast(message);
+            else
+                HandleFixFailure("Research AI could not suggest fixes. You can resolve the conflicts manually.", _lastAiDiagnostics, isTimeout: false);
+        }
+        catch
+        {
+            HandleFixFailure("Research AI could not suggest fixes. You can resolve the conflicts manually.", _lastAiDiagnostics, isTimeout: false);
+        }
+    }
+
+    private static readonly string[] RoutineMetadataColumns =
+        { "timestamp", "username", "email address", "email", "score" };
+
+    // Google Form / system columns that are routinely safe to ignore for analysis.
+    private static bool IsRoutineMetadataColumn(string columnName)
+    {
+        string c = (columnName ?? "").Trim().ToLowerInvariant();
+        if (c.Length == 0) return false;
+        if (RoutineMetadataColumns.Contains(c)) return true;
+        return c.Contains("google form") || c.Contains("form response");
+    }
+
+    // Deterministic, conservative local fallback: ONLY two kinds of automatic
+    // suggestions — ignore routine form/system metadata, and alias a CSV column
+    // that clearly matches an existing variable. Everything else (coding/type
+    // issues, sheet-only variables, plan suggestions, unmatched columns) is left
+    // for manual review, and the hard blockers (incomplete sample size, missing
+    // outcome, and any non-ignorable key) are NEVER locally ignored.
+    private ConflictFixResult BuildLocalConflictFallback(ResearchProject p, List<ConflictFixInput> inputs)
+    {
+        var result = new ConflictFixResult
+        {
+            Warnings = { "These are safe local cleanup suggestions prepared by the app — not Research AI output. Only routine metadata and clear column matches are proposed automatically; anything that could affect your statistics is left for manual review." }
+        };
+
+        foreach (var c in inputs ?? new List<ConflictFixInput>())
+        {
+            string col = (c.ColumnName ?? "").Trim();
+            string varName = (c.VariableName ?? "").Trim();
+
+            // Hard blockers are NEVER auto-ignored — always manual review.
+            if (IsNonIgnorableKey(c.ConflictKey) || c.Kind is "SampleIncomplete" or "Outcome")
+            {
+                result.Fixes.Add(new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title,
+                    Category = "manual_review", Action = "no_safe_fix", Confidence = "high",
+                    TargetVariable = varName, TargetColumn = col,
+                    Explanation = c.Kind == "SampleIncomplete"
+                        ? "More samples are required before statistics can be run — this cannot be ignored or auto-resolved."
+                        : c.Kind == "Outcome"
+                            ? "A primary outcome variable is needed — decide which variable answers your research question."
+                            : "This may affect your statistics — please review it manually."
+                });
+                continue;
+            }
+
+            // Routine Google Form / system metadata columns are safe to ignore.
+            if (c.Kind == "CsvOnly" && IsRoutineMetadataColumn(col))
+            {
+                result.Fixes.Add(new ConflictFixProposal
+                {
+                    ConflictKey = c.ConflictKey, ConflictTitle = c.Title,
+                    Category = "safe_ignore", Action = "ignore", Confidence = "high",
+                    TargetColumn = col,
+                    Explanation = "Routine form/system column (e.g. Timestamp, Username, Email Address, Score) — safe to ignore for analysis."
+                });
+                continue;
+            }
+
+            // A CSV column whose header clearly matches an existing variable → alias.
+            if (c.Kind == "CsvOnly" && col.Length > 0)
+            {
+                string norm = NormalizeLabel(col);
+                var matchVar = _extractionVariables.FirstOrDefault(v => VariableMatchesColumnFuzzy(v, norm));
+                if (matchVar is not null)
+                {
+                    result.Fixes.Add(new ConflictFixProposal
+                    {
+                        ConflictKey = c.ConflictKey, ConflictTitle = c.Title,
+                        Category = "safe_fix", Action = "add_alias", Confidence = "medium",
+                        TargetVariable = matchVar.VariableName, TargetColumn = col, ProposedValue = col,
+                        Explanation = $"The CSV column “{col}” matches “{matchVar.VariableName.Trim()}” — add it as an alias so they map together."
+                    });
+                    continue;
+                }
+            }
+
+            // Everything else → manual review (never a guessed or unsafe fix).
+            result.Fixes.Add(new ConflictFixProposal
+            {
+                ConflictKey = c.ConflictKey, ConflictTitle = c.Title,
+                Category = "manual_review", Action = "no_safe_fix", Confidence = "low",
+                TargetVariable = varName, TargetColumn = col,
+                Explanation = "No safe automatic fix — please review this conflict manually."
+            });
+        }
+
+        return result;
     }
 
     // On an AI-fix failure/timeout that started INSIDE the Resolve Conflicts modal,

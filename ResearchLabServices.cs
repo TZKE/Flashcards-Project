@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 
@@ -67,6 +68,21 @@ internal static class ResearchAiDiagnostics
         catch { /* logging must never throw */ }
         return entry;
     }
+}
+
+// Safe, content-free context about a completed provider call. Lets a caller that
+// only detects a problem AFTER the response (e.g. a JSON parse failure) still log
+// a full diagnostic — provider/model/input size/token cap/timeout/elapsed — so
+// the details panel never falls back to "n/a".
+internal readonly struct ResearchAiCallInfo
+{
+    public string Provider { get; init; }
+    public string Model { get; init; }
+    public int InputChars { get; init; }
+    public int MaxTokens { get; init; }
+    public int TimeoutSeconds { get; init; }
+    public double ElapsedSeconds { get; init; }
+    public int? StatusCode { get; init; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1391,10 +1407,14 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
             .Take(ConflictFixMaxConflicts)
             .ToList();
 
-        string text = await CompleteAsync("ConflictFixes", ConflictFixesSystemPrompt, BuildConflictFixesUserPrompt(project, prioritized), cancellationToken, maxOutputTokens: 3000);
+        var (text, info) = await CompleteWithInfoAsync("ConflictFixes", ConflictFixesSystemPrompt, BuildConflictFixesUserPrompt(project, prioritized), cancellationToken, maxOutputTokens: 3000);
         if (!_parser.TryParseConflictFixes(text, out var result) || result.Fixes.Count == 0)
         {
-            string diag = ResearchAiDiagnostics.Log("ConflictFixes", "DevZai", ResearchAiTimeouts.DefaultLongRunningSeconds, 0, parseError: "could not parse conflict fixes JSON", category: "parse_failure");
+            // Parse failed on a response we DID receive — log the real call context
+            // (model/inputChars/maxTokens/timeout/elapsed/status), not an "n/a" stub.
+            string diag = ResearchAiDiagnostics.Log("ConflictFixes", info.Provider, info.TimeoutSeconds, info.ElapsedSeconds,
+                statusCode: info.StatusCode, parseError: "could not parse conflict fixes JSON", category: "parse_failure",
+                model: info.Model, inputChars: info.InputChars, maxTokens: info.MaxTokens);
             throw new ResearchAiException("The Research AI response could not be read as conflict fixes. Please try again.", diag, category: "parse_failure");
         }
         if (conflicts.Count > prioritized.Count)
@@ -1466,6 +1486,16 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
     // the provider's generation shorter and materially reduces mid-generation
     // provider 500s on long outputs. Never one huge setting for every action.
     private async Task<string> CompleteAsync(string action, string systemPrompt, string userPrompt, CancellationToken cancellationToken,
+        int minTimeoutSeconds = ResearchAiTimeouts.DefaultLongRunningSeconds, int maxOutputTokens = 8000)
+    {
+        var (content, _) = await CompleteWithInfoAsync(action, systemPrompt, userPrompt, cancellationToken, minTimeoutSeconds, maxOutputTokens);
+        return content;
+    }
+
+    // Same as CompleteAsync but also returns safe call context, so a caller that
+    // fails to parse a SUCCESSFUL response can still emit a full diagnostic
+    // (model/inputChars/maxTokens/timeout/elapsed) instead of an "n/a" stub.
+    private async Task<(string Content, ResearchAiCallInfo Info)> CompleteWithInfoAsync(string action, string systemPrompt, string userPrompt, CancellationToken cancellationToken,
         int minTimeoutSeconds = ResearchAiTimeouts.DefaultLongRunningSeconds, int maxOutputTokens = 8000)
     {
         var creds = _credentials();
@@ -1563,7 +1593,17 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         }
 
         LogCall(outcome: "success", status: (int)response.StatusCode);
-        return content;
+        var info = new ResearchAiCallInfo
+        {
+            Provider = "DevZai",
+            Model = model,
+            InputChars = inputChars,
+            MaxTokens = maxOutputTokens,
+            TimeoutSeconds = timeoutSeconds,
+            ElapsedSeconds = sw.Elapsed.TotalSeconds,
+            StatusCode = (int)response.StatusCode
+        };
+        return (content, info);
     }
 
     // Reads choices[0].message.content from a standard chat-completions body.
@@ -1824,28 +1864,36 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
         "You are resolving VALIDATION CONFLICTS in a data extraction sheet (data " +
         "dictionary) for a study that has NOT yet been run.\n\n" + ExtractionSheetSafetyRules + "\n\n" +
         "You are given the sheet's variables, the uploaded CSV column HEADERS, and " +
-        "a list of active conflicts. For EVERY conflict, propose exactly ONE fix. " +
-        "Echo each conflict's conflictKey EXACTLY as given. Allowed actions:\n" +
-        "- add_variable: a CSV column has no variable — proposedValue = new snake_case variable name, targetColumn = the CSV column.\n" +
-        "- map_csv_column_to_variable: a CSV column belongs to an existing variable — targetVariable = that variable, targetColumn = the column, proposedValue = the column header to store as an alias.\n" +
-        "- rename_variable: an invalid/duplicate variable name — targetVariable = current name, proposedValue = new snake_case name.\n" +
-        "- add_alias: like map, when the variable should keep its name but match the column — proposedValue = alias text.\n" +
-        "- update_coding: a categorical/binary/ordinal variable lacks coding — targetVariable = the variable, proposedValue = the coding (e.g. \"0 = No, 1 = Yes\").\n" +
+        "a list of active conflicts. For EVERY conflict, output exactly ONE proposal. " +
+        "Echo each conflict's conflictKey EXACTLY as given. Allowed recommendedAction values:\n" +
+        "- map_csv_column_to_variable: a CSV column belongs to an existing variable — targetVariableName = that variable, targetCsvColumn = the column, proposedValue = the column header to store as an alias.\n" +
+        "- add_alias: the variable should keep its name but match the column — targetVariableName = the variable, proposedValue = the alias text.\n" +
+        "- update_value_labels: a categorical/binary/ordinal variable lacks coding — targetVariableName = the variable, proposedValue = the coding (e.g. \"0 = No, 1 = Yes\").\n" +
         "- mark_resolved: the conflict is acceptable as-is and should stop being flagged.\n" +
-        "- ignore: the conflict is noise for this study.\n" +
-        "- no_safe_fix: you cannot safely fix it — the student must review manually. Never invent a fix.\n\n" +
+        "- ignore: the conflict is routine noise for this study (Google Form metadata / optional columns).\n" +
+        "- needs_manual_review: an important decision only the student should make — explain what they must decide. Never invent a fix.\n" +
+        "- no_safe_fix: you cannot confidently solve it.\n\n" +
         "Also classify EVERY conflict into one \"category\":\n" +
-        "- \"safe_fix\": a routine correction you are confident about (add/map/rename/add_alias/update_coding/mark_resolved).\n" +
-        "- \"safe_ignore\": routine noise that does not affect analysis — Google Form metadata (Timestamp, Username, Email Address, Score) and optional/administrative columns. Use action \"ignore\".\n" +
-        "- \"manual_review\": important issues that could affect statistics and need the student's judgement — a MISSING OUTCOME variable, a MISSING REQUIRED variable, unclear important coding, a binary variable with more than two categories, a continuous variable with non-numeric values, or an INCOMPLETE SAMPLE SIZE. Use action \"no_safe_fix\" for these and explain what the student must decide.\n" +
+        "- \"safe_fix\": a routine correction you are confident about (map_csv_column_to_variable / add_alias / update_value_labels / mark_resolved).\n" +
+        "- \"safe_ignore\": routine noise that does not affect analysis — Google Form metadata (Timestamp, Username, Email Address, Score) and optional/administrative columns. Use recommendedAction \"ignore\".\n" +
+        "- \"manual_review\": important issues that could affect statistics and need the student's judgement — a MISSING OUTCOME variable, a MISSING REQUIRED variable, unclear important coding, a binary variable with more than two categories, a continuous variable with non-numeric values, or an INCOMPLETE SAMPLE SIZE. Use recommendedAction \"needs_manual_review\" and explain what the student must decide.\n" +
         "- \"no_safe_fix\": you are unsure or cannot confidently solve it.\n\n" +
         "NEVER classify a missing outcome, a missing required variable, or an incomplete sample size as safe_ignore or mark_resolved — these are always manual_review. Never delete important variables, never invent sample data or statistics.\n\n" +
-        "Return ONLY this JSON (no markdown, no commentary):\n" +
+        "Return ONLY this strict JSON object — no prose, no markdown, no samples, no statistics:\n" +
         "{\n" +
-        "  \"fixes\": [\n" +
-        "    {\"conflictKey\":\"string\",\"conflictTitle\":\"string\",\"category\":\"safe_fix|safe_ignore|manual_review|no_safe_fix\",\"action\":\"string\",\"explanation\":\"string\",\"confidence\":\"high|medium|low\",\"targetVariable\":\"string\",\"targetColumn\":\"string\",\"proposedValue\":\"string\"}\n" +
-        "  ],\n" +
-        "  \"warnings\": [\"string\"]\n" +
+        "  \"proposals\": [\n" +
+        "    {\n" +
+        "      \"conflictKey\": \"...\",\n" +
+        "      \"originalConflictTitle\": \"...\",\n" +
+        "      \"recommendedAction\": \"ignore|add_alias|map_csv_column_to_variable|update_value_labels|mark_resolved|needs_manual_review|no_safe_fix\",\n" +
+        "      \"category\": \"safe_fix|safe_ignore|manual_review|no_safe_fix\",\n" +
+        "      \"confidence\": \"high|medium|low\",\n" +
+        "      \"explanation\": \"...\",\n" +
+        "      \"targetVariableName\": \"\",\n" +
+        "      \"targetCsvColumn\": \"\",\n" +
+        "      \"proposedValue\": \"\"\n" +
+        "    }\n" +
+        "  ]\n" +
         "}";
 
     // Compact conflict-fix user prompt: short context + compact variables + CSV
@@ -2555,54 +2603,58 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
         return false;
     }
 
-    // Parses the structured per-conflict fix proposals. Unknown actions are
-    // normalized to "no_safe_fix" (needs manual review) — the parser never
-    // invents a fix the model did not clearly propose. Any sample rows, counts,
-    // or statistics the model might add are simply not mapped (discarded).
+    // Parses the structured per-conflict fix proposals. Deliberately TOLERANT of
+    // the safe shape variations a model actually produces, because a strict
+    // one-shape parser is what made "Fix with Research AI" fail immediately:
+    //   - a raw JSON array of proposals
+    //   - an object wrapping the array under "proposals" / "fixes" / "items" /
+    //     "conflictFixes" (case-insensitive; underscores/camelCase both accepted)
+    //   - a single proposal object (wrapped into a one-item list)
+    //   - markdown code fences and extra prose before/after a valid JSON block
+    // Each field is read by alias (conflictKey/key/id, recommendedAction/action,
+    // category/group/triage, explanation/reason, targetVariableName/variable,
+    // targetCsvColumn/column, proposedValue/value) and missing optional fields
+    // fall back to safe defaults (category=manual_review, confidence=low,
+    // recommendedAction=needs_manual_review) instead of failing the whole
+    // response. Unknown actions normalize to "no_safe_fix" — the parser never
+    // invents a fix the model did not clearly propose. Sample rows, counts, or
+    // statistics the model might add are simply not mapped (discarded).
     public bool TryParseConflictFixes(string text, out ConflictFixResult fixes)
     {
         fixes = new ConflictFixResult();
-        var allowedActions = new[]
-        {
-            "add_variable", "map_csv_column_to_variable", "rename_variable",
-            "add_alias", "update_coding", "mark_resolved", "ignore", "no_safe_fix"
-        };
 
-        foreach (string json in ExtractJsonCandidates(text))
+        foreach (JsonNode node in ExtractConflictFixNodes(text))
         {
             try
             {
-                var dto = JsonSerializer.Deserialize<ConflictFixesDto>(json, Opts);
-                if (dto?.Fixes is null) continue;
+                var r = new ConflictFixResult();
+                JsonArray? items = null;
 
-                var r = new ConflictFixResult { Warnings = CleanList(dto.Warnings) };
-                foreach (var f in dto.Fixes)
+                if (node is JsonArray topArray)
                 {
-                    if (f is null) continue;
-                    string key = Clean(f.ConflictKey);
-                    if (key.Length == 0) continue;
+                    items = topArray;
+                }
+                else if (node is JsonObject obj)
+                {
+                    r.Warnings = ReadNodeStringList(obj, "warnings", "notes");
+                    items = FindProposalArray(obj);
 
-                    string action = Clean(f.Action).ToLowerInvariant().Replace(' ', '_');
-                    if (!allowedActions.Contains(action)) action = "no_safe_fix";
-
-                    string confidence = Clean(f.Confidence).ToLowerInvariant();
-                    if (confidence is not ("high" or "medium" or "low")) confidence = "low";
-
-                    string category = Clean(f.Category).ToLowerInvariant().Replace(' ', '_');
-                    if (category is not ("safe_fix" or "safe_ignore" or "manual_review" or "no_safe_fix")) category = "";
-
-                    r.Fixes.Add(new ConflictFixProposal
+                    // A single proposal object (no wrapper array) is still valid.
+                    if (items is null)
                     {
-                        ConflictKey = key,
-                        ConflictTitle = Clean(f.ConflictTitle),
-                        Action = action,
-                        Category = category,
-                        Explanation = Clean(f.Explanation),
-                        Confidence = confidence,
-                        TargetVariable = Clean(f.TargetVariable),
-                        TargetColumn = Clean(f.TargetColumn),
-                        ProposedValue = Clean(f.ProposedValue)
-                    });
+                        var single = ReadProposalNode(obj);
+                        if (single is not null) { r.Fixes.Add(single); fixes = r; return true; }
+                        continue;
+                    }
+                }
+
+                if (items is null) continue;
+
+                foreach (var el in items)
+                {
+                    if (el is not JsonObject fo) continue;
+                    var proposal = ReadProposalNode(fo);
+                    if (proposal is not null) r.Fixes.Add(proposal);
                 }
 
                 if (r.Fixes.Count > 0)
@@ -2617,6 +2669,220 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
             }
         }
         return false;
+    }
+
+    // Actions the review/apply pipeline understands. "no_safe_fix" is the
+    // non-applicable sentinel (shown as "Needs manual review").
+    private static readonly string[] ConflictFixActions =
+    {
+        "add_variable", "map_csv_column_to_variable", "rename_variable",
+        "add_alias", "update_coding", "mark_resolved", "ignore", "no_safe_fix"
+    };
+
+    // Reads one proposal object by field alias, applying safe defaults. Returns
+    // null only when there is no usable conflict key (a fix with no key can never
+    // be mapped back to a conflict, so it is dropped rather than guessed).
+    private static ConflictFixProposal? ReadProposalNode(JsonObject o)
+    {
+        string key = ReadNodeString(o, "conflictKey", "key", "id", "conflict_key", "conflictId", "conflict");
+        if (key.Length == 0) return null;
+
+        string action = NormalizeConflictAction(
+            ReadNodeString(o, "recommendedAction", "action", "recommended_action", "fix", "fixAction"));
+        string category = NormalizeConflictCategory(
+            ReadNodeString(o, "category", "group", "triage"));
+        string confidence = NormalizeConfidence(
+            ReadNodeString(o, "confidence", "confidenceLevel"));
+
+        // Default (per spec): when nothing concrete was proposed, keep it as a
+        // manual-review item rather than dropping or guessing at a fix.
+        if (category.Length == 0 && action == "no_safe_fix") category = "manual_review";
+
+        return new ConflictFixProposal
+        {
+            ConflictKey = key,
+            ConflictTitle = ReadNodeString(o, "originalConflictTitle", "conflictTitle", "title", "conflict_title"),
+            Action = action,
+            Category = category,
+            Confidence = confidence,
+            Explanation = ReadNodeString(o, "explanation", "reason", "rationale", "notes"),
+            TargetVariable = ReadNodeString(o, "targetVariableName", "targetVariable", "variable", "target_variable", "variableName"),
+            TargetColumn = ReadNodeString(o, "targetCsvColumn", "targetColumn", "column", "target_column", "csvColumn", "columnName"),
+            ProposedValue = ReadNodeString(o, "proposedValue", "value", "proposed_value", "newValue")
+        };
+    }
+
+    // Maps the model's (or a variant schema's) action label onto the internal
+    // action vocabulary the apply switch understands. "needs_manual_review" and
+    // any unrecognized value collapse to "no_safe_fix"; "update_value_labels"
+    // maps to the existing "update_coding" mutation.
+    private static string NormalizeConflictAction(string raw)
+    {
+        string a = (raw ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+        return a switch
+        {
+            "add_variable" or "add" or "create_variable" or "new_variable" => "add_variable",
+            "map_csv_column_to_variable" or "map" or "map_column" or "map_csv_column" or "match" or "match_column" => "map_csv_column_to_variable",
+            "rename_variable" or "rename" => "rename_variable",
+            "add_alias" or "alias" or "add_column_alias" => "add_alias",
+            "update_coding" or "update_value_labels" or "value_labels" or "coding" or "set_coding" or "update_codes" => "update_coding",
+            "mark_resolved" or "resolve" or "resolved" or "keep" => "mark_resolved",
+            "ignore" or "safe_ignore" or "drop" or "skip" => "ignore",
+            _ => "no_safe_fix"
+        };
+    }
+
+    private static string NormalizeConflictCategory(string raw)
+    {
+        string c = (raw ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+        return c switch
+        {
+            "safe_fix" or "safe" or "fix" => "safe_fix",
+            "safe_ignore" or "routine" => "safe_ignore",
+            "manual_review" or "manual" or "review" or "needs_manual_review" => "manual_review",
+            "no_safe_fix" or "none" => "no_safe_fix",
+            _ => ""
+        };
+    }
+
+    private static string NormalizeConfidence(string raw)
+    {
+        string c = (raw ?? "").Trim().ToLowerInvariant();
+        return c is "high" or "medium" or "low" ? c : "low";
+    }
+
+    // Finds the proposals array under any of the accepted wrapper keys
+    // (case-insensitive), then as a last resort the first array-valued property
+    // that is not the warnings list.
+    private static JsonArray? FindProposalArray(JsonObject o)
+    {
+        foreach (var name in new[] { "proposals", "fixes", "items", "conflictFixes", "conflict_fixes", "results", "data" })
+            if (TryGetNodeInsensitive(o, name, out var node) && node is JsonArray arr)
+                return arr;
+
+        foreach (var kv in o)
+            if (kv.Value is JsonArray arr2 && !string.Equals(kv.Key, "warnings", StringComparison.OrdinalIgnoreCase))
+                return arr2;
+
+        return null;
+    }
+
+    private static bool TryGetNodeInsensitive(JsonObject o, string name, out JsonNode? node)
+    {
+        foreach (var kv in o)
+        {
+            if (string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                node = kv.Value;
+                return true;
+            }
+        }
+        node = null;
+        return false;
+    }
+
+    // Reads the first present, non-empty alias as a trimmed scalar string.
+    private static string ReadNodeString(JsonObject o, params string[] names)
+    {
+        foreach (var n in names)
+        {
+            if (TryGetNodeInsensitive(o, n, out var node) && node is JsonValue)
+            {
+                string s = node!.ToString().Trim();
+                if (s.Length > 0 && !string.Equals(s, "null", StringComparison.OrdinalIgnoreCase))
+                    return s;
+            }
+        }
+        return "";
+    }
+
+    private static List<string> ReadNodeStringList(JsonObject o, params string[] names)
+    {
+        var list = new List<string>();
+        foreach (var n in names)
+        {
+            if (TryGetNodeInsensitive(o, n, out var node) && node is JsonArray arr)
+            {
+                foreach (var el in arr)
+                {
+                    string s = (el?.ToString() ?? "").Trim();
+                    if (s.Length > 0) list.Add(s);
+                }
+                if (list.Count > 0) return list;
+            }
+        }
+        return list;
+    }
+
+    // Yields every parseable JSON node found in the model text: the whole cleaned
+    // string first (the common happy path), then each balanced {...} object and
+    // [...] array, largest first. Markdown fences are stripped. Never throws.
+    private static IEnumerable<JsonNode> ExtractConflictFixNodes(string text)
+    {
+        var nodes = new List<JsonNode>();
+        if (string.IsNullOrWhiteSpace(text)) return nodes;
+
+        string cleaned = text.Replace("```json", " ", StringComparison.OrdinalIgnoreCase)
+                             .Replace("```", " ");
+
+        void TryAdd(string candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return;
+            try { if (JsonNode.Parse(candidate) is { } n) nodes.Add(n); }
+            catch { /* not valid JSON — skip */ }
+        }
+
+        TryAdd(cleaned.Trim());
+        foreach (var block in ExtractBalancedBlocks(cleaned))
+            TryAdd(block);
+
+        return nodes;
+    }
+
+    // Returns every balanced top-level {...} or [...] block in the text, largest
+    // first. Strings (and their escapes) are respected so braces/brackets inside
+    // quoted values never unbalance the scan. Never throws.
+    private static List<string> ExtractBalancedBlocks(string s)
+    {
+        var results = new List<string>();
+        if (string.IsNullOrEmpty(s)) return results;
+
+        int i = 0;
+        while (i < s.Length)
+        {
+            char open = s[i];
+            if (open != '{' && open != '[') { i++; continue; }
+            char close = open == '{' ? '}' : ']';
+
+            int depth = 0;
+            bool inString = false, escape = false;
+            int end = -1;
+            for (int j = i; j < s.Length; j++)
+            {
+                char c = s[j];
+                if (inString)
+                {
+                    if (escape) escape = false;
+                    else if (c == '\\') escape = true;
+                    else if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c == open) depth++;
+                else if (c == close)
+                {
+                    depth--;
+                    if (depth == 0) { end = j; break; }
+                }
+            }
+
+            if (end < 0) { i++; continue; }
+            results.Add(s.Substring(i, end - i + 1));
+            i = end + 1;
+        }
+
+        results.Sort((a, b) => b.Length.CompareTo(a.Length));
+        return results;
     }
 
     // Snaps a free-text option to the nearest allowed value (case-insensitive,
@@ -2804,22 +3070,4 @@ public sealed class ResearchRecommendationParser : IResearchRecommendationParser
         [JsonPropertyName("notes")] public string? Notes { get; set; }
     }
 
-    private sealed class ConflictFixesDto
-    {
-        [JsonPropertyName("fixes")] public List<ConflictFixDto?>? Fixes { get; set; }
-        [JsonPropertyName("warnings")] public List<string>? Warnings { get; set; }
-    }
-
-    private sealed class ConflictFixDto
-    {
-        [JsonPropertyName("conflictKey")] public string? ConflictKey { get; set; }
-        [JsonPropertyName("conflictTitle")] public string? ConflictTitle { get; set; }
-        [JsonPropertyName("category")] public string? Category { get; set; }
-        [JsonPropertyName("action")] public string? Action { get; set; }
-        [JsonPropertyName("explanation")] public string? Explanation { get; set; }
-        [JsonPropertyName("confidence")] public string? Confidence { get; set; }
-        [JsonPropertyName("targetVariable")] public string? TargetVariable { get; set; }
-        [JsonPropertyName("targetColumn")] public string? TargetColumn { get; set; }
-        [JsonPropertyName("proposedValue")] public string? ProposedValue { get; set; }
-    }
 }

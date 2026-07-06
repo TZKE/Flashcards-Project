@@ -3543,6 +3543,8 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="Review Research AI Conflict Cleanup" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock x:Name="DxFixSourceLabel" Text="Local cleanup suggestions" Visibility="Collapsed"
+                                                       FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,3,0,0"/>
                                             <TextBlock Text="Grouped by how Research AI triaged each conflict. Tick the ones to apply, edit any value, or remove proposals you disagree with. Nothing changes until you confirm."
                                                        Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" MaxWidth="520"/>
                                         </StackPanel>
