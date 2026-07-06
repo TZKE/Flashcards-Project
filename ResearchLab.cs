@@ -95,6 +95,14 @@ public sealed class ResearchProject
     // never as statistical/sample-size advice.
     public int? TargetSampleSize { get; set; }
 
+    // ---- Phase 4A addition (Descriptive Statistics) ------------------------
+    // Latest deterministic descriptive analysis. Numbers are stored at full
+    // precision; display formatting is applied at render time. Optional/nullable
+    // so older research_projects.json files load unchanged (null = no analysis
+    // has been generated yet). The raw dataset itself is NOT stored here — a
+    // copy of the uploaded CSV lives in the app data folder per project.
+    public DescriptiveStatisticsRecord? DescriptiveStatistics { get; set; }
+
     // ---- Display helpers (not persisted) ----------------------------------
     // Used by the project-card DataTemplate so the XAML stays clean and we
     // avoid culture-sensitive StringFormat surprises.

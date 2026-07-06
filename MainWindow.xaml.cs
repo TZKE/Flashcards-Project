@@ -2435,6 +2435,7 @@ public sealed partial class MainWindow : Window
         if (project is null) return;
 
         _researchData.Projects.Remove(project);
+        DeleteDatasetCopy(project.Id);   // remove the stored statistics dataset copy
         SaveResearch();
         RefreshResearchProjects();
         ShowToast("Research project deleted.");
@@ -2466,6 +2467,11 @@ public sealed partial class MainWindow : Window
         // or plan may have changed since the project was first loaded).
         if (ReferenceEquals(active, SegDataExt) && CurrentResearchProject() is { } dp)
             RefreshExtractionChips(dp);
+
+        // Statistics/Results recalculate readiness and staleness on every open,
+        // so the dashboards always describe the CURRENT sheet and dataset.
+        if (ReferenceEquals(active, SegStats)) RefreshStatisticsTab();
+        if (ReferenceEquals(active, SegResults)) RefreshResultsTab();
     }
 
     private void SaveDashNotes_Click(object sender, RoutedEventArgs e)
@@ -3089,7 +3095,14 @@ public sealed partial class MainWindow : Window
         SetTextSection(RecPrimaryObjective, RecPrimarySec, rec.PrimaryObjective);
 
         SetListSection(RecSecondaryList, RecSecondarySec, rec.SecondaryObjectives);
-        SetListSection(RecVariablesList, RecVariablesSec, rec.SuggestedVariables);
+        // Variable creation/coding/type suggestions belong to Data Extraction /
+        // Magic Fix, never AI Recommendations — showing them here duplicates
+        // (and can conflict with) that workflow. The underlying data is kept
+        // untouched (Data Extraction's "plan mentions X" conflict cards still
+        // read rec.SuggestedVariables directly) — only this tab's rendering of
+        // it is suppressed.
+        RecVariablesList.ItemsSource = null;
+        RecVariablesSec.Visibility = Visibility.Collapsed;
         SetListSection(RecAnalysesList, RecAnalysesSec, rec.SuggestedAnalyses);
         SetListSection(RecInclusionList, RecInclusionSec, rec.InclusionCriteria);
         SetListSection(RecExclusionList, RecExclusionSec, rec.ExclusionCriteria);
@@ -4989,8 +5002,14 @@ public sealed partial class MainWindow : Window
     // =====================================================================
 
     // Google Forms / Sheets export system columns — never a "missing variable".
+    // System / dataset-tracking columns that are ignored by default (never
+    // analyzed). Stored in NormalizeLabel form (punctuation dropped, lowercased):
+    // e.g. "Sample_ID" → "sample id", "Response ID" → "response id".
     private static readonly HashSet<string> GoogleMetaColumns = new(StringComparer.Ordinal)
-    { "timestamp", "username", "email address", "email", "score" };
+    {
+        "timestamp", "username", "email address", "email", "score",
+        "sample id", "sample type", "response id", "submission id", "form id"
+    };
 
     private static bool IsGoogleMetadataColumn(string name)
         => GoogleMetaColumns.Contains(NormalizeLabel(name));
@@ -5106,12 +5125,15 @@ public sealed partial class MainWindow : Window
         foreach (var col in csv.Columns)
         {
             if (string.IsNullOrWhiteSpace(col.Name)) continue;
-            if (IsGoogleMetadataColumn(col.Name)) { result.Metadata.Add(col); continue; }
 
             string colNorm = NormalizeLabel(col.Name);
             string colKey = NormalizeKey(col.Name);
             string colAlnum = AlphaNumKey(col.Name);
 
+            // Try to match a sheet variable FIRST so a variable the student
+            // actually defined (even if it shares a metadata-like name) is never
+            // silently dropped. Only unclaimed system/tracking columns are
+            // treated as ignored metadata.
             var m = named.FirstOrDefault(v => VariableMatchesColumnExact(v, colNorm, colKey, colAlnum))
                     ?? named.FirstOrDefault(v => VariableMatchesColumnFuzzy(v, colNorm));
             if (m is not null)
@@ -5120,6 +5142,7 @@ public sealed partial class MainWindow : Window
                 result.ColumnMatch[col] = m;
                 matchedVars.Add(m);
             }
+            else if (IsGoogleMetadataColumn(col.Name)) result.Metadata.Add(col);
             else result.CsvOnly.Add(col);
         }
 
@@ -5671,6 +5694,13 @@ public sealed partial class MainWindow : Window
             p.CsvSampleSummary = summary;
             p.ExtractionValidationReport = null;   // sheet context changed
             RenderValidation(null);
+
+            // Phase 4A: keep a per-project copy of the full CSV so the LOCAL
+            // statistics engine has the raw values. The copy stays in the app
+            // data folder on this device and is never sent to any AI/network.
+            if (!TryStoreDatasetCopy(ofd.FileName, p))
+                ShowToast("The dataset copy for statistics could not be stored. Statistics will ask you to upload the CSV again.");
+
             SaveResearch();
             RefreshExtractionChips(p);
 
@@ -5701,6 +5731,7 @@ public sealed partial class MainWindow : Window
                 {
                     p.CsvSampleSummary = null;
                     p.ExtractionValidationReport = null;
+                    DeleteDatasetCopy(p.Id);   // statistics dataset copy goes with it
                     RenderValidation(null);
                     SaveResearch();
                     RefreshExtractionChips(p);
@@ -7362,6 +7393,972 @@ public sealed partial class MainWindow : Window
                 + $"{remaining} item{(remaining == 1 ? "" : "s")} remaining for manual review.");
         }
         catch (Exception ex) { HandleDxError("apply the AI fixes", ex); }
+    }
+
+    // =====================================================================
+    // Research Lab (Phase 4A) — Statistics: readiness dashboard, deterministic
+    // descriptive analysis, professional output tables, Results tab.
+    //
+    // EVERY number shown here comes from DescriptiveStatisticsEngine — pure,
+    // deterministic C# in ResearchLabStatistics.cs. There are NO AI calls in
+    // this region, no raw CSV rows are ever sent anywhere, and no inferential
+    // statistics exist in Phase 4A.
+    // =====================================================================
+
+    private string ResearchDatasetDir => Path.Combine(dataDir, "research_data");
+    private string ResearchDatasetPath(string projectId) => Path.Combine(ResearchDatasetDir, projectId + ".csv");
+
+    private StatisticsReadinessResult? _statReadiness;
+    private List<StatisticsOutputTable> _statTables = new();
+    private StatisticsDataset? _statDatasetCache;
+    private string _statDatasetCacheKey = "";
+    private bool _statUiReady;   // guards option handlers while controls initialize
+
+    // Deterministic Magic Fix repair suggestions, recomputed on every Statistics
+    // refresh. _magicFixReview is the working copy shown in the review modal.
+    private List<MagicFixProposal> _magicFixProposals = new();
+    private readonly System.Collections.ObjectModel.ObservableCollection<MagicFixProposal> _magicFixReview = new();
+    private System.Windows.Data.CollectionViewSource? _magicFixView;
+
+    // Row display model for the Variable Matching Summary list.
+    public sealed class StatMatchDisplayRow
+    {
+        public string Group { get; set; } = "";
+        public int GroupOrder { get; set; }
+        public string Name { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string TypeDisplay { get; set; } = "";
+        public string Role { get; set; } = "";
+        public string ColumnDisplay { get; set; } = "";
+        public string CountsDisplay { get; set; } = "";
+        public string StatusText { get; set; } = "";
+        public string StatusKind { get; set; } = "Muted";
+    }
+
+    // Keeps a per-project copy of the uploaded CSV so the LOCAL statistics
+    // engine has the full raw values. The copy stays on this device in the app
+    // data folder and is never sent to any AI or network service.
+    private bool TryStoreDatasetCopy(string sourcePath, ResearchProject p)
+    {
+        try
+        {
+            Directory.CreateDirectory(ResearchDatasetDir);
+            File.Copy(sourcePath, ResearchDatasetPath(p.Id), overwrite: true);
+            _statDatasetCacheKey = "";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void DeleteDatasetCopy(string projectId)
+    {
+        try
+        {
+            string f = ResearchDatasetPath(projectId);
+            if (File.Exists(f)) File.Delete(f);
+        }
+        catch { /* best effort — readiness will simply ask for a re-upload */ }
+        _statDatasetCacheKey = "";
+    }
+
+    // Parses the stored dataset copy (cached per file version). Returns null
+    // when no copy exists or it cannot be read; 'error' explains why.
+    private StatisticsDataset? LoadStatisticsDataset(ResearchProject p, out string error)
+    {
+        error = "";
+        string path = ResearchDatasetPath(p.Id);
+        if (!File.Exists(path))
+        {
+            // Older projects have only the privacy-safe CsvSampleSummary and no
+            // full local dataset copy — statistics need the complete CSV.
+            if (p.CsvSampleSummary is not null)
+                error = "Full CSV data is required to run statistics. Please upload the complete CSV file.";
+            return null;
+        }
+
+        string key;
+        try { var fi = new FileInfo(path); key = p.Id + "|" + fi.LastWriteTimeUtc.Ticks + "|" + fi.Length; }
+        catch { key = p.Id; }
+        if (_statDatasetCache is not null && _statDatasetCacheKey == key) return _statDatasetCache;
+
+        if (!StatisticsCsvReader.TryReadFile(path, out var ds, out error)) return null;
+        // Show the original upload name when we have it (the stored copy is named by project id).
+        if (p.CsvSampleSummary is { FileName.Length: > 0 } s) ds.FileName = s.FileName;
+        _statDatasetCache = ds;
+        _statDatasetCacheKey = key;
+        return ds;
+    }
+
+    // Bridges the Phase 3 matching engine (names, labels, aliases) into the
+    // statistics layer, so Statistics and Data Extraction always agree. Matching
+    // is done against the ACTUAL dataset headers (the data that will be analyzed)
+    // when a full dataset is loaded, falling back to the privacy-safe summary
+    // only when no dataset copy is present.
+    private StatisticsMatchInput BuildStatisticsMatchInput(ResearchProject p, StatisticsDataset? data)
+    {
+        var input = new StatisticsMatchInput();
+
+        CsvSampleSummary csv;
+        if (data is { ColumnCount: > 0 })
+            csv = new CsvSampleSummary { Columns = data.ColumnNames.Select(n => new CsvColumnSummary { Name = n }).ToList() };
+        else if (p.CsvSampleSummary is { Columns.Count: > 0 } s)
+            csv = s;
+        else return input;
+
+        var match = MatchCsvToSheet(p.Variables ?? new List<ResearchVariable>(), csv);
+        foreach (var kv in match.ColumnMatch)
+            if (!input.VariableColumn.ContainsKey(kv.Value.Id))
+                input.VariableColumn[kv.Value.Id] = kv.Key.Name;
+        input.MetadataColumns = match.Metadata.Select(c => c.Name).ToList();
+        input.CsvOnlyColumns = match.CsvOnly.Select(c => c.Name).ToList();
+        return input;
+    }
+
+    private string CurrentStatisticsFingerprint(ResearchProject p)
+        => StatisticsFingerprint.Compute(p.Variables, ResearchDatasetPath(p.Id), p.TargetSampleSize);
+
+    private bool IsStatisticsStale(ResearchProject p)
+        => p.DescriptiveStatistics is { } rec
+           && !string.Equals(rec.SourceFingerprint, CurrentStatisticsFingerprint(p), StringComparison.Ordinal);
+
+    // ---- Statistics tab refresh (runs on every tab open) --------------------
+
+    private void EnsureStatisticsOptionsInit()
+    {
+        if (_statUiReady) return;
+        StDecimalsBox.ItemsSource = new[] { "0", "1", "2", "3" };
+        StDecimalsBox.SelectedIndex = 2;
+        StStyleBox.ItemsSource = new[] { "Academic Clean", "SPSS-like Academic", "Compact Report", "Thesis Detailed" };
+        StStyleBox.SelectedIndex = 0;
+        if (StScoreBar.Parent is FrameworkElement track)
+            track.SizeChanged += (_, _) => UpdateStatScoreBar();
+        _statUiReady = true;
+    }
+
+    private void RefreshStatisticsTab()
+    {
+        try
+        {
+            EnsureStatisticsOptionsInit();
+            var p = CurrentResearchProject();
+            if (p is null) return;
+
+            // Commit any in-flight sheet edits so readiness sees current data.
+            TryCommitGridEdit();
+            CommitGrid(p);
+
+            var sheetReport = ValidateExtractionSheet(p);   // local, no AI
+            var data = LoadStatisticsDataset(p, out string dataError);
+            var match = BuildStatisticsMatchInput(p, data);
+
+            _statReadiness = StatisticsReadinessService.Evaluate(
+                p.Variables ?? new List<ResearchVariable>(), data, match, p.TargetSampleSize, sheetReport.Errors);
+
+            // Old projects have a CSV summary but no stored copy on this device —
+            // replace the generic "no dataset" wording with the exact fix.
+            if (dataError.Length > 0)
+            {
+                var nd = _statReadiness.Issues.FirstOrDefault(i => i.Code is "NoDataset" or "EmptyDataset");
+                if (nd is not null) nd.Message = dataError;
+            }
+
+            // Deterministic local repair suggestions for type/coding mismatches.
+            _magicFixProposals = MagicFixService.BuildProposals(p.Variables ?? new List<ResearchVariable>(), data, match);
+
+            RenderStatisticsReadiness();
+            RenderDatasetOverview(p, data, match);
+            RenderMatchingSummary(p, data, match);
+
+            StOptionsCard.Visibility = Visibility.Visible;
+            bool stale = p.DescriptiveStatistics is not null && IsStatisticsStale(p);
+            StStaleBanner.Visibility = stale ? Visibility.Visible : Visibility.Collapsed;
+
+            if (p.DescriptiveStatistics is { } rec) RenderStatisticsOutput(rec);
+            else { StOutputPanel.Visibility = Visibility.Collapsed; _statTables.Clear(); }
+        }
+        catch (Exception ex) { HandleDxError("refresh the statistics dashboard", ex); }
+    }
+
+    private void RenderStatisticsReadiness()
+    {
+        if (_statReadiness is not { } r) return;
+
+        (Brush bg, Brush fg, string text) = r.State switch
+        {
+            StatisticsReadinessState.Ready => ((Brush)FindResource("SuccessSoftBrush"), (Brush)FindResource("SuccessBrush"), "Ready for descriptive statistics"),
+            StatisticsReadinessState.NeedsReview => ((Brush)FindResource("WarningSoftBrush"), (Brush)FindResource("WarningBrush"), "Ready with warnings"),
+            _ => ((Brush)FindResource("DangerSoftBrush"), (Brush)FindResource("DangerBrush"), "Blocked")
+        };
+        StStateBadge.Background = bg;
+        StStateBadgeText.Foreground = fg;
+        StStateBadgeText.Text = text;
+
+        StScoreText.Text = $"{r.Score}/100";
+        StScoreBar.Background = fg;
+        UpdateStatScoreBar();
+
+        StExplanationText.Text = r.Explanation;
+        StCardsList.ItemsSource = r.Cards;
+
+        // Run button: enabled unless blocked; a disabled button explains why.
+        StRunBtn.IsEnabled = r.CanRun;
+        StRunBtn.ToolTip = r.CanRun
+            ? "Generate descriptive statistics from deterministic calculations."
+            : (r.Blockers.FirstOrDefault()?.Message ?? "Analysis is blocked until required issues are resolved.");
+
+        // Blocked → show the exact next action; warnings → offer the review list.
+        bool blocked = !r.CanRun;
+        StPrimaryActionBtn.Visibility = blocked ? Visibility.Visible : Visibility.Collapsed;
+        StPrimaryActionBtn.Content = r.PrimaryActionLabel;
+        StReviewWarningsBtn.Visibility = r.Warnings.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StReviewWarningsBtn.Content = $"Review Warnings ({r.Warnings.Count})";
+
+        // Magic Fix: fast guided repair path. Shown only when there is actually
+        // at least one applicable repair (blocker- or warning-level), so it is
+        // never a dead-end. Repairs cover mis-typed/unordered/mis-labelled
+        // variables, which can exist even in a "Ready with warnings" state.
+        int repairable = _magicFixProposals.Count(p => p.IsApplicable);
+        StMagicFixBtn.Visibility = repairable > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StMagicFixBtn.Content = $"Magic Fix ({repairable})";
+
+        var visibleIssues = r.Issues.Where(i => i.Severity != StatisticsSeverity.Info)
+                             .OrderByDescending(i => (int)i.Severity).ToList();
+        StIssuesList.ItemsSource = visibleIssues;
+        // Blockers are always shown; the warnings-only list stays collapsed
+        // until the user asks for it.
+        StIssuesSection.Visibility = blocked && visibleIssues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateStatScoreBar()
+    {
+        if (_statReadiness is not { } r || StScoreBar.Parent is not FrameworkElement track) return;
+        double w = track.ActualWidth;
+        if (w <= 0)
+        {
+            Dispatcher.BeginInvoke(new Action(UpdateStatScoreBar), DispatcherPriority.Loaded);
+            return;
+        }
+        StScoreBar.Width = Math.Max(r.Score > 0 ? 8 : 0, w * r.Score / 100.0);
+    }
+
+    private void RenderDatasetOverview(ResearchProject p, StatisticsDataset? data, StatisticsMatchInput match)
+    {
+        var rows = new List<StatisticsReadinessCard>();
+        void Add(string k, string v, string kind = "Muted") => rows.Add(new StatisticsReadinessCard { Title = k, Value = v, Kind = kind });
+
+        if (data is null)
+        {
+            StDatasetCard.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var vars = (p.Variables ?? new List<ResearchVariable>()).Where(v => !string.IsNullOrWhiteSpace(v.VariableName)).ToList();
+        int matched = vars.Count(v => match.VariableColumn.ContainsKey(v.Id));
+        int requiredUnmatched = vars.Count(v => v.IsRequired && !match.VariableColumn.ContainsKey(v.Id));
+        int optionalUnmatched = vars.Count(v => !v.IsRequired && !match.VariableColumn.ContainsKey(v.Id));
+
+        long totalCells = (long)data.RowCount * data.ColumnCount;
+        long missingCells = 0;
+        for (int c = 0; c < data.ColumnCount; c++)
+            for (int r = 0; r < data.RowCount; r++)
+                if (StatisticsMissingTokens.IsMissing(data.Cell(r, c))) missingCells++;
+        double missPct = totalCells == 0 ? 0 : 100.0 * missingCells / totalCells;
+
+        StDatasetSubText.Text = "Raw values come from the uploaded CSV; how each variable is analyzed comes from the extraction sheet.";
+        Add("CSV file", data.FileName.Length > 0 ? data.FileName : "—");
+        Add("Uploaded rows (participants)", data.RowCount.ToString());
+        if (p.TargetSampleSize is int t && t > 0)
+        {
+            Add("Target sample size", t.ToString());
+            if (data.RowCount < t)
+            {
+                Add("Remaining samples needed", (t - data.RowCount).ToString(), "Bad");
+                Add("Sample status", "Incomplete sample", "Bad");
+            }
+            else Add("Sample status", "Complete", "Good");
+        }
+        else Add("Target sample size", "Not found — confirm your sample size before running statistics", "Warn");
+
+        Add("Dataset columns", data.ColumnCount.ToString());
+        Add("Extraction sheet variables", vars.Count.ToString());
+        Add("Matched variables", $"{matched} of {vars.Count}", matched == vars.Count && vars.Count > 0 ? "Good" : "Muted");
+        if (requiredUnmatched > 0) Add("Unmatched required variables", requiredUnmatched.ToString(), "Bad");
+        if (optionalUnmatched > 0) Add("Unmatched optional variables", optionalUnmatched.ToString(), "Warn");
+        if (match.CsvOnlyColumns.Count > 0) Add("Dataset-only columns (not analyzed)", string.Join(", ", match.CsvOnlyColumns), "Warn");
+        if (match.MetadataColumns.Count > 0) Add("System columns (ignored)", string.Join(", ", match.MetadataColumns));
+        Add("Total cells", totalCells.ToString());
+        Add("Missing cells", $"{missingCells} ({missPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}%)",
+            missPct >= 50 ? "Bad" : missPct >= 20 ? "Warn" : "Muted");
+        if (data.DuplicateColumnNames.Count > 0)
+            Add("Duplicate column names", string.Join(", ", data.DuplicateColumnNames), "Warn");
+        if (p.DescriptiveStatistics is { } rec)
+            Add("Last analysis", rec.GeneratedDisplay, "Good");
+
+        StOverviewList.ItemsSource = rows;
+        StDatasetCard.Visibility = Visibility.Visible;
+    }
+
+    private void RenderMatchingSummary(ResearchProject p, StatisticsDataset? data, StatisticsMatchInput match)
+    {
+        var vars = (p.Variables ?? new List<ResearchVariable>()).Where(v => !string.IsNullOrWhiteSpace(v.VariableName)).ToList();
+        if (vars.Count == 0 && (data is null || data.ColumnCount == 0))
+        {
+            StMatchingCard.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var rows = new List<StatMatchDisplayRow>();
+        foreach (var v in vars)
+        {
+            match.VariableColumn.TryGetValue(v.Id, out string? col);
+            var prep = StatisticsVariablePreparer.Prepare(v, data, col);
+            string typeDisplay = string.IsNullOrWhiteSpace(v.MeasurementLevel) || v.MeasurementLevel == "NotApplicable"
+                ? v.VariableType : $"{v.VariableType} · {v.MeasurementLevel}";
+
+            var row = new StatMatchDisplayRow
+            {
+                Name = v.VariableName.Trim(),
+                Label = (v.QuestionLabel ?? "").Trim(),
+                TypeDisplay = typeDisplay,
+                Role = string.IsNullOrWhiteSpace(v.Role) ? "—" : v.Role,
+                ColumnDisplay = string.IsNullOrWhiteSpace(col) ? "No matching column" : col!,
+            };
+
+            bool matched = !string.IsNullOrWhiteSpace(col) && data is not null && data.ColumnIndexOf(col!) >= 0;
+            if (prep.Kind == VariableAnalysisKind.Excluded && matched)
+            {
+                row.Group = "Excluded from analysis"; row.GroupOrder = 3;
+                row.CountsDisplay = prep.ExclusionReason;
+                row.StatusText = "Excluded"; row.StatusKind = "Muted";
+            }
+            else if (!matched && v.IsRequired)
+            {
+                row.Group = "Required variables — missing or unmatched"; row.GroupOrder = 0;
+                row.CountsDisplay = "Required for analysis";
+                row.StatusText = "Blocked"; row.StatusKind = "Bad";
+            }
+            else if (!matched)
+            {
+                row.Group = "Optional variables not found in dataset"; row.GroupOrder = 2;
+                row.CountsDisplay = "Excluded from analysis";
+                row.StatusText = "Not matched"; row.StatusKind = "Warn";
+            }
+            else
+            {
+                row.Group = "Matched variables"; row.GroupOrder = 1;
+                row.CountsDisplay = $"Valid {prep.ValidN} · Missing {prep.MissingN}";
+                string q = StatisticsVariablePreparer.MissingStatus(prep.MissingPercent);
+                if (prep.ValidN == 0) { row.StatusText = "No valid values"; row.StatusKind = "Bad"; }
+                else if (q == "OK") { row.StatusText = "Good"; row.StatusKind = "Good"; }
+                else { row.StatusText = q; row.StatusKind = "Warn"; }
+            }
+            rows.Add(row);
+        }
+
+        foreach (var c in match.CsvOnlyColumns)
+            rows.Add(new StatMatchDisplayRow
+            {
+                Group = "Dataset columns not linked to a variable", GroupOrder = 4,
+                Name = c, Label = "", TypeDisplay = "—", Role = "—",
+                ColumnDisplay = c, CountsDisplay = "Not analyzed",
+                StatusText = "Ignored", StatusKind = "Warn"
+            });
+        foreach (var c in match.MetadataColumns)
+            rows.Add(new StatMatchDisplayRow
+            {
+                Group = "System columns (ignored by design)", GroupOrder = 5,
+                Name = c, Label = "", TypeDisplay = "—", Role = "—",
+                ColumnDisplay = c, CountsDisplay = "Form/system metadata",
+                StatusText = "Ignored", StatusKind = "Muted"
+            });
+
+        var view = new System.Windows.Data.CollectionViewSource { Source = rows };
+        view.SortDescriptions.Add(new System.ComponentModel.SortDescription("GroupOrder", System.ComponentModel.ListSortDirection.Ascending));
+        view.SortDescriptions.Add(new System.ComponentModel.SortDescription("Name", System.ComponentModel.ListSortDirection.Ascending));
+        view.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription("Group"));
+        StMatchingList.ItemsSource = view.View;
+
+        StGoToConflictsBtn.Visibility = _statReadiness?.Blockers.Any(b => b.ActionHint == "ResolveRequiredIssues") == true
+            ? Visibility.Visible : Visibility.Collapsed;
+        StMatchingCard.Visibility = Visibility.Visible;
+    }
+
+    // ---- Run + primary actions ----------------------------------------------
+
+    private void RunDescriptiveStatistics_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p is null) { ShowToast("Open a project first."); return; }
+
+            RefreshStatisticsTab();   // re-evaluate readiness on the current state
+            if (_statReadiness is not { } readiness) return;
+            if (!readiness.CanRun)
+            {
+                ShowToast("Analysis is blocked until required issues are resolved.");
+                return;
+            }
+
+            var data = LoadStatisticsDataset(p, out string dataError);
+            if (data is null)
+            {
+                ShowToast(dataError.Length > 0 ? dataError : "The dataset could not be read. Upload your CSV file again.");
+                return;
+            }
+
+            var match = BuildStatisticsMatchInput(p, data);
+            var record = DescriptiveStatisticsEngine.Run(
+                p.Variables ?? new List<ResearchVariable>(), data, match,
+                p.TargetSampleSize, readiness, CurrentStatisticsFingerprint(p));
+
+            // Output options chosen at run time.
+            record.Decimals = int.TryParse(StDecimalsBox.SelectedItem as string, out int d) ? d : 2;
+            record.OutputStyle = StStyleBox.SelectedItem as string ?? "Academic Clean";
+            record.IncludeMissingSummary = StOptMissing.IsChecked == true;
+            record.IncludeAuditNotes = StOptAudit.IsChecked == true;
+            record.IncludeIgnoredColumnsNote = StOptIgnored.IsChecked == true;
+            record.IncludeTextSummary = StOptText.IsChecked == true;
+
+            p.DescriptiveStatistics = record;
+            p.UpdatedAt = DateTime.UtcNow;
+            SaveResearch();
+
+            StStaleBanner.Visibility = Visibility.Collapsed;
+            RenderStatisticsOutput(record);
+            RenderDatasetOverview(p, data, match);   // adds the analysis timestamp row
+            ShowToast($"Descriptive statistics generated for {record.VariablesAnalyzed} variable{(record.VariablesAnalyzed == 1 ? "" : "s")} across {record.RowsAnalyzed} rows.");
+        }
+        catch (Exception ex) { HandleDxError("run descriptive statistics", ex); }
+    }
+
+    private void StPrimaryAction_Click(object sender, RoutedEventArgs e)
+    {
+        switch (_statReadiness?.PrimaryActionCode)
+        {
+            case "UploadCsv":
+            case "UploadCompleteCsv":
+                ImportCsv_Click(sender, e);
+                RefreshStatisticsTab();
+                break;
+            case "ResolveRequiredIssues":
+            case "GoToDataExtraction":
+            default:
+                SwitchResearchTab(SegDataExt);
+                ShowToast("Resolve the required issues in Data Extraction, then return to Statistics.");
+                break;
+        }
+    }
+
+    private void StReviewWarnings_Click(object sender, RoutedEventArgs e)
+    {
+        StIssuesSection.Visibility = StIssuesSection.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+        if (StIssuesSection.Visibility == Visibility.Visible)
+            StIssuesSection.BringIntoView();
+    }
+
+    private void StGoToConflicts_Click(object sender, RoutedEventArgs e)
+    {
+        SwitchResearchTab(SegDataExt);
+        ShowToast("Use Validate Sheet and Resolve Conflicts in Data Extraction, then return to Statistics.");
+    }
+
+    // ---- Output rendering ----------------------------------------------------
+
+    private void RenderStatisticsOutput(DescriptiveStatisticsRecord rec)
+    {
+        // Sync the option controls to the record without triggering re-renders.
+        bool wasReady = _statUiReady;
+        _statUiReady = false;
+        StDecimalsBox.SelectedItem = Math.Clamp(rec.Decimals, 0, 3).ToString();
+        if ((StStyleBox.ItemsSource as string[])?.Contains(rec.OutputStyle) == true)
+            StStyleBox.SelectedItem = rec.OutputStyle;
+        StOptMissing.IsChecked = rec.IncludeMissingSummary;
+        StOptAudit.IsChecked = rec.IncludeAuditNotes;
+        StOptIgnored.IsChecked = rec.IncludeIgnoredColumnsNote;
+        StOptText.IsChecked = rec.IncludeTextSummary;
+        _statUiReady = wasReady;
+
+        _statTables = StatisticsTableBuilder.Build(rec);
+        StOutputMetaText.Text = $"Generated {rec.GeneratedDisplay} · {rec.RowsAnalyzed} rows · {rec.VariablesAnalyzed} of {rec.TotalVariables} variables · {rec.OutputStyle}";
+
+        StOutputHost.Children.Clear();
+        string lastSection = "";
+        int tableNumber = 0;
+        foreach (var t in _statTables)
+        {
+            if (t.Section != lastSection)
+            {
+                lastSection = t.Section;
+                StOutputHost.Children.Add(new TextBlock
+                {
+                    Text = t.Section,
+                    FontSize = 15,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (Brush)FindResource("TextBrush"),
+                    Margin = new Thickness(4, 22, 0, 0)
+                });
+            }
+            tableNumber++;
+            StOutputHost.Children.Add(BuildStatTableCard(t, rec.OutputStyle, tableNumber));
+        }
+        StOutputPanel.Visibility = Visibility.Visible;
+    }
+
+    // Builds one professional table card. Styles adjust typography/rules only —
+    // the numbers are identical in every style.
+    private FrameworkElement BuildStatTableCard(StatisticsOutputTable t, string style, int tableNumber)
+    {
+        double fontSize = style switch { "Compact Report" => 11.5, "Thesis Detailed" => 13, _ => 12.5 };
+        Thickness cellPad = style switch
+        {
+            "Compact Report" => new Thickness(9, 3, 9, 3),
+            "Thesis Detailed" => new Thickness(11, 7, 11, 7),
+            _ => new Thickness(10, 5, 10, 5)
+        };
+        bool gridLines = style == "SPSS-like Academic";
+        bool thesis = style == "Thesis Detailed";
+
+        var text = (Brush)FindResource("TextBrush");
+        var muted = (Brush)FindResource("MutedBrush");
+        var softLine = (Brush)FindResource("BorderBrushSoft");
+        var softBg = (Brush)FindResource("SoftCardBrush");
+
+        var card = new Border
+        {
+            Style = (Style)FindResource("CardBorder"),
+            Padding = new Thickness(22),
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        var stack = new StackPanel();
+        card.Child = stack;
+
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new TextBlock
+        {
+            Text = thesis ? $"Table {tableNumber}. {t.Title}" : t.Title,
+            FontSize = 13.5,
+            FontWeight = FontWeights.Bold,
+            Foreground = text,
+            TextWrapping = TextWrapping.Wrap
+        };
+        header.Children.Add(title);
+        var copyBtn = new Button
+        {
+            Style = (Style)FindResource("GhostButton"),
+            Content = "Copy",
+            MinWidth = 64,
+            Height = 26,
+            MinHeight = 26,
+            FontSize = 11,
+            Tag = t,
+            VerticalAlignment = VerticalAlignment.Top
+        };
+        copyBtn.Click += StCopyTable_Click;
+        Grid.SetColumn(copyBtn, 1);
+        header.Children.Add(copyBtn);
+        stack.Children.Add(header);
+
+        if (t.Caption.Length > 0)
+            stack.Children.Add(new TextBlock
+            {
+                Text = t.Caption,
+                FontSize = 11.5,
+                FontStyle = thesis ? FontStyles.Italic : FontStyles.Normal,
+                Foreground = muted,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+
+        var grid = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        bool keyValue = t.Columns.Count == 2 && t.Columns.All(c => c.Length == 0);
+        int colCount = Math.Max(t.Columns.Count, t.Rows.Count == 0 ? 1 : t.Rows.Max(r => r.Cells.Count));
+        for (int i = 0; i < colCount; i++)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = keyValue
+                    ? (i == 0 ? GridLength.Auto : new GridLength(1, GridUnitType.Star))
+                    : (i == 0 ? new GridLength(1.4, GridUnitType.Star) : GridLength.Auto),
+                MinWidth = keyValue && i == 0 ? 200 : 0
+            });
+        }
+
+        int gridRow = 0;
+        void AddRule(double height, Brush brush)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var rule = new Border { Height = height, Background = brush, Margin = new Thickness(0, 1, 0, 1) };
+            Grid.SetRow(rule, gridRow);
+            Grid.SetColumnSpan(rule, colCount);
+            grid.Children.Add(rule);
+            gridRow++;
+        }
+        void AddCells(List<string> cells, bool bold, bool subtle, bool isHeader)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int i = 0; i < colCount; i++)
+            {
+                string cell = i < cells.Count ? cells[i] : "";
+                bool right = i < t.RightAlign.Count && t.RightAlign[i];
+                var tb = new TextBlock
+                {
+                    Text = cell,
+                    FontSize = fontSize,
+                    FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
+                    Foreground = subtle ? muted : text,
+                    TextAlignment = right ? TextAlignment.Right : TextAlignment.Left,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = gridLines ? new Thickness(0) : cellPad,
+                    Padding = gridLines ? cellPad : new Thickness(0)
+                };
+                FrameworkElement el = tb;
+                if (gridLines)
+                {
+                    el = new Border
+                    {
+                        BorderBrush = softLine,
+                        BorderThickness = new Thickness(0.5),
+                        Background = isHeader ? softBg : Brushes.Transparent,
+                        Child = tb
+                    };
+                }
+                Grid.SetRow(el, gridRow);
+                Grid.SetColumn(el, i);
+                grid.Children.Add(el);
+            }
+            gridRow++;
+        }
+
+        bool hasHeader = t.Columns.Any(c => c.Length > 0);
+        if (hasHeader)
+        {
+            if (!gridLines) AddRule(1.6, text);            // academic top rule
+            AddCells(t.Columns, bold: true, subtle: false, isHeader: true);
+            if (!gridLines) AddRule(1, text);              // header underline
+        }
+        foreach (var r in t.Rows)
+        {
+            if (r.IsEmphasis && !gridLines) AddRule(1, softLine);
+            AddCells(r.Cells, bold: r.IsEmphasis, subtle: r.IsSubtle, isHeader: false);
+        }
+        if (hasHeader && !gridLines) AddRule(1.6, text);   // academic bottom rule
+
+        stack.Children.Add(grid);
+        return card;
+    }
+
+    // ---- Copy / export --------------------------------------------------------
+
+    private void StCopyTable_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if ((sender as FrameworkElement)?.Tag is not StatisticsOutputTable t) return;
+            Clipboard.SetText(StatisticsExportService.BuildTablePlainText(t));
+            ShowToast($"“{t.Title}” copied to the clipboard.");
+        }
+        catch { ShowToast("The table could not be copied. Please try again."); }
+    }
+
+    private (DescriptiveStatisticsRecord Record, List<StatisticsOutputTable> Tables)? CurrentStatOutput()
+    {
+        var p = CurrentResearchProject();
+        if (p?.DescriptiveStatistics is not { } rec)
+        {
+            ShowToast("No descriptive statistics have been generated yet. Go to Statistics to run analysis.");
+            return null;
+        }
+        var tables = _statTables.Count > 0 ? _statTables : StatisticsTableBuilder.Build(rec);
+        return (rec, tables);
+    }
+
+    private void StCopyAll_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (CurrentStatOutput() is not { } o) return;
+            Clipboard.SetText(StatisticsExportService.BuildPlainText(o.Record, o.Tables));
+            ShowToast("All descriptive results copied to the clipboard.");
+        }
+        catch { ShowToast("The results could not be copied. Please try again."); }
+    }
+
+    private void StExportCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentStatOutput() is not { } o) return;
+        SaveStatExport("descriptive_statistics.csv", "CSV files (*.csv)|*.csv",
+            StatisticsExportService.BuildCsv(o.Record, o.Tables), "Tables exported");
+    }
+
+    private void StExportAudit_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentStatOutput() is not { } o) return;
+        SaveStatExport("statistics_audit_notes.txt", "Text files (*.txt)|*.txt",
+            StatisticsExportService.BuildAuditNotesText(o.Record), "Audit notes exported");
+    }
+
+    private void StExportHtml_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentStatOutput() is not { } o) return;
+        SaveStatExport("descriptive_statistics_report.html", "HTML files (*.html)|*.html",
+            StatisticsExportService.BuildHtml(o.Record, o.Tables), "HTML report exported");
+    }
+
+    private void SaveStatExport(string defaultName, string filter, string content, string successVerb)
+    {
+        try
+        {
+            var sfd = new SaveFileDialog { FileName = defaultName, Filter = filter, AddExtension = true };
+            if (sfd.ShowDialog() != true) return;
+            File.WriteAllText(sfd.FileName, content, Encoding.UTF8);
+            ShowToast($"{successVerb} to {Path.GetFileName(sfd.FileName)}.");
+        }
+        catch (IOException)
+        {
+            ShowToast("The file could not be saved. It may be open in another program — close it and try again.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ShowToast("The file could not be saved to that location. Choose a different folder and try again.");
+        }
+        catch
+        {
+            ShowToast("The export could not be completed. Please try a different location.");
+        }
+    }
+
+    private void StOutputOption_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_statUiReady) return;
+        try
+        {
+            var p = CurrentResearchProject();
+            if (p?.DescriptiveStatistics is not { } rec) return;
+
+            rec.Decimals = int.TryParse(StDecimalsBox.SelectedItem as string, out int d) ? d : rec.Decimals;
+            rec.OutputStyle = StStyleBox.SelectedItem as string ?? rec.OutputStyle;
+            rec.IncludeMissingSummary = StOptMissing.IsChecked == true;
+            rec.IncludeAuditNotes = StOptAudit.IsChecked == true;
+            rec.IncludeIgnoredColumnsNote = StOptIgnored.IsChecked == true;
+            rec.IncludeTextSummary = StOptText.IsChecked == true;
+            SaveResearch();
+            RenderStatisticsOutput(rec);   // re-render only; full precision is stored
+        }
+        catch (Exception ex) { HandleDxError("update the output options", ex); }
+    }
+
+    // ---- Results tab -----------------------------------------------------------
+
+    private void RefreshResultsTab()
+    {
+        try
+        {
+            var p = CurrentResearchProject();
+            var rec = p?.DescriptiveStatistics;
+            bool has = p is not null && rec is not null;
+            ResEmptyState.Visibility = has ? Visibility.Collapsed : Visibility.Visible;
+            ResContent.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+            if (!has) return;
+
+            bool stale = IsStatisticsStale(p!);
+            ResStaleBanner.Visibility = stale ? Visibility.Visible : Visibility.Collapsed;
+            ResStatusChip.Background = (Brush)FindResource(stale ? "WarningSoftBrush" : "SuccessSoftBrush");
+            ResStatusChipText.Foreground = (Brush)FindResource(stale ? "WarningBrush" : "SuccessBrush");
+            ResStatusChipText.Text = stale ? "Needs rerun" : "Current";
+
+            ResGeneratedText.Text = $"Generated {rec!.GeneratedDisplay} · deterministic calculations";
+            ResSummaryList.ItemsSource = new List<StatisticsReadinessCard>
+            {
+                new() { Title = "Dataset", Value = rec.DatasetFileName.Length > 0 ? rec.DatasetFileName : "—" },
+                new() { Title = "Rows analyzed", Value = rec.RowsAnalyzed.ToString() },
+                new() { Title = "Variables analyzed", Value = $"{rec.VariablesAnalyzed} of {rec.TotalVariables}" },
+                new() { Title = "Missing cells", Value = $"{rec.MissingCells} ({rec.OverallMissingPercent.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}%)" },
+                new() { Title = "Readiness at run time", Value = $"{rec.ReadinessStateAtRun} (score {rec.ReadinessScoreAtRun}/100)" }
+            };
+        }
+        catch (Exception ex) { HandleDxError("refresh the results overview", ex); }
+    }
+
+    private void ResViewTables_Click(object sender, RoutedEventArgs e)
+    {
+        SwitchResearchTab(SegStats);
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (StOutputPanel.Visibility == Visibility.Visible) StOutputPanel.BringIntoView();
+        }), DispatcherPriority.Loaded);
+    }
+
+    private void ResBackToStats_Click(object sender, RoutedEventArgs e)
+        => SwitchResearchTab(SegStats);
+
+    // ---- Magic Fix: deterministic local sheet-repair review + apply ----------
+
+    // Opens the review modal with a fresh working copy of the current proposals.
+    // If nothing repairable was found, tell the user plainly (no empty modal).
+    private void MagicFix_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_magicFixProposals.Count == 0)
+            {
+                ShowToast("No safe automatic repairs were found. Please review the remaining issues manually.");
+                return;
+            }
+
+            // Work on clones so Cancel discards edits and the dashboard copy stays intact.
+            _magicFixReview.Clear();
+            foreach (var p in _magicFixProposals)
+                _magicFixReview.Add(CloneMagicFix(p));
+
+            if (_magicFixView is null)
+            {
+                _magicFixView = new System.Windows.Data.CollectionViewSource { Source = _magicFixReview, IsLiveGroupingRequested = true };
+                _magicFixView.SortDescriptions.Add(new System.ComponentModel.SortDescription("GroupOrder", System.ComponentModel.ListSortDirection.Ascending));
+                _magicFixView.SortDescriptions.Add(new System.ComponentModel.SortDescription("VariableName", System.ComponentModel.ListSortDirection.Ascending));
+                _magicFixView.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription("GroupDisplay"));
+            }
+            if (!ReferenceEquals(MagicFixList.ItemsSource, _magicFixView.View))
+                MagicFixList.ItemsSource = _magicFixView.View;
+
+            int repairable = _magicFixReview.Count(p => p.IsApplicable);
+            MagicFixCountText.Text = _magicFixReview.Count == 1 ? "1 suggestion" : $"{_magicFixReview.Count} suggestions";
+            _ = repairable;
+
+            MagicFixReviewOverlay.Visibility = Visibility.Visible;
+            FadeIn(MagicFixReviewOverlay, 150);
+        }
+        catch (Exception ex) { HandleDxError("open Magic Fix", ex); }
+    }
+
+    private static MagicFixProposal CloneMagicFix(MagicFixProposal p) => new()
+    {
+        VariableId = p.VariableId, VariableName = p.VariableName, Label = p.Label,
+        CurrentType = p.CurrentType, CurrentLevel = p.CurrentLevel, ObservedPreview = p.ObservedPreview,
+        Explanation = p.Explanation, Confidence = p.Confidence, Group = p.Group, IsApplicable = p.IsApplicable,
+        SetsCoding = p.SetsCoding, ProposedType = p.ProposedType, ProposedCoding = p.ProposedCoding, Accepted = p.Accepted
+    };
+
+    private void MagicFixRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is MagicFixProposal p)
+            _magicFixReview.Remove(p);
+    }
+
+    private void MagicFixAcceptHigh_Click(object sender, RoutedEventArgs e)
+    {
+        int n = 0;
+        foreach (var p in _magicFixReview.Where(p => p.IsApplicable && p.Confidence == "High"))
+        {
+            if (!p.Accepted) n++;
+            p.Accepted = true;
+        }
+        ShowToast(n == 0 ? "No further high-confidence repairs to accept." : $"Selected {n} high-confidence repair{(n == 1 ? "" : "s")}.");
+    }
+
+    private void MagicFixCancel_Click(object sender, RoutedEventArgs e)
+    {
+        MagicFixReviewOverlay.Visibility = Visibility.Collapsed;
+        _magicFixReview.Clear();
+        ShowToast("No changes were made. Your extraction sheet was not modified.");
+    }
+
+    // Apply selected → confirmation summary (nothing changes until confirmed).
+    private void MagicFixApply_Click(object sender, RoutedEventArgs e)
+    {
+        int selected = _magicFixReview.Count(p => p.Accepted && p.IsApplicable);
+        if (selected == 0) { ShowToast("Tick at least one repair to apply, or Cancel."); return; }
+
+        int total = _magicFixReview.Count;
+        int high = _magicFixReview.Count(p => p.IsApplicable && p.Confidence == "High");
+        MagicFixSummaryText.Text = $"Magic Fix found {total} possible repair{(total == 1 ? "" : "s")}. "
+            + $"{high} high-confidence repair{(high == 1 ? "" : "s")} {(high == 1 ? "is" : "are")} available, and you have {selected} selected to apply now.";
+        MagicFixSummaryOverlay.Visibility = Visibility.Visible;
+        FadeIn(MagicFixSummaryOverlay, 150);
+    }
+
+    private void MagicFixSummaryGoBack_Click(object sender, RoutedEventArgs e)
+        => MagicFixSummaryOverlay.Visibility = Visibility.Collapsed;
+
+    private void MagicFixSummaryCancel_Click(object sender, RoutedEventArgs e)
+    {
+        MagicFixSummaryOverlay.Visibility = Visibility.Collapsed;
+        MagicFixReviewOverlay.Visibility = Visibility.Collapsed;
+        _magicFixReview.Clear();
+        ShowToast("No changes were made. Your extraction sheet was not modified.");
+    }
+
+    // Confirm → apply ONLY the accepted repairs to the extraction sheet metadata.
+    // Never touches the CSV/dataset. One undo step; then persist + rerun readiness.
+    private void MagicFixConfirm_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            MagicFixSummaryOverlay.Visibility = Visibility.Collapsed;
+            var p = CurrentResearchProject();
+            if (p is null) { MagicFixReviewOverlay.Visibility = Visibility.Collapsed; return; }
+
+            var accepted = _magicFixReview.Where(x => x.Accepted && x.IsApplicable).ToList();
+            if (accepted.Count == 0) { ShowToast("Tick at least one repair to apply, or Cancel."); return; }
+
+            // Sync the live grid collection to the project's current variables so
+            // edits land on the exact instances PersistExtraction will save.
+            CommitGridFromProject(p);
+            PushDxUndo();   // one undo step for the whole applied batch (pre-edit snapshot)
+
+            int typeRepairs = 0, labelSets = 0;
+            foreach (var fix in accepted)
+            {
+                var v = _extractionVariables.FirstOrDefault(x => x.Id == fix.VariableId);
+                if (v is null) continue;
+
+                string newType = (fix.ProposedType ?? "").Trim();
+                bool typeChanged = newType.Length > 0 && !string.Equals(newType, v.VariableType, StringComparison.OrdinalIgnoreCase);
+                if (newType.Length > 0)
+                {
+                    v.VariableType = newType;
+                    v.MeasurementLevel = fix.ProposedLevel;   // keep level consistent with type
+                }
+                if (fix.ChangesCoding)
+                {
+                    v.Coding = fix.ProposedCoding.Trim();
+                    labelSets++;
+                }
+                if (typeChanged) typeRepairs++;
+            }
+
+            // Persist the sheet (CommitGrid + stamp + save). Changing sheet
+            // metadata changes the statistics fingerprint, so any prior results
+            // become stale automatically.
+            PersistExtraction(p);
+
+            MagicFixReviewOverlay.Visibility = Visibility.Collapsed;
+            _magicFixReview.Clear();
+
+            // Rerun readiness and refresh the whole dashboard on the new sheet.
+            RefreshStatisticsTab();
+
+            int stillNeedReview = _statReadiness?.Blockers.Count ?? 0;
+            ShowToast("Magic Fix updated the extraction sheet. Statistics readiness has been refreshed. "
+                + $"{typeRepairs} variable{(typeRepairs == 1 ? "" : "s")} repaired, {labelSets} value-label set{(labelSets == 1 ? "" : "s")} updated, "
+                + $"{stillNeedReview} issue{(stillNeedReview == 1 ? "" : "s")} still need review.");
+        }
+        catch (Exception ex) { HandleDxError("apply Magic Fix repairs", ex); }
+    }
+
+    // Rebuilds the live grid collection from the project's variables (used after
+    // Magic Fix edits the ResearchVariable instances directly).
+    private void CommitGridFromProject(ResearchProject p)
+    {
+        _extractionVariables.Clear();
+        foreach (var v in p.Variables ?? new List<ResearchVariable>())
+            _extractionVariables.Add(v);
     }
 
     // =====================================================================
