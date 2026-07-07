@@ -167,6 +167,18 @@ public sealed class TestRecommendation
     private static bool IsRankableKindDisplay(string kind) =>
         string.Equals(kind, "Ordinal", StringComparison.Ordinal)
         || string.Equals(kind, "Continuous", StringComparison.Ordinal);
+
+    // Phase 4B Part 2 (MVP-3) eligibility — METADATA ONLY, not a calculation.
+    // A card's Spearman correlation may be COMPUTED only when BOTH variables are
+    // rankable (Ordinal/Continuous) AND the plan is Ready or Needs-assumption-
+    // review. Ordinal-involving pairs run the headline recommendation; a
+    // continuous×continuous pair runs the robust alternative (Pearson is not
+    // computed). Mutually exclusive with CanComputeCategorical and
+    // CanComputeRank (which require a categorical/grouping side).
+    [JsonIgnore]
+    public bool CanComputeSpearman =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && IsRankableKindDisplay(OutcomeKind) && IsRankableKindDisplay(PredictorKind);
 }
 
 // The whole Recommended Analysis result for one project.
@@ -300,6 +312,7 @@ public static class TestRecommendationEngine
 
             var (pPrep, pKind, pGroups) = Classify(v, data, match);
             var rec = BuildPair(outcome, oPrep, oKind, oGroups, v, pPrep, pKind, pGroups);
+            ApplyPlanningNoteWording(rec);
             result.Recommendations.Add(rec);
         }
 
@@ -501,6 +514,29 @@ public static class TestRecommendationEngine
         r.RecommendedTest = "Needs variable metadata review";
         r.Rationale = "The combination of variable types could not be matched to a safe recommendation. Review the variable types and roles in the Extraction Sheet.";
         return r;
+    }
+
+    // Phase 4B Part 2 wording fix (UI copy only — no math/eligibility change): a
+    // card that CAN actually be computed (CanComputeCategorical / CanComputeRank /
+    // CanComputeSpearman are unaffected, computed purely from Status + Kind) used
+    // to say "No p-value calculated in this phase." / "No correlation coefficient
+    // is calculated in this phase." — read as a permanent limitation even though
+    // clicking Run computes a real result. Swap in wording that points at Run
+    // instead. Cards that truly cannot be computed (role review / unsupported /
+    // not recommended) keep the original wording unchanged.
+    private static void ApplyPlanningNoteWording(TestRecommendation r)
+    {
+        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman)) return;
+        const string RunNote = "Planning card only — no result has been calculated yet. Click Run this analysis to compute the supported test locally.";
+        bool replaced = false;
+        for (int i = r.Notes.Count - 1; i >= 0; i--)
+        {
+            if (r.Notes[i] != "No p-value calculated in this phase." && r.Notes[i] != "No correlation coefficient is calculated in this phase.")
+                continue;
+            if (replaced) { r.Notes.RemoveAt(i); continue; }   // avoid a duplicate note on cards that had both
+            r.Notes[i] = RunNote;
+            replaced = true;
+        }
     }
 
     // Turns a planned recommendation into a final status using role-awareness

@@ -145,6 +145,60 @@ public static class InferenceMath
         return Math.Clamp(p, 0.0, 1.0);
     }
 
+    // Continued fraction for the incomplete beta function (Numerical Recipes
+    // "betacf"). Fixed iteration cap + tolerance → deterministic.
+    private static double BetaContinuedFraction(double a, double b, double x)
+    {
+        double qab = a + b, qap = a + 1.0, qam = a - 1.0;
+        double c = 1.0;
+        double d = 1.0 - qab * x / qap;
+        if (Math.Abs(d) < FpMin) d = FpMin;
+        d = 1.0 / d;
+        double h = d;
+        for (int m = 1; m <= MaxIterations; m++)
+        {
+            int m2 = 2 * m;
+            double aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+            d = 1.0 + aa * d; if (Math.Abs(d) < FpMin) d = FpMin;
+            c = 1.0 + aa / c; if (Math.Abs(c) < FpMin) c = FpMin;
+            d = 1.0 / d; h *= d * c;
+            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+            d = 1.0 + aa * d; if (Math.Abs(d) < FpMin) d = FpMin;
+            c = 1.0 + aa / c; if (Math.Abs(c) < FpMin) c = FpMin;
+            d = 1.0 / d;
+            double del = d * c;
+            h *= del;
+            if (Math.Abs(del - 1.0) < Epsilon) break;
+        }
+        return h;
+    }
+
+    // Regularized incomplete beta I_x(a, b) ∈ [0, 1]. Used by the Student-t tail
+    // (Spearman p-value). Deterministic; guarded against out-of-range inputs.
+    public static double RegularizedIncompleteBeta(double a, double b, double x)
+    {
+        if (a <= 0 || b <= 0 || double.IsNaN(x)) return double.NaN;
+        if (x <= 0.0) return 0.0;
+        if (x >= 1.0) return 1.0;
+        double bt = Math.Exp(LogGamma(a + b) - LogGamma(a) - LogGamma(b) + a * Math.Log(x) + b * Math.Log(1.0 - x));
+        double result = x < (a + 1.0) / (a + b + 2.0)
+            ? bt * BetaContinuedFraction(a, b, x) / a
+            : 1.0 - bt * BetaContinuedFraction(b, a, 1.0 - x) / b;
+        return Math.Clamp(result, 0.0, 1.0);
+    }
+
+    // Two-sided p-value for a Student-t statistic with the given degrees of
+    // freedom: P(|T| ≥ t) = I_{df/(df+t²)}(df/2, 1/2). Guarded — never NaN/Inf.
+    public static double StudentTTwoSidedP(double t, int df)
+    {
+        if (df < 1 || double.IsNaN(t)) return 1.0;
+        if (t == 0.0) return 1.0;
+        double x = df / (df + t * t);
+        double p = RegularizedIncompleteBeta(df / 2.0, 0.5, x);
+        if (double.IsNaN(p) || double.IsInfinity(p)) return 1.0;
+        return Math.Clamp(p, 0.0, 1.0);
+    }
+
     // p-value display rules (audit requirement):
     //   * never display p = 0;
     //   * a p-value below .001 is shown as "< .001";

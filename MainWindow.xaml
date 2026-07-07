@@ -3280,7 +3280,9 @@
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
-                                                    <WrapPanel Margin="0,6,0,0">
+                                                    <TextBlock Text="Supported analyses only" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,4"/>
+                                                    <WrapPanel Margin="0,0,0,0">
+                                                        <Button Style="{StaticResource PremiumButton}" Content="Run all supported analyses" MinWidth="220" Margin="0,0,10,6" Click="StRecoRunAll_Click"/>
                                                         <Button Style="{StaticResource SoftButton}" Content="Refresh Recommendations" MinWidth="190" Margin="0,0,10,6" Click="StRecoRefresh_Click"/>
                                                         <Button Style="{StaticResource SoftButton}" Content="Copy Recommendations" MinWidth="180" Margin="0,0,10,6" Click="StRecoCopy_Click"/>
                                                         <Button Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="110" Margin="0,0,10,6" Click="StRecoExportTxt_Click"/>
@@ -3373,6 +3375,9 @@
                                                                 <DataTrigger Binding="{Binding CanComputeRank}" Value="True">
                                                                     <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
                                                                 </DataTrigger>
+                                                                <DataTrigger Binding="{Binding CanComputeSpearman}" Value="True">
+                                                                    <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
                                                                 <DataTrigger Binding="{Binding StatusKind}" Value="Good">
                                                                     <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
                                                                     <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
@@ -3405,9 +3410,14 @@
                                                 <TextBlock Text="Deterministic inferential analyses computed locally from your dataset."
                                                            Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,10" MaxWidth="640"/>
                                                 <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9">
-                                                    <TextBlock Text="Computed locally with deterministic C# only. No AI. Aggregate outputs only — never individual participant rows."
+                                                    <TextBlock Text="Computed locally · deterministic · no AI. Aggregate outputs only — never individual participant rows."
                                                                Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                                 </Border>
+                                                <WrapPanel Margin="0,12,0,0">
+                                                    <Button Style="{StaticResource SoftButton}" Content="Export all TXT" MinWidth="130" Margin="0,0,10,0" Click="StComputedExportAllTxt_Click"/>
+                                                    <Button Style="{StaticResource SoftButton}" Content="Export all CSV" MinWidth="130" Margin="0,0,10,0" Click="StComputedExportAllCsv_Click"/>
+                                                    <Button Style="{StaticResource GhostButton}" Content="Clear results" MinWidth="110" Margin="0,0,10,0" Click="StComputedClear_Click"/>
+                                                </WrapPanel>
                                             </StackPanel>
                                         </Border>
 

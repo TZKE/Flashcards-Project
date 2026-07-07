@@ -7766,9 +7766,9 @@ public sealed partial class MainWindow : Window
         if (_recoRunning) return;
         if (!RecoUnlockedGuard()) return;
         if ((sender as FrameworkElement)?.DataContext is not TestRecommendation rec) return;
-        if (!rec.CanComputeCategorical && !rec.CanComputeRank)
+        if (!IsRunnableReco(rec))
         {
-            ShowToast("This card cannot be computed. Only categorical or rank comparisons that are ready or need assumption review can be run.");
+            ShowToast("This card cannot be computed. Only categorical, rank, or correlation comparisons that are ready or need assumption review can be run.");
             return;
         }
 
@@ -7802,10 +7802,7 @@ public sealed partial class MainWindow : Window
             await StepRunLoading("Preparing variables…");
             await StepRunLoading("Checking assumptions…");
             await StepRunLoading("Computing locally…");
-            // Deterministic + instant; a card is never both categorical and rank.
-            IInferenceExportable result = rec.CanComputeCategorical
-                ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData, _statMatch)
-                : RankInferenceEngine.Compute(rec, outcome, predictor, _statData, _statMatch);
+            IInferenceExportable result = DispatchCompute(rec, outcome, predictor);
             await StepRunLoading("Building result summary…");
 
             _computedRows.Insert(0, BuildComputedRow(result));
@@ -7828,6 +7825,20 @@ public sealed partial class MainWindow : Window
         StRunLoadingStep.Text = message;
         await System.Threading.Tasks.Task.Delay(600);
     }
+
+    // A card is runnable when exactly one of the three (mutually-exclusive)
+    // compute gates is open. Role-review / unsupported / not-recommended cards
+    // never qualify.
+    private static bool IsRunnableReco(TestRecommendation rec)
+        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman;
+
+    // Dispatches to the engine matching the recommended test. Precondition:
+    // IsRunnableReco(rec) is true and _statData is loaded. The three gates are
+    // mutually exclusive by variable kind, so exactly one branch applies.
+    private IInferenceExportable DispatchCompute(TestRecommendation rec, ResearchVariable outcome, ResearchVariable predictor)
+        => rec.CanComputeCategorical ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
+         : rec.CanComputeRank ? RankInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
+         : SpearmanCorrelationEngine.Compute(rec, outcome, predictor, _statData!, _statMatch);
 
     // Builds the aggregate-only display row for a computed result. No math here —
     // it only reads already-computed values off the result object.
@@ -7859,6 +7870,13 @@ public sealed partial class MainWindow : Window
                 row.PValueDisplay = r.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(r.PValue.Value)}";
                 row.EffectDisplay = r.EffectValue is { } ev ? $"{r.EffectName} = {InferenceMath.FormatNumber(ev, 3)}" : "Effect: —";
                 pv = r.PValue;
+                break;
+            case SpearmanResult s:
+                row.TestName = s.TestUsed;
+                row.ValidNDisplay = $"N = {s.PairN}";
+                row.PValueDisplay = s.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(s.PValue.Value)}";
+                row.EffectDisplay = s.Rho is null ? "Effect: —" : $"ρ = {InferenceMath.FormatNumber(s.Rho, 3)}";
+                pv = s.PValue;
                 break;
             default:
                 row.TestName = "Result";
@@ -7943,6 +7961,114 @@ public sealed partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
         SaveStatExport("analysis_result.csv", "CSV files (*.csv)|*.csv", row.Result.ToCsv(), "Analysis result exported");
+    }
+
+    // ---- Computed Results productivity actions -------------------------------
+    // Run every currently-runnable card in sequence (never parallel), adding each
+    // result to Computed Results. Non-runnable cards (role review / unsupported)
+    // are skipped; a card that CannotCompute is still added (as a "needs review"
+    // card) and counted — one bad pairing never aborts the batch.
+    private async void StRecoRunAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recoRunning) return;
+        if (!RecoUnlockedGuard()) return;
+        var p = CurrentResearchProject();
+        if (p is null) return;
+        if (_statData is null) { ShowToast("Upload the complete CSV dataset to compute analyses."); return; }
+        if (_recoResult is null) return;
+
+        var vars = p.Variables ?? new List<ResearchVariable>();
+        var runnable = _recoResult.Recommendations.Where(IsRunnableReco).ToList();
+        if (runnable.Count == 0) { ShowToast("No supported analyses are available to run yet."); return; }
+
+        _recoRunning = true;
+        try
+        {
+            ShowStatView("computed");
+            StComputedDetailsCard.Visibility = Visibility.Collapsed;
+            StComputedEmpty.Visibility = Visibility.Collapsed;
+            StRunLoadingCard.Visibility = Visibility.Visible;
+
+            int computed = 0, review = 0;
+            for (int i = 0; i < runnable.Count; i++)
+            {
+                var rec = runnable[i];
+                StRunLoadingStep.Text = $"Running supported analyses {i + 1} of {runnable.Count}…";
+                await System.Threading.Tasks.Task.Delay(400);
+
+                var outcome = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.OutcomeName);
+                var predictor = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.PredictorName);
+                if (outcome is null || predictor is null) { review++; continue; }
+
+                var result = DispatchCompute(rec, outcome, predictor);
+                _computedRows.Insert(0, BuildComputedRow(result));
+                if (result.Computed) computed++; else review++;
+            }
+            _computedResultsProjectId = p.Id;
+
+            StRunLoadingCard.Visibility = Visibility.Collapsed;
+            RenderComputedResults();
+            ShowToast($"Ran {runnable.Count} supported analyses — {computed} computed, {review} need review. See Computed Results.");
+        }
+        catch (Exception ex)
+        {
+            StRunLoadingCard.Visibility = Visibility.Collapsed;
+            HandleDxError("run all supported analyses", ex);
+        }
+        finally { _recoRunning = false; }
+    }
+
+    private void StComputedExportAllTxt_Click(object sender, RoutedEventArgs e)
+    {
+        if (_computedRows.Count == 0) { ShowToast("No computed results to export yet."); return; }
+        SaveStatExport("computed_results_all.txt", "Text files (*.txt)|*.txt", BuildAllResultsTxt(), "All computed results exported");
+    }
+
+    private void StComputedExportAllCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if (_computedRows.Count == 0) { ShowToast("No computed results to export yet."); return; }
+        SaveStatExport("computed_results_all.csv", "CSV files (*.csv)|*.csv", BuildAllResultsCsv(), "All computed results exported");
+    }
+
+    private void StComputedClear_Click(object sender, RoutedEventArgs e)
+    {
+        if (_computedRows.Count == 0) { ShowToast("There are no computed results to clear."); return; }
+        _computedRows.Clear();
+        _computedDetailsRow = null;
+        StComputedDetailsCard.Visibility = Visibility.Collapsed;
+        RenderComputedResults();
+        ShowToast("Computed results cleared. Your dataset, extraction sheet, and recommendations are unchanged.");
+    }
+
+    // Combined exports — aggregate only, no participant rows.
+    private string BuildAllResultsTxt()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("COMPUTED RESULTS — combined export");
+        sb.AppendLine($"Total results: {_computedRows.Count}");
+        sb.AppendLine("Computed locally · deterministic · no AI. Aggregate outputs only.");
+        sb.AppendLine(new string('=', 78));
+        foreach (var row in _computedRows)
+        {
+            sb.AppendLine();
+            sb.AppendLine(row.Result.ToPlainText());
+            sb.AppendLine(new string('-', 78));
+        }
+        return sb.ToString();
+    }
+
+    private string BuildAllResultsCsv()
+    {
+        var sb = new System.Text.StringBuilder();
+        string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+        sb.AppendLine(string.Join(",", new[] { "Test", "Variables", "N", "PValue", "Effect", "Significance", "ComputedTime", "AiInvolved" }.Select(Q)));
+        foreach (var row in _computedRows)
+            sb.AppendLine(string.Join(",", new[]
+            {
+                Q(row.TestName), Q(row.Variables), Q(row.ValidNDisplay), Q(row.PValueDisplay),
+                Q(row.EffectDisplay), Q(row.SignificanceText), Q(row.ComputedTimeDisplay), Q("no")
+            }));
+        return sb.ToString();
     }
 
     // Locked-state navigation buttons.
