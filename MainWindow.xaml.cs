@@ -7455,6 +7455,14 @@ public sealed partial class MainWindow : Window
         public string AnalysisFingerprint { get; set; } = "";
         public bool HasPValue { get; set; }
         public bool IsSignificant { get; set; }
+
+        // Phase 4C Slice 3 — set once per Computed Results render by comparing
+        // AnalysisFingerprint against the CURRENT project fingerprint (computed
+        // once per render, not per card). Never recomputed by a getter, so
+        // binding to it is cheap and stable between renders.
+        public bool IsStale { get; set; }
+        public string StaleText { get; set; } = "";
+        public Visibility StaleVisibility => IsStale ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // Deterministic Magic Fix repair suggestions, recomputed on every Statistics
@@ -7975,6 +7983,22 @@ public sealed partial class MainWindow : Window
 
     private void RenderComputedResults()
     {
+        // Phase 4C Slice 3 — stale check. Computed ONCE per render (not per
+        // card): recompute the CURRENT project fingerprint via the existing
+        // StatisticsFingerprint path and compare each row's saved fingerprint
+        // against it. A missing/empty saved fingerprint (an edge case, not
+        // expected in practice) is always treated as stale — never crashes,
+        // never silently claims "fresh" when it can't verify.
+        var p = CurrentResearchProject();
+        string currentFingerprint = p is not null ? CurrentStatisticsFingerprint(p) : "";
+        foreach (var row in _computedRows)
+        {
+            row.IsStale = string.IsNullOrEmpty(row.AnalysisFingerprint)
+                || !string.Equals(row.AnalysisFingerprint, currentFingerprint, StringComparison.Ordinal);
+            row.StaleText = row.IsStale ? "Stale — dataset or extraction sheet changed" : "";
+        }
+
+        StComputedList.ItemsSource = null;
         StComputedList.ItemsSource = _computedRows;
         bool any = _computedRows.Count > 0;
         StComputedEmpty.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
@@ -7983,6 +8007,7 @@ public sealed partial class MainWindow : Window
         int total = _computedRows.Count;
         int withP = _computedRows.Count(r => r.HasPValue);
         int sig = _computedRows.Count(r => r.IsSignificant);
+        int stale = _computedRows.Count(r => r.IsStale);
         string last = total > 0 ? _computedRows[0].ComputedTimeDisplay : "—";
 
         var cards = new List<StatisticsReadinessCard>
@@ -7993,6 +8018,9 @@ public sealed partial class MainWindow : Window
         // Significance card is only meaningful when at least one result has a p-value.
         if (withP > 0)
             cards.Add(new StatisticsReadinessCard { Title = "Significant", Value = $"{sig} of {withP}", Kind = sig > 0 ? "Good" : "Muted" });
+        // Stale count card only appears when at least one result is stale.
+        if (stale > 0)
+            cards.Add(new StatisticsReadinessCard { Title = "Stale results", Value = stale.ToString(), Kind = "Warn" });
         StComputedSummaryCards.ItemsSource = cards;
     }
 

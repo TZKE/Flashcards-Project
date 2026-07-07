@@ -3455,6 +3455,7 @@
                                                         </Border>
                                                         <DataTemplate.Triggers>
                                                             <DataTrigger Binding="{Binding Kind}" Value="Good"><Setter TargetName="CSumVal" Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger>
+                                                            <DataTrigger Binding="{Binding Kind}" Value="Warn"><Setter TargetName="CSumVal" Property="Foreground" Value="{StaticResource WarningBrush}"/></DataTrigger>
                                                         </DataTemplate.Triggers>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
@@ -3486,9 +3487,14 @@
 
                                                             <StackPanel Margin="0,4,0,0">
                                                                 <TextBlock Text="{Binding ComputedTimeDisplay}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                                                <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="6" Padding="8,3" Margin="0,4,0,0" HorizontalAlignment="Left">
-                                                                    <TextBlock Text="Deterministic · No AI" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource SuccessBrush}"/>
-                                                                </Border>
+                                                                <WrapPanel Margin="0,4,0,0">
+                                                                    <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="6" Padding="8,3" Margin="0,0,8,0">
+                                                                        <TextBlock Text="Deterministic · No AI" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource SuccessBrush}"/>
+                                                                    </Border>
+                                                                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="6" Padding="8,3" Visibility="{Binding StaleVisibility}">
+                                                                        <TextBlock Text="{Binding StaleText}" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}"/>
+                                                                    </Border>
+                                                                </WrapPanel>
                                                             </StackPanel>
 
                                                             <WrapPanel Margin="0,12,0,0">
