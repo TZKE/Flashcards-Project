@@ -103,6 +103,14 @@ public sealed class ResearchProject
     // copy of the uploaded CSV lives in the app data folder per project.
     public DescriptiveStatisticsRecord? DescriptiveStatistics { get; set; }
 
+    // ---- Phase 4C addition (Computed Results persistence) ------------------
+    // Deterministic categorical/rank/Spearman analyses the student has run,
+    // stored as flat aggregate-only records (never the raw participant CSV,
+    // never the live engine object). Optional/defaulted so older
+    // research_projects.json files without this key load unchanged (deserializes
+    // to an empty list, not null).
+    public List<SavedComputedResult> ComputedResults { get; set; } = new();
+
     // ---- Display helpers (not persisted) ----------------------------------
     // Used by the project-card DataTemplate so the XAML stays clean and we
     // avoid culture-sensitive StringFormat surprises.

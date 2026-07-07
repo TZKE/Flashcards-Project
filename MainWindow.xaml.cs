@@ -7423,30 +7423,38 @@ public sealed partial class MainWindow : Window
     private bool _recoShowingDescriptive = true;
     private TestRecommendationResult? _recoResult;
 
-    // Phase 4B Part 2 — Computed Results workflow. In-memory only (no persistence
-    // yet), newest first. Each row is an aggregate-only display over an
-    // IInferenceExportable, which backs Copy / Export / Details.
+    // Phase 4B/4C — Computed Results workflow. Newest first. Each row is a flat,
+    // aggregate-only display model — NOT a live IInferenceExportable — so a
+    // freshly-computed row and one reloaded from the project file (Phase 4C
+    // persistence) use exactly the same display/Copy/Export code path.
     private readonly System.Collections.ObjectModel.ObservableCollection<ComputedResultRow> _computedRows = new();
     private string _computedResultsProjectId = "";
     private bool _recoRunning;
     private ComputedResultRow? _computedDetailsRow;
 
     // Aggregate-only view model for one computed-analysis card. No participant
-    // rows are ever stored here — only display strings + the exportable result.
+    // rows are ever stored here — only display strings, already rendered by the
+    // engine at compute time. Mirrors SavedComputedResult field-for-field so
+    // ToSaved/FromSaved (Phase 4C) are simple 1:1 mappings.
     public sealed class ComputedResultRow
     {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string TestName { get; set; } = "";
         public string Variables { get; set; } = "";
+        public string OutcomeName { get; set; } = "";
+        public string PredictorName { get; set; } = "";
         public string ValidNDisplay { get; set; } = "";
         public string PValueDisplay { get; set; } = "";
         public string EffectDisplay { get; set; } = "";
+        public DateTime ComputedAt { get; set; } = DateTime.UtcNow;
         public string ComputedTimeDisplay { get; set; } = "";
         public string SignificanceText { get; set; } = "";
         public string SignificanceKind { get; set; } = "Muted";   // "Good" | "Muted"
-        public string DetailsText { get; set; } = "";
+        public string FullPlainText { get; set; } = "";
+        public string CsvText { get; set; } = "";
+        public string AnalysisFingerprint { get; set; } = "";
         public bool HasPValue { get; set; }
         public bool IsSignificant { get; set; }
-        public IInferenceExportable Result { get; set; } = null!;
     }
 
     // Deterministic Magic Fix repair suggestions, recomputed on every Statistics
@@ -7653,13 +7661,20 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            // Computed Results persist across refreshes within a project, but must
-            // never bleed across projects — clear them when the project changes.
-            if (_computedResultsProjectId.Length > 0 && _computedResultsProjectId != p.Id)
+            // Computed Results are project-scoped: on first load of a project (or
+            // switching to a different one), restore its saved results from the
+            // project file (Phase 4C persistence) instead of leaving the previous
+            // project's rows on screen. A same-project refresh is a no-op here —
+            // every mutation already persists immediately, so there is nothing
+            // "unsaved" to reload mid-session.
+            if (_computedResultsProjectId != p.Id)
             {
                 _computedRows.Clear();
+                foreach (var saved in p.ComputedResults ?? new List<SavedComputedResult>())
+                    _computedRows.Add(FromSavedComputedResult(saved));
                 _computedResultsProjectId = p.Id;
                 if (StComputedDetailsCard is not null) StComputedDetailsCard.Visibility = Visibility.Collapsed;
+                RenderComputedResults();
             }
 
             var vars = p.Variables ?? new List<ResearchVariable>();
@@ -7805,8 +7820,9 @@ public sealed partial class MainWindow : Window
             IInferenceExportable result = DispatchCompute(rec, outcome, predictor);
             await StepRunLoading("Building result summary…");
 
-            _computedRows.Insert(0, BuildComputedRow(result));
+            _computedRows.Insert(0, BuildComputedRow(rec, result, p));
             _computedResultsProjectId = p.Id;
+            PersistComputedResults(p);
 
             StRunLoadingCard.Visibility = Visibility.Collapsed;
             RenderComputedResults();
@@ -7841,15 +7857,20 @@ public sealed partial class MainWindow : Window
          : SpearmanCorrelationEngine.Compute(rec, outcome, predictor, _statData!, _statMatch);
 
     // Builds the aggregate-only display row for a computed result. No math here —
-    // it only reads already-computed values off the result object.
-    private ComputedResultRow BuildComputedRow(IInferenceExportable result)
+    // it only reads already-computed values off the result object and renders its
+    // ToPlainText()/ToCsv() ONCE, so the row never needs the live object again.
+    private ComputedResultRow BuildComputedRow(TestRecommendation rec, IInferenceExportable result, ResearchProject p)
     {
         var row = new ComputedResultRow
         {
-            Result = result,
             Variables = result.ResultTitle,
+            OutcomeName = rec.OutcomeName,
+            PredictorName = rec.PredictorName,
+            ComputedAt = DateTime.UtcNow,
             ComputedTimeDisplay = DateTime.Now.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture),
-            DetailsText = result.ToPlainText()
+            FullPlainText = result.ToPlainText(),
+            CsvText = result.ToCsv(),
+            AnalysisFingerprint = CurrentStatisticsFingerprint(p)
         };
 
         double? pv = null;
@@ -7898,6 +7919,60 @@ public sealed partial class MainWindow : Window
         return row;
     }
 
+    // ---- Phase 4C (Slice 1): Computed Results persistence --------------------
+    // Single source of truth for saving to disk: converts the current in-memory
+    // rows (already newest-first) into the flat, aggregate-only SavedComputedResult
+    // shape and writes the whole project store once. Called after every mutation
+    // (single Run, the Run-all batch, Clear) so the saved copy never drifts from
+    // what the UI shows. No participant rows, no AI — every field here is a
+    // string/bool/DateTime already produced by the engine at compute time.
+    private void PersistComputedResults(ResearchProject p)
+    {
+        p.ComputedResults = _computedRows.Select(ToSavedComputedResult).ToList();
+        SaveResearch();
+    }
+
+    private static SavedComputedResult ToSavedComputedResult(ComputedResultRow row) => new()
+    {
+        Id = row.Id,
+        TestName = row.TestName,
+        Variables = row.Variables,
+        OutcomeName = row.OutcomeName,
+        PredictorName = row.PredictorName,
+        ValidNDisplay = row.ValidNDisplay,
+        PValueDisplay = row.PValueDisplay,
+        EffectDisplay = row.EffectDisplay,
+        SignificanceText = row.SignificanceText,
+        SignificanceKind = row.SignificanceKind,
+        HasPValue = row.HasPValue,
+        IsSignificant = row.IsSignificant,
+        FullPlainText = row.FullPlainText,
+        CsvText = row.CsvText,
+        ComputedAt = row.ComputedAt,
+        AnalysisFingerprint = row.AnalysisFingerprint
+    };
+
+    private static ComputedResultRow FromSavedComputedResult(SavedComputedResult s) => new()
+    {
+        Id = s.Id,
+        TestName = s.TestName,
+        Variables = s.Variables,
+        OutcomeName = s.OutcomeName,
+        PredictorName = s.PredictorName,
+        ValidNDisplay = s.ValidNDisplay,
+        PValueDisplay = s.PValueDisplay,
+        EffectDisplay = s.EffectDisplay,
+        SignificanceText = s.SignificanceText,
+        SignificanceKind = s.SignificanceKind,
+        HasPValue = s.HasPValue,
+        IsSignificant = s.IsSignificant,
+        FullPlainText = s.FullPlainText,
+        CsvText = s.CsvText,
+        ComputedAt = s.ComputedAt,
+        ComputedTimeDisplay = s.ComputedTimeDisplay,
+        AnalysisFingerprint = s.AnalysisFingerprint
+    };
+
     private void RenderComputedResults()
     {
         StComputedList.ItemsSource = _computedRows;
@@ -7926,7 +8001,7 @@ public sealed partial class MainWindow : Window
         if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
         _computedDetailsRow = row;
         StComputedDetailsTitle.Text = $"{row.TestName} — {row.Variables}";
-        StComputedDetailsText.Text = row.DetailsText;
+        StComputedDetailsText.Text = row.FullPlainText;
         StComputedDetailsCard.Visibility = Visibility.Visible;
         StComputedDetailsCard.BringIntoView();
     }
@@ -7940,27 +8015,27 @@ public sealed partial class MainWindow : Window
     private void StComputedDetailsCopy_Click(object sender, RoutedEventArgs e)
     {
         if (_computedDetailsRow is null) return;
-        try { Clipboard.SetText(_computedDetailsRow.Result.ToPlainText()); ShowToast("Result copied to the clipboard."); }
+        try { Clipboard.SetText(_computedDetailsRow.FullPlainText); ShowToast("Result copied to the clipboard."); }
         catch { ShowToast("The result could not be copied. Please try again."); }
     }
 
     private void StComputedCopy_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
-        try { Clipboard.SetText(row.Result.ToPlainText()); ShowToast("Result copied to the clipboard."); }
+        try { Clipboard.SetText(row.FullPlainText); ShowToast("Result copied to the clipboard."); }
         catch { ShowToast("The result could not be copied. Please try again."); }
     }
 
     private void StComputedExportTxt_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
-        SaveStatExport("analysis_result.txt", "Text files (*.txt)|*.txt", row.Result.ToPlainText(), "Analysis result exported");
+        SaveStatExport("analysis_result.txt", "Text files (*.txt)|*.txt", row.FullPlainText, "Analysis result exported");
     }
 
     private void StComputedExportCsv_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
-        SaveStatExport("analysis_result.csv", "CSV files (*.csv)|*.csv", row.Result.ToCsv(), "Analysis result exported");
+        SaveStatExport("analysis_result.csv", "CSV files (*.csv)|*.csv", row.CsvText, "Analysis result exported");
     }
 
     // ---- Computed Results productivity actions -------------------------------
@@ -8001,10 +8076,11 @@ public sealed partial class MainWindow : Window
                 if (outcome is null || predictor is null) { review++; continue; }
 
                 var result = DispatchCompute(rec, outcome, predictor);
-                _computedRows.Insert(0, BuildComputedRow(result));
+                _computedRows.Insert(0, BuildComputedRow(rec, result, p));
                 if (result.Computed) computed++; else review++;
             }
             _computedResultsProjectId = p.Id;
+            PersistComputedResults(p);   // one save after the whole batch, not per item
 
             StRunLoadingCard.Visibility = Visibility.Collapsed;
             RenderComputedResults();
@@ -8037,6 +8113,10 @@ public sealed partial class MainWindow : Window
         _computedDetailsRow = null;
         StComputedDetailsCard.Visibility = Visibility.Collapsed;
         RenderComputedResults();
+        // Clear both the in-memory list and the saved copy — dataset, extraction
+        // sheet, and recommendations are never touched by this action.
+        var p = CurrentResearchProject();
+        if (p is not null) PersistComputedResults(p);
         ShowToast("Computed results cleared. Your dataset, extraction sheet, and recommendations are unchanged.");
     }
 
@@ -8051,7 +8131,7 @@ public sealed partial class MainWindow : Window
         foreach (var row in _computedRows)
         {
             sb.AppendLine();
-            sb.AppendLine(row.Result.ToPlainText());
+            sb.AppendLine(row.FullPlainText);
             sb.AppendLine(new string('-', 78));
         }
         return sb.ToString();
