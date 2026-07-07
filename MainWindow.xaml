@@ -2926,11 +2926,12 @@
                                 <!-- STATISTICS (Phase 4A descriptive + Phase 4B Part 1 recommended analysis) -->
                                 <StackPanel x:Name="TabStats" Visibility="Collapsed" VerticalAlignment="Top" MaxWidth="1020" HorizontalAlignment="Left">
 
-                                    <!-- Internal switch: Descriptive Statistics | Recommended Analysis -->
+                                    <!-- Internal switch: Descriptive Statistics | Recommended Analysis | Computed Results -->
                                     <Border Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="4" HorizontalAlignment="Left" Margin="0,0,0,16">
                                         <StackPanel Orientation="Horizontal">
                                             <Button x:Name="StSegDescriptive" Style="{StaticResource SegTabActive}" Content="Descriptive Statistics" Click="StShowDescriptive_Click"/>
                                             <Button x:Name="StSegRecommended" Style="{StaticResource SegTab}" Content="Recommended Analysis" Margin="4,0,0,0" Click="StShowRecommended_Click"/>
+                                            <Button x:Name="StSegComputed" Style="{StaticResource SegTab}" Content="Computed Results" Margin="4,0,0,0" Click="StShowComputed_Click"/>
                                         </StackPanel>
                                     </Border>
 
@@ -3204,7 +3205,7 @@
                                                 <TextBlock Text="Deterministic statistical test planning based on your Extraction Sheet and dataset structure."
                                                            Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,10" MaxWidth="640"/>
                                                 <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9">
-                                                    <TextBlock Text="This section recommends future inferential tests only. No p-values or inferential results are calculated in this phase."
+                                                    <TextBlock Text="Recommendations are planning-only until you click Run. Supported analyses are computed locally using deterministic C# only."
                                                                Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                                 </Border>
                                             </StackPanel>
@@ -3369,6 +3370,9 @@
                                                                 <DataTrigger Binding="{Binding CanComputeCategorical}" Value="True">
                                                                     <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
                                                                 </DataTrigger>
+                                                                <DataTrigger Binding="{Binding CanComputeRank}" Value="True">
+                                                                    <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
                                                                 <DataTrigger Binding="{Binding StatusKind}" Value="Good">
                                                                     <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
                                                                     <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
@@ -3387,32 +3391,138 @@
                                             </ItemsControl>
 
                                             <TextBlock x:Name="StRecoEmptyText" Visibility="Collapsed" FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
-
-                                            <!-- Phase 4B Part 2: computed categorical result (aggregate only). -->
-                                            <Border x:Name="StRecoInferenceCard" Style="{StaticResource CardBorder}" Padding="22" Margin="0,16,0,0" Visibility="Collapsed">
-                                                <StackPanel>
-                                                    <TextBlock Text="Computed result" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                                    <TextBlock x:Name="StRecoInferenceTitle" FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-                                                    <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,12,0,0">
-                                                        <TextBlock Text="Computed locally on this device by deterministic calculations. No AI selected or calculated this result, and only aggregate category counts are shown — never individual participant rows."
-                                                                   Foreground="{StaticResource PrimaryBrush}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                                    </Border>
-                                                    <TextBox x:Name="StRecoInferenceText" IsReadOnly="True" AcceptsReturn="True" IsReadOnlyCaretVisible="False"
-                                                             FontFamily="Consolas" FontSize="12" BorderThickness="1" BorderBrush="{StaticResource BorderBrushSoft}"
-                                                             Background="{StaticResource SoftCardBrush}" Foreground="{StaticResource TextBrush}" Padding="12"
-                                                             Margin="0,12,0,0" MaxHeight="440" TextWrapping="NoWrap"
-                                                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"/>
-                                                    <WrapPanel Margin="0,12,0,0">
-                                                        <Button Style="{StaticResource SoftButton}" Content="Copy Result" MinWidth="130" Margin="0,0,10,6" Click="StRecoInferenceCopy_Click"/>
-                                                        <Button Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="110" Margin="0,0,10,6" Click="StRecoInferenceExportTxt_Click"/>
-                                                        <Button Style="{StaticResource SoftButton}" Content="Export CSV" MinWidth="110" Margin="0,0,10,6" Click="StRecoInferenceExportCsv_Click"/>
-                                                        <Button Style="{StaticResource GhostButton}" Content="Hide" MinWidth="90" Margin="0,0,10,6" Click="StRecoInferenceHide_Click"/>
-                                                    </WrapPanel>
-                                                </StackPanel>
-                                            </Border>
                                         </StackPanel>
                                     </StackPanel>
                                     <!-- ============ END RECOMMENDED ANALYSIS ============ -->
+
+                                    <!-- ============ COMPUTED RESULTS (Phase 4B Part 2) ============ -->
+                                    <StackPanel x:Name="StComputedView" Visibility="Collapsed">
+
+                                        <!-- Header -->
+                                        <Border Style="{StaticResource CardBorder}" Padding="26">
+                                            <StackPanel>
+                                                <TextBlock Text="Computed Results" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Deterministic inferential analyses computed locally from your dataset."
+                                                           Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,10" MaxWidth="640"/>
+                                                <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9">
+                                                    <TextBlock Text="Computed locally with deterministic C# only. No AI. Aggregate outputs only — never individual participant rows."
+                                                               Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Loading state (shown while an analysis runs) -->
+                                        <Border x:Name="StRunLoadingCard" Style="{StaticResource CardBorder}" Padding="26" Margin="0,14,0,0" Visibility="Collapsed">
+                                            <StackPanel>
+                                                <TextBlock Text="Running analysis" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                                                <TextBlock x:Name="StRunLoadingStep" Text="Preparing variables…" FontSize="13" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,12"/>
+                                                <ProgressBar IsIndeterminate="True" Height="5" Background="{StaticResource SoftCardBrush}" Foreground="{StaticResource PrimaryBrush}" BorderThickness="0"/>
+                                                <TextBlock Text="Computing locally — deterministic, no AI." FontSize="11.5" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Empty state -->
+                                        <Border x:Name="StComputedEmpty" Style="{StaticResource CardBorder}" Padding="26" Margin="0,14,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="No analyses computed yet" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                                                <TextBlock Text="Go to Recommended Analysis and click “Run this analysis” on a supported card to compute a result here."
+                                                           Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,12"/>
+                                                <Button Style="{StaticResource PremiumButton}" Content="Go to Recommended Analysis" MinWidth="220" HorizontalAlignment="Left" Click="StShowRecommended_Click"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- Summary cards -->
+                                        <Border x:Name="StComputedSummary" Style="{StaticResource CardBorder}" Padding="22" Margin="0,14,0,0" Visibility="Collapsed">
+                                            <ItemsControl x:Name="StComputedSummaryCards">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="10" Padding="14,10" Margin="0,0,10,0" MinWidth="150">
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Title}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                <TextBlock x:Name="CSumVal" Text="{Binding Value}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,3,0,0"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding Kind}" Value="Good"><Setter TargetName="CSumVal" Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger>
+                                                        </DataTemplate.Triggers>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Border>
+
+                                        <!-- Result cards -->
+                                        <ItemsControl x:Name="StComputedList" Margin="0,4,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Style="{StaticResource CardBorder}" Padding="20" Margin="0,10,0,0">
+                                                        <StackPanel>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding TestName}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                                                    <TextBlock Text="{Binding Variables}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                                                </StackPanel>
+                                                                <Border x:Name="CSigChip" Grid.Column="1" VerticalAlignment="Top" Background="{StaticResource SoftCardBrush}" CornerRadius="12" Padding="10,4">
+                                                                    <TextBlock x:Name="CSigText" Text="{Binding SignificanceText}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                </Border>
+                                                            </Grid>
+
+                                                            <WrapPanel Margin="0,12,0,0">
+                                                                <Border Background="{StaticResource SoftCardBrush}" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="{Binding ValidNDisplay}" FontSize="12" Foreground="{StaticResource TextBrush}"/></Border>
+                                                                <Border Background="{StaticResource SoftCardBrush}" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="{Binding PValueDisplay}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/></Border>
+                                                                <Border Background="{StaticResource SoftCardBrush}" CornerRadius="8" Padding="10,6" Margin="0,0,8,8"><TextBlock Text="{Binding EffectDisplay}" FontSize="12" Foreground="{StaticResource TextBrush}"/></Border>
+                                                            </WrapPanel>
+
+                                                            <StackPanel Margin="0,4,0,0">
+                                                                <TextBlock Text="{Binding ComputedTimeDisplay}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                                                                <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="6" Padding="8,3" Margin="0,4,0,0" HorizontalAlignment="Left">
+                                                                    <TextBlock Text="Deterministic · No AI" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource SuccessBrush}"/>
+                                                                </Border>
+                                                            </StackPanel>
+
+                                                            <WrapPanel Margin="0,12,0,0">
+                                                                <Button Style="{StaticResource PremiumButton}" Content="View details" MinWidth="120" Margin="0,0,10,6" Click="StComputedViewDetails_Click"/>
+                                                                <Button Style="{StaticResource SoftButton}" Content="Copy" MinWidth="90" Margin="0,0,10,6" Click="StComputedCopy_Click"/>
+                                                                <Button Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="110" Margin="0,0,10,6" Click="StComputedExportTxt_Click"/>
+                                                                <Button Style="{StaticResource SoftButton}" Content="Export CSV" MinWidth="110" Margin="0,0,10,6" Click="StComputedExportCsv_Click"/>
+                                                            </WrapPanel>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding SignificanceKind}" Value="Good">
+                                                            <Setter TargetName="CSigChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
+                                                            <Setter TargetName="CSigText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <!-- Details view (readable monospace: dark text on light background) -->
+                                        <Border x:Name="StComputedDetailsCard" Style="{StaticResource CardBorder}" Padding="22" Margin="0,16,0,0" Visibility="Collapsed">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Result details" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                                                        <TextBlock x:Name="StComputedDetailsTitle" FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Style="{StaticResource GhostButton}" Content="Hide" MinWidth="80" VerticalAlignment="Top" Click="StComputedHideDetails_Click"/>
+                                                </Grid>
+                                                <Border Background="#FFFFFF" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="8" Margin="0,12,0,0">
+                                                    <ScrollViewer MaxHeight="460" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="14">
+                                                        <TextBlock x:Name="StComputedDetailsText" FontFamily="Consolas" FontSize="12.5" Foreground="#111111" TextWrapping="Wrap"/>
+                                                    </ScrollViewer>
+                                                </Border>
+                                                <WrapPanel Margin="0,12,0,0">
+                                                    <Button Style="{StaticResource SoftButton}" Content="Copy" MinWidth="90" Margin="0,0,10,0" Click="StComputedDetailsCopy_Click"/>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Border>
+
+                                    </StackPanel>
+                                    <!-- ============ END COMPUTED RESULTS ============ -->
 
                                 </StackPanel>
 

@@ -150,6 +150,23 @@ public sealed class TestRecommendation
     private static bool IsCategoricalKindDisplay(string kind) =>
         string.Equals(kind, "Binary", StringComparison.Ordinal)
         || string.Equals(kind, "Categorical", StringComparison.Ordinal);
+
+    // Phase 4B Part 2 (MVP-2) eligibility — METADATA ONLY, not a calculation.
+    // A card's rank test (Mann-Whitney U / Kruskal-Wallis) may be COMPUTED only
+    // when exactly one variable is rankable (Ordinal/Continuous) and the other
+    // is a grouping variable (Binary/Categorical), AND the plan is Ready or
+    // Needs-assumption-review. Handles both orientations (the ordinal/continuous
+    // side may be the outcome OR the predictor). Ordinal outcomes run the
+    // headline recommendation; continuous outcomes run the robust alternative.
+    [JsonIgnore]
+    public bool CanComputeRank =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && ((IsRankableKindDisplay(OutcomeKind) && IsCategoricalKindDisplay(PredictorKind))
+            || (IsRankableKindDisplay(PredictorKind) && IsCategoricalKindDisplay(OutcomeKind)));
+
+    private static bool IsRankableKindDisplay(string kind) =>
+        string.Equals(kind, "Ordinal", StringComparison.Ordinal)
+        || string.Equals(kind, "Continuous", StringComparison.Ordinal);
 }
 
 // The whole Recommended Analysis result for one project.

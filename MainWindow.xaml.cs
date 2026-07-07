@@ -7423,9 +7423,31 @@ public sealed partial class MainWindow : Window
     private bool _recoShowingDescriptive = true;
     private TestRecommendationResult? _recoResult;
 
-    // Phase 4B Part 2 — the last computed categorical result (aggregate only),
-    // held for the Copy/Export buttons on the result panel.
-    private CategoricalTestResult? _recoInference;
+    // Phase 4B Part 2 — Computed Results workflow. In-memory only (no persistence
+    // yet), newest first. Each row is an aggregate-only display over an
+    // IInferenceExportable, which backs Copy / Export / Details.
+    private readonly System.Collections.ObjectModel.ObservableCollection<ComputedResultRow> _computedRows = new();
+    private string _computedResultsProjectId = "";
+    private bool _recoRunning;
+    private ComputedResultRow? _computedDetailsRow;
+
+    // Aggregate-only view model for one computed-analysis card. No participant
+    // rows are ever stored here — only display strings + the exportable result.
+    public sealed class ComputedResultRow
+    {
+        public string TestName { get; set; } = "";
+        public string Variables { get; set; } = "";
+        public string ValidNDisplay { get; set; } = "";
+        public string PValueDisplay { get; set; } = "";
+        public string EffectDisplay { get; set; } = "";
+        public string ComputedTimeDisplay { get; set; } = "";
+        public string SignificanceText { get; set; } = "";
+        public string SignificanceKind { get; set; } = "Muted";   // "Good" | "Muted"
+        public string DetailsText { get; set; } = "";
+        public bool HasPValue { get; set; }
+        public bool IsSignificant { get; set; }
+        public IInferenceExportable Result { get; set; } = null!;
+    }
 
     // Deterministic Magic Fix repair suggestions, recomputed on every Statistics
     // refresh. _magicFixReview is the working copy shown in the review modal.
@@ -7602,18 +7624,26 @@ public sealed partial class MainWindow : Window
 
     // ---- Phase 4B Part 1: Recommended Analysis (deterministic test planning) ----
 
-    private void StShowDescriptive_Click(object sender, RoutedEventArgs e) => SetRecommendedView(false);
-    private void StShowRecommended_Click(object sender, RoutedEventArgs e) => SetRecommendedView(true);
+    private void StShowDescriptive_Click(object sender, RoutedEventArgs e) => ShowStatView("descriptive");
+    private void StShowRecommended_Click(object sender, RoutedEventArgs e) => ShowStatView("recommended");
+    private void StShowComputed_Click(object sender, RoutedEventArgs e) => ShowStatView("computed");
 
-    private void SetRecommendedView(bool showRecommended)
+    // Backward-compatible wrapper for existing callers.
+    private void SetRecommendedView(bool showRecommended) => ShowStatView(showRecommended ? "recommended" : "descriptive");
+
+    // Three-way internal Statistics switch: Descriptive | Recommended | Computed.
+    private void ShowStatView(string which)
     {
-        _recoShowingDescriptive = !showRecommended;
+        _recoShowingDescriptive = which == "descriptive";
         var active = (Style)FindResource("SegTabActive");
         var normal = (Style)FindResource("SegTab");
-        StSegDescriptive.Style = showRecommended ? normal : active;
-        StSegRecommended.Style = showRecommended ? active : normal;
-        StDescriptiveView.Visibility = showRecommended ? Visibility.Collapsed : Visibility.Visible;
-        StRecommendedView.Visibility = showRecommended ? Visibility.Visible : Visibility.Collapsed;
+        StSegDescriptive.Style = which == "descriptive" ? active : normal;
+        StSegRecommended.Style = which == "recommended" ? active : normal;
+        StSegComputed.Style = which == "computed" ? active : normal;
+        StDescriptiveView.Visibility = which == "descriptive" ? Visibility.Visible : Visibility.Collapsed;
+        StRecommendedView.Visibility = which == "recommended" ? Visibility.Visible : Visibility.Collapsed;
+        StComputedView.Visibility = which == "computed" ? Visibility.Visible : Visibility.Collapsed;
+        if (which == "computed") RenderComputedResults();
     }
 
     // Evaluates the gate and (when unlocked) builds the deterministic
@@ -7623,9 +7653,14 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            // Any refresh may change the recommendations/data, so a previously
-            // computed result no longer describes the current cards — clear it.
-            ResetRecoInference();
+            // Computed Results persist across refreshes within a project, but must
+            // never bleed across projects — clear them when the project changes.
+            if (_computedResultsProjectId.Length > 0 && _computedResultsProjectId != p.Id)
+            {
+                _computedRows.Clear();
+                _computedResultsProjectId = p.Id;
+                if (StComputedDetailsCard is not null) StComputedDetailsCard.Visibility = Visibility.Collapsed;
+            }
 
             var vars = p.Variables ?? new List<ResearchVariable>();
             var gate = TestRecommendationEngine.EvaluateGate(vars, _statData, _statMatch, _statReadiness);
@@ -7722,84 +7757,193 @@ public sealed partial class MainWindow : Window
             TestRecommendationExport.BuildCsv(_recoResult!), "Recommended analysis plan exported");
     }
 
-    // ---- Phase 4B Part 2: run the recommended CATEGORICAL test (deterministic) ----
+    // ---- Phase 4B Part 2: run a recommended test → Computed Results ----------
     // This is the only place a test is actually computed. It executes ONLY the
-    // categorical test that Part 1 recommended for an eligible pairing — the
-    // engine re-checks eligibility, so no arbitrary test can be run from here.
-    private void ResetRecoInference()
+    // categorical or rank test that Part 1 recommended for an eligible pairing —
+    // each engine re-checks eligibility, so no arbitrary test can be run here.
+    private async void StRecoRunInference_Click(object sender, RoutedEventArgs e)
     {
-        _recoInference = null;
-        if (StRecoInferenceCard is not null) StRecoInferenceCard.Visibility = Visibility.Collapsed;
-    }
-
-    private void StRecoRunInference_Click(object sender, RoutedEventArgs e)
-    {
+        if (_recoRunning) return;
         if (!RecoUnlockedGuard()) return;
+        if ((sender as FrameworkElement)?.DataContext is not TestRecommendation rec) return;
+        if (!rec.CanComputeCategorical && !rec.CanComputeRank)
+        {
+            ShowToast("This card cannot be computed. Only categorical or rank comparisons that are ready or need assumption review can be run.");
+            return;
+        }
+
+        var p = CurrentResearchProject();
+        if (p is null) return;
+        if (_statData is null)
+        {
+            ShowToast("Upload the complete CSV dataset to compute this analysis.");
+            return;
+        }
+
+        var vars = p.Variables ?? new List<ResearchVariable>();
+        var outcome = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.OutcomeName);
+        var predictor = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.PredictorName);
+        if (outcome is null || predictor is null)
+        {
+            ShowToast("The variables for this comparison could not be found in the extraction sheet.");
+            return;
+        }
+
+        _recoRunning = true;
         try
         {
-            if ((sender as FrameworkElement)?.DataContext is not TestRecommendation rec) return;
-            if (!rec.CanComputeCategorical)
-            {
-                ShowToast("This card cannot be computed. Only categorical comparisons that are ready or need assumption review can be run.");
-                return;
-            }
+            // Switch to Computed Results and show a lightweight, non-blocking
+            // loading state (async delays — never Thread.Sleep, never freezes UI).
+            ShowStatView("computed");
+            StComputedDetailsCard.Visibility = Visibility.Collapsed;
+            StComputedEmpty.Visibility = Visibility.Collapsed;   // hide empty-state behind the loader
+            StRunLoadingCard.Visibility = Visibility.Visible;
 
-            var p = CurrentResearchProject();
-            if (p is null) return;
-            if (_statData is null)
-            {
-                ShowToast("Upload the complete CSV dataset to compute this analysis.");
-                return;
-            }
+            await StepRunLoading("Preparing variables…");
+            await StepRunLoading("Checking assumptions…");
+            await StepRunLoading("Computing locally…");
+            // Deterministic + instant; a card is never both categorical and rank.
+            IInferenceExportable result = rec.CanComputeCategorical
+                ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData, _statMatch)
+                : RankInferenceEngine.Compute(rec, outcome, predictor, _statData, _statMatch);
+            await StepRunLoading("Building result summary…");
 
-            var vars = p.Variables ?? new List<ResearchVariable>();
-            var outcome = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.OutcomeName);
-            var predictor = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.PredictorName);
-            if (outcome is null || predictor is null)
-            {
-                ShowToast("The variables for this comparison could not be found in the extraction sheet.");
-                return;
-            }
+            _computedRows.Insert(0, BuildComputedRow(result));
+            _computedResultsProjectId = p.Id;
 
-            var result = CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData, _statMatch);
-            _recoInference = result;
-            StRecoInferenceTitle.Text = $"{result.OutcomeDisplay}  ×  {result.PredictorDisplay}";
-            StRecoInferenceText.Text = CategoricalInferenceExport.BuildPlainText(result);
-            StRecoInferenceCard.Visibility = Visibility.Visible;
-            StRecoInferenceCard.BringIntoView();
-            ShowToast(result.Computed
-                ? "Analysis computed locally (deterministic, no AI)."
-                : "This comparison could not produce a reliable p-value — see the result for details.");
+            StRunLoadingCard.Visibility = Visibility.Collapsed;
+            RenderComputedResults();
+            ShowToast("Analysis complete. Result is available in Computed Results.");
         }
-        catch (Exception ex) { HandleDxError("run the categorical analysis", ex); }
+        catch (Exception ex)
+        {
+            StRunLoadingCard.Visibility = Visibility.Collapsed;
+            HandleDxError("run the analysis", ex);
+        }
+        finally { _recoRunning = false; }
     }
 
-    private void StRecoInferenceCopy_Click(object sender, RoutedEventArgs e)
+    private async System.Threading.Tasks.Task StepRunLoading(string message)
     {
-        if (_recoInference is null) return;
-        try
+        StRunLoadingStep.Text = message;
+        await System.Threading.Tasks.Task.Delay(600);
+    }
+
+    // Builds the aggregate-only display row for a computed result. No math here —
+    // it only reads already-computed values off the result object.
+    private ComputedResultRow BuildComputedRow(IInferenceExportable result)
+    {
+        var row = new ComputedResultRow
         {
-            Clipboard.SetText(CategoricalInferenceExport.BuildPlainText(_recoInference));
-            ShowToast("Result copied to the clipboard.");
+            Result = result,
+            Variables = result.ResultTitle,
+            ComputedTimeDisplay = DateTime.Now.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture),
+            DetailsText = result.ToPlainText()
+        };
+
+        double? pv = null;
+        switch (result)
+        {
+            case CategoricalTestResult c:
+                row.TestName = c.TestUsed;
+                row.ValidNDisplay = $"N = {c.ValidPairs}";
+                row.PValueDisplay = c.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(c.PValue.Value)}";
+                row.EffectDisplay = c.CramersV is { } cv
+                    ? $"Cramér's V = {InferenceMath.FormatNumber(cv, 3)}" + (c.Phi is { } ph ? $"  ·  φ = {InferenceMath.FormatNumber(ph, 3)}" : "")
+                    : "Effect: —";
+                pv = c.PValue;
+                break;
+            case RankTestResult r:
+                row.TestName = r.TestUsed;
+                row.ValidNDisplay = $"N = {r.ValidN}";
+                row.PValueDisplay = r.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(r.PValue.Value)}";
+                row.EffectDisplay = r.EffectValue is { } ev ? $"{r.EffectName} = {InferenceMath.FormatNumber(ev, 3)}" : "Effect: —";
+                pv = r.PValue;
+                break;
+            default:
+                row.TestName = "Result";
+                break;
         }
+
+        row.HasPValue = pv is not null && result.Computed;
+        if (row.HasPValue)
+        {
+            row.IsSignificant = pv!.Value < 0.05;
+            row.SignificanceText = row.IsSignificant ? "Significant (p < .05)" : "Not significant";
+            row.SignificanceKind = row.IsSignificant ? "Good" : "Muted";
+        }
+        else
+        {
+            row.SignificanceText = "Needs review";
+            row.SignificanceKind = "Muted";
+        }
+        return row;
+    }
+
+    private void RenderComputedResults()
+    {
+        StComputedList.ItemsSource = _computedRows;
+        bool any = _computedRows.Count > 0;
+        StComputedEmpty.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        StComputedSummary.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+
+        int total = _computedRows.Count;
+        int withP = _computedRows.Count(r => r.HasPValue);
+        int sig = _computedRows.Count(r => r.IsSignificant);
+        string last = total > 0 ? _computedRows[0].ComputedTimeDisplay : "—";
+
+        var cards = new List<StatisticsReadinessCard>
+        {
+            new() { Title = "Total results", Value = total.ToString() },
+            new() { Title = "Last computed", Value = last }
+        };
+        // Significance card is only meaningful when at least one result has a p-value.
+        if (withP > 0)
+            cards.Add(new StatisticsReadinessCard { Title = "Significant", Value = $"{sig} of {withP}", Kind = sig > 0 ? "Good" : "Muted" });
+        StComputedSummaryCards.ItemsSource = cards;
+    }
+
+    private void StComputedViewDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
+        _computedDetailsRow = row;
+        StComputedDetailsTitle.Text = $"{row.TestName} — {row.Variables}";
+        StComputedDetailsText.Text = row.DetailsText;
+        StComputedDetailsCard.Visibility = Visibility.Visible;
+        StComputedDetailsCard.BringIntoView();
+    }
+
+    private void StComputedHideDetails_Click(object sender, RoutedEventArgs e)
+    {
+        StComputedDetailsCard.Visibility = Visibility.Collapsed;
+        _computedDetailsRow = null;
+    }
+
+    private void StComputedDetailsCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_computedDetailsRow is null) return;
+        try { Clipboard.SetText(_computedDetailsRow.Result.ToPlainText()); ShowToast("Result copied to the clipboard."); }
         catch { ShowToast("The result could not be copied. Please try again."); }
     }
 
-    private void StRecoInferenceExportTxt_Click(object sender, RoutedEventArgs e)
+    private void StComputedCopy_Click(object sender, RoutedEventArgs e)
     {
-        if (_recoInference is null) return;
-        SaveStatExport("categorical_analysis_result.txt", "Text files (*.txt)|*.txt",
-            CategoricalInferenceExport.BuildPlainText(_recoInference), "Analysis result exported");
+        if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
+        try { Clipboard.SetText(row.Result.ToPlainText()); ShowToast("Result copied to the clipboard."); }
+        catch { ShowToast("The result could not be copied. Please try again."); }
     }
 
-    private void StRecoInferenceExportCsv_Click(object sender, RoutedEventArgs e)
+    private void StComputedExportTxt_Click(object sender, RoutedEventArgs e)
     {
-        if (_recoInference is null) return;
-        SaveStatExport("categorical_analysis_result.csv", "CSV files (*.csv)|*.csv",
-            CategoricalInferenceExport.BuildCsv(_recoInference), "Analysis result exported");
+        if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
+        SaveStatExport("analysis_result.txt", "Text files (*.txt)|*.txt", row.Result.ToPlainText(), "Analysis result exported");
     }
 
-    private void StRecoInferenceHide_Click(object sender, RoutedEventArgs e) => ResetRecoInference();
+    private void StComputedExportCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
+        SaveStatExport("analysis_result.csv", "CSV files (*.csv)|*.csv", row.Result.ToCsv(), "Analysis result exported");
+    }
 
     // Locked-state navigation buttons.
     private void StRecoGoDescriptive_Click(object sender, RoutedEventArgs e) => SetRecommendedView(false);

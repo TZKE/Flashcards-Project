@@ -131,6 +131,20 @@ public static class InferenceMath
         return Math.Clamp(p, 0.0, 1.0);
     }
 
+    // Two-sided p-value for a standard-normal z-score, used by the Mann-Whitney
+    // normal approximation. Derived from the SAME regularized incomplete gamma
+    // as the chi-square tail — erfc(x) = Q(1/2, x²), so a two-sided normal tail
+    // = erfc(|z|/√2) = Q(1/2, z²/2). This avoids adding a separate, unvalidated
+    // erf approximation: it rides on the already-tested gamma core. Guarded to
+    // never return NaN/Infinity.
+    public static double NormalTwoSidedP(double z)
+    {
+        if (double.IsNaN(z)) return 1.0;
+        double p = RegularizedGammaQ(0.5, z * z / 2.0);
+        if (double.IsNaN(p) || double.IsInfinity(p)) return 1.0;
+        return Math.Clamp(p, 0.0, 1.0);
+    }
+
     // p-value display rules (audit requirement):
     //   * never display p = 0;
     //   * a p-value below .001 is shown as "< .001";
@@ -151,6 +165,19 @@ public static class InferenceMath
         if (v is null || double.IsNaN(v.Value) || double.IsInfinity(v.Value)) return "—";
         return v.Value.ToString("0." + new string('0', Math.Max(0, decimals)), CultureInfo.InvariantCulture);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Shared export contract so the UI can hold, copy, and export any computed
+// inference result (categorical, rank, …) through one reference. Every result
+// type must be able to render itself as aggregate-only plain text and CSV.
+// ---------------------------------------------------------------------------
+public interface IInferenceExportable
+{
+    string ResultTitle { get; }
+    bool Computed { get; }
+    string ToPlainText();
+    string ToCsv();
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +207,7 @@ public sealed class ContingencyTable
     public int ColCount => ColumnLabels.Count;
 }
 
-public sealed class CategoricalTestResult
+public sealed class CategoricalTestResult : IInferenceExportable
 {
     public string OutcomeName { get; set; } = "";
     public string OutcomeDisplay { get; set; } = "";
@@ -224,6 +251,11 @@ public sealed class CategoricalTestResult
 
     public string PValueDisplay => PValue is null ? "not calculated" : InferenceMath.FormatPValue(PValue.Value);
     public string GeneratedDisplay => DateTime.UtcNow.ToLocalTime().ToString("MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture);
+
+    // IInferenceExportable — lets the UI hold/copy/export any result uniformly.
+    public string ResultTitle => $"{OutcomeDisplay}  ×  {PredictorDisplay}";
+    public string ToPlainText() => CategoricalInferenceExport.BuildPlainText(this);
+    public string ToCsv() => CategoricalInferenceExport.BuildCsv(this);
 }
 
 // ---------------------------------------------------------------------------
