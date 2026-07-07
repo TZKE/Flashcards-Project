@@ -135,6 +135,21 @@ public sealed class TestRecommendation
     public string PlanningLabel => AssumptionDependent ? "Recommended future test — pending assumption review" : "Recommended future test";
 
     [JsonIgnore] public string TestDisplay => string.IsNullOrWhiteSpace(AlternativeTest) ? RecommendedTest : $"{RecommendedTest}  ·  or  {AlternativeTest}";
+
+    // Phase 4B Part 2 (MVP-1) eligibility — METADATA ONLY, not a calculation.
+    // A card's categorical test may be COMPUTED only when both variables are
+    // categorical-family (Binary/Categorical) AND the plan is Ready or
+    // Needs-assumption-review. Role/metadata review, "not recommended", and
+    // unsupported/continuous/ordinal pairings are never runnable in this phase,
+    // so those cards never get a Run button. No p-value is produced here.
+    [JsonIgnore]
+    public bool CanComputeCategorical =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && IsCategoricalKindDisplay(OutcomeKind) && IsCategoricalKindDisplay(PredictorKind);
+
+    private static bool IsCategoricalKindDisplay(string kind) =>
+        string.Equals(kind, "Binary", StringComparison.Ordinal)
+        || string.Equals(kind, "Categorical", StringComparison.Ordinal);
 }
 
 // The whole Recommended Analysis result for one project.

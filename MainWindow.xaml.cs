@@ -7423,6 +7423,10 @@ public sealed partial class MainWindow : Window
     private bool _recoShowingDescriptive = true;
     private TestRecommendationResult? _recoResult;
 
+    // Phase 4B Part 2 — the last computed categorical result (aggregate only),
+    // held for the Copy/Export buttons on the result panel.
+    private CategoricalTestResult? _recoInference;
+
     // Deterministic Magic Fix repair suggestions, recomputed on every Statistics
     // refresh. _magicFixReview is the working copy shown in the review modal.
     private List<MagicFixProposal> _magicFixProposals = new();
@@ -7619,6 +7623,10 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            // Any refresh may change the recommendations/data, so a previously
+            // computed result no longer describes the current cards — clear it.
+            ResetRecoInference();
+
             var vars = p.Variables ?? new List<ResearchVariable>();
             var gate = TestRecommendationEngine.EvaluateGate(vars, _statData, _statMatch, _statReadiness);
 
@@ -7713,6 +7721,85 @@ public sealed partial class MainWindow : Window
         SaveStatExport("recommended_analysis_plan.csv", "CSV files (*.csv)|*.csv",
             TestRecommendationExport.BuildCsv(_recoResult!), "Recommended analysis plan exported");
     }
+
+    // ---- Phase 4B Part 2: run the recommended CATEGORICAL test (deterministic) ----
+    // This is the only place a test is actually computed. It executes ONLY the
+    // categorical test that Part 1 recommended for an eligible pairing — the
+    // engine re-checks eligibility, so no arbitrary test can be run from here.
+    private void ResetRecoInference()
+    {
+        _recoInference = null;
+        if (StRecoInferenceCard is not null) StRecoInferenceCard.Visibility = Visibility.Collapsed;
+    }
+
+    private void StRecoRunInference_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RecoUnlockedGuard()) return;
+        try
+        {
+            if ((sender as FrameworkElement)?.DataContext is not TestRecommendation rec) return;
+            if (!rec.CanComputeCategorical)
+            {
+                ShowToast("This card cannot be computed. Only categorical comparisons that are ready or need assumption review can be run.");
+                return;
+            }
+
+            var p = CurrentResearchProject();
+            if (p is null) return;
+            if (_statData is null)
+            {
+                ShowToast("Upload the complete CSV dataset to compute this analysis.");
+                return;
+            }
+
+            var vars = p.Variables ?? new List<ResearchVariable>();
+            var outcome = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.OutcomeName);
+            var predictor = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.PredictorName);
+            if (outcome is null || predictor is null)
+            {
+                ShowToast("The variables for this comparison could not be found in the extraction sheet.");
+                return;
+            }
+
+            var result = CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData, _statMatch);
+            _recoInference = result;
+            StRecoInferenceTitle.Text = $"{result.OutcomeDisplay}  ×  {result.PredictorDisplay}";
+            StRecoInferenceText.Text = CategoricalInferenceExport.BuildPlainText(result);
+            StRecoInferenceCard.Visibility = Visibility.Visible;
+            StRecoInferenceCard.BringIntoView();
+            ShowToast(result.Computed
+                ? "Analysis computed locally (deterministic, no AI)."
+                : "This comparison could not produce a reliable p-value — see the result for details.");
+        }
+        catch (Exception ex) { HandleDxError("run the categorical analysis", ex); }
+    }
+
+    private void StRecoInferenceCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recoInference is null) return;
+        try
+        {
+            Clipboard.SetText(CategoricalInferenceExport.BuildPlainText(_recoInference));
+            ShowToast("Result copied to the clipboard.");
+        }
+        catch { ShowToast("The result could not be copied. Please try again."); }
+    }
+
+    private void StRecoInferenceExportTxt_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recoInference is null) return;
+        SaveStatExport("categorical_analysis_result.txt", "Text files (*.txt)|*.txt",
+            CategoricalInferenceExport.BuildPlainText(_recoInference), "Analysis result exported");
+    }
+
+    private void StRecoInferenceExportCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recoInference is null) return;
+        SaveStatExport("categorical_analysis_result.csv", "CSV files (*.csv)|*.csv",
+            CategoricalInferenceExport.BuildCsv(_recoInference), "Analysis result exported");
+    }
+
+    private void StRecoInferenceHide_Click(object sender, RoutedEventArgs e) => ResetRecoInference();
 
     // Locked-state navigation buttons.
     private void StRecoGoDescriptive_Click(object sender, RoutedEventArgs e) => SetRecommendedView(false);

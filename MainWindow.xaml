@@ -3357,9 +3357,18 @@
                                                                         <TextBlock Text="{Binding}" FontSize="11.5" FontStyle="Italic" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,2"/>
                                                                     </DataTemplate></ItemsControl.ItemTemplate>
                                                                 </ItemsControl>
+
+                                                                <!-- Phase 4B Part 2: run the recommended categorical test. Shown ONLY
+                                                                     for eligible (Ready / Needs-assumption-review) categorical pairings. -->
+                                                                <Button x:Name="RunInferenceBtn" Style="{StaticResource PremiumButton}" Content="Run this analysis"
+                                                                        MinWidth="160" HorizontalAlignment="Left" Margin="0,14,0,0" Visibility="Collapsed"
+                                                                        Click="StRecoRunInference_Click"/>
                                                             </StackPanel>
                                                         </Border>
                                                         <DataTemplate.Triggers>
+                                                                <DataTrigger Binding="{Binding CanComputeCategorical}" Value="True">
+                                                                    <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
                                                                 <DataTrigger Binding="{Binding StatusKind}" Value="Good">
                                                                     <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
                                                                     <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
@@ -3378,6 +3387,29 @@
                                             </ItemsControl>
 
                                             <TextBlock x:Name="StRecoEmptyText" Visibility="Collapsed" FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+
+                                            <!-- Phase 4B Part 2: computed categorical result (aggregate only). -->
+                                            <Border x:Name="StRecoInferenceCard" Style="{StaticResource CardBorder}" Padding="22" Margin="0,16,0,0" Visibility="Collapsed">
+                                                <StackPanel>
+                                                    <TextBlock Text="Computed result" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                                                    <TextBlock x:Name="StRecoInferenceTitle" FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                                    <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,12,0,0">
+                                                        <TextBlock Text="Computed locally on this device by deterministic calculations. No AI selected or calculated this result, and only aggregate category counts are shown — never individual participant rows."
+                                                                   Foreground="{StaticResource PrimaryBrush}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                    </Border>
+                                                    <TextBox x:Name="StRecoInferenceText" IsReadOnly="True" AcceptsReturn="True" IsReadOnlyCaretVisible="False"
+                                                             FontFamily="Consolas" FontSize="12" BorderThickness="1" BorderBrush="{StaticResource BorderBrushSoft}"
+                                                             Background="{StaticResource SoftCardBrush}" Foreground="{StaticResource TextBrush}" Padding="12"
+                                                             Margin="0,12,0,0" MaxHeight="440" TextWrapping="NoWrap"
+                                                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"/>
+                                                    <WrapPanel Margin="0,12,0,0">
+                                                        <Button Style="{StaticResource SoftButton}" Content="Copy Result" MinWidth="130" Margin="0,0,10,6" Click="StRecoInferenceCopy_Click"/>
+                                                        <Button Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="110" Margin="0,0,10,6" Click="StRecoInferenceExportTxt_Click"/>
+                                                        <Button Style="{StaticResource SoftButton}" Content="Export CSV" MinWidth="110" Margin="0,0,10,6" Click="StRecoInferenceExportCsv_Click"/>
+                                                        <Button Style="{StaticResource GhostButton}" Content="Hide" MinWidth="90" Margin="0,0,10,6" Click="StRecoInferenceHide_Click"/>
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </StackPanel>
                                     <!-- ============ END RECOMMENDED ANALYSIS ============ -->
