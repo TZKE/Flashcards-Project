@@ -2923,8 +2923,19 @@
                                     </Grid>
                                 </StackPanel>
 
-                                <!-- STATISTICS (Phase 4A — deterministic descriptive analysis) -->
+                                <!-- STATISTICS (Phase 4A descriptive + Phase 4B Part 1 recommended analysis) -->
                                 <StackPanel x:Name="TabStats" Visibility="Collapsed" VerticalAlignment="Top" MaxWidth="1020" HorizontalAlignment="Left">
+
+                                    <!-- Internal switch: Descriptive Statistics | Recommended Analysis -->
+                                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="4" HorizontalAlignment="Left" Margin="0,0,0,16">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="StSegDescriptive" Style="{StaticResource SegTabActive}" Content="Descriptive Statistics" Click="StShowDescriptive_Click"/>
+                                            <Button x:Name="StSegRecommended" Style="{StaticResource SegTab}" Content="Recommended Analysis" Margin="4,0,0,0" Click="StShowRecommended_Click"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- ============ DESCRIPTIVE STATISTICS (Phase 4A) ============ -->
+                                    <StackPanel x:Name="StDescriptiveView">
 
                                     <!-- Statistics Readiness dashboard -->
                                     <Border Style="{StaticResource CardBorder}" Padding="26">
@@ -3180,6 +3191,197 @@
                                         </Border>
                                         <StackPanel x:Name="StOutputHost"/>
                                     </StackPanel>
+                                    </StackPanel>
+                                    <!-- ============ END DESCRIPTIVE STATISTICS ============ -->
+
+                                    <!-- ============ RECOMMENDED ANALYSIS (Phase 4B Part 1) ============ -->
+                                    <StackPanel x:Name="StRecommendedView" Visibility="Collapsed">
+
+                                        <!-- Header -->
+                                        <Border Style="{StaticResource CardBorder}" Padding="26">
+                                            <StackPanel>
+                                                <TextBlock Text="Recommended Analysis" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Deterministic statistical test planning based on your Extraction Sheet and dataset structure."
+                                                           Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,10" MaxWidth="640"/>
+                                                <Border Background="{StaticResource InfoSoftBrush}" CornerRadius="8" Padding="12,9">
+                                                    <TextBlock Text="This section recommends future inferential tests only. No p-values or inferential results are calculated in this phase."
+                                                               Foreground="{StaticResource PrimaryBrush}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- LOCKED state -->
+                                        <Border x:Name="StRecoLockedCard" Style="{StaticResource CardBorder}" Padding="26" Margin="0,14,0,0" Visibility="Collapsed">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="40" Height="40" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Margin="0,0,12,0">
+                                                        <TextBlock Text="🔒" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="Recommended Analysis locked" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                                                        <TextBlock Text="Complete Descriptive Statistics readiness first." Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <TextBlock x:Name="StRecoLockedReason" FontSize="13" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                                <TextBlock Text="Recommended Analysis uses your validated extraction sheet, matched dataset, and Phase 4A readiness checks to avoid incorrect statistical test suggestions."
+                                                           FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,12"/>
+                                                <ItemsControl x:Name="StRecoChecklist">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                                <TextBlock x:Name="ChkGlyph" Text="{Binding Glyph}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" Width="20"/>
+                                                                <TextBlock Text="{Binding Label}" FontSize="12.5" Foreground="{StaticResource TextBrush}"/>
+                                                            </StackPanel>
+                                                            <DataTemplate.Triggers>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="Good"><Setter TargetName="ChkGlyph" Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="Bad"><Setter TargetName="ChkGlyph" Property="Foreground" Value="{StaticResource DangerBrush}"/></DataTrigger>
+                                                            </DataTemplate.Triggers>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <WrapPanel Margin="0,14,0,0">
+                                                    <Button Style="{StaticResource PremiumButton}" Content="Go to Descriptive Statistics" MinWidth="210" Margin="0,0,10,6" Click="StRecoGoDescriptive_Click"/>
+                                                    <Button Style="{StaticResource SoftButton}" Content="Run Magic Fix" MinWidth="130" Margin="0,0,10,6" Click="StRecoRunMagicFix_Click"/>
+                                                    <Button Style="{StaticResource SoftButton}" Content="Go to Data Extraction" MinWidth="170" Margin="0,0,10,6" Click="StRecoGoDataExtraction_Click"/>
+                                                    <Button Style="{StaticResource SoftButton}" Content="Upload Complete CSV" MinWidth="170" Margin="0,0,10,6" Click="StRecoUploadCsv_Click"/>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <!-- UNLOCKED state -->
+                                        <StackPanel x:Name="StRecoUnlocked" Visibility="Collapsed">
+
+                                            <!-- Ready-with-warnings banner -->
+                                            <Border x:Name="StRecoWarnBanner" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="14,11" Margin="0,14,0,0" Visibility="Collapsed">
+                                                <TextBlock Text="Recommended Analysis is available, but warnings should be reviewed before using these suggestions."
+                                                           Foreground="{StaticResource WarningBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            </Border>
+
+                                            <!-- Summary cards -->
+                                            <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,14,0,0">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="StRecoOutcomeText" FontSize="13.5" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                                    <ItemsControl x:Name="StRecoSummaryCards" Margin="0,12,0,0">
+                                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{StaticResource SoftCardBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="10" Padding="14,10" Margin="0,0,10,10" MinWidth="150">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding Title}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                        <TextBlock x:Name="SumVal" Text="{Binding Value}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,3,0,0"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                                <DataTemplate.Triggers>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="Good"><Setter TargetName="SumVal" Property="Foreground" Value="{StaticResource SuccessBrush}"/></DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="Warn"><Setter TargetName="SumVal" Property="Foreground" Value="{StaticResource WarningBrush}"/></DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="Bad"><Setter TargetName="SumVal" Property="Foreground" Value="{StaticResource DangerBrush}"/></DataTrigger>
+                                                                </DataTemplate.Triggers>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <WrapPanel Margin="0,6,0,0">
+                                                        <Button Style="{StaticResource SoftButton}" Content="Refresh Recommendations" MinWidth="190" Margin="0,0,10,6" Click="StRecoRefresh_Click"/>
+                                                        <Button Style="{StaticResource SoftButton}" Content="Copy Recommendations" MinWidth="180" Margin="0,0,10,6" Click="StRecoCopy_Click"/>
+                                                        <Button Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="110" Margin="0,0,10,6" Click="StRecoExportTxt_Click"/>
+                                                        <Button Style="{StaticResource SoftButton}" Content="Export CSV" MinWidth="110" Margin="0,0,10,6" Click="StRecoExportCsv_Click"/>
+                                                        <Button Style="{StaticResource GhostButton}" Content="Go to Descriptive Statistics" MinWidth="200" Margin="0,0,10,6" Click="StRecoGoDescriptive_Click"/>
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Recommendation cards, grouped by status -->
+                                            <ItemsControl x:Name="StRecoList" Margin="0,4,0,0">
+                                                <ItemsControl.GroupStyle>
+                                                    <GroupStyle>
+                                                        <GroupStyle.HeaderTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="{StaticResource SoftCardBrush}" CornerRadius="7" Padding="12,7" Margin="0,16,0,4">
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextBrush}"/>
+                                                                        <TextBlock Text="{Binding ItemCount, StringFormat=' ({0})'}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </GroupStyle.HeaderTemplate>
+                                                    </GroupStyle>
+                                                </ItemsControl.GroupStyle>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Style="{StaticResource CardBorder}" Padding="20" Margin="0,10,0,0">
+                                                            <StackPanel>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding PredictorDisplay}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                                                        <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0" TextWrapping="Wrap">
+                                                                            <Run Text="{Binding PairTypeDisplay}"/><Run Text="   ·   Role: "/><Run Text="{Binding PredictorRole}"/>
+                                                                        </TextBlock>
+                                                                    </StackPanel>
+                                                                    <Border x:Name="StatusChip" Grid.Column="1" VerticalAlignment="Top" Background="{StaticResource SoftCardBrush}" CornerRadius="12" Padding="10,4">
+                                                                        <TextBlock x:Name="StatusChipText" Text="{Binding StatusDisplay}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                    </Border>
+                                                                </Grid>
+
+                                                                <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="8" Padding="12,9" Margin="0,12,0,0">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding PlanningLabel}" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                        <TextBlock Text="{Binding TestDisplay}" FontSize="13.5" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                                                    </StackPanel>
+                                                                </Border>
+
+                                                                <TextBlock Text="{Binding Rationale}" FontSize="12.5" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+
+                                                                <Grid Margin="0,10,0,0">
+                                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Observed structure" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                        <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0">
+                                                                            <Run Text="Outcome groups: "/><Run Text="{Binding OutcomeGroups}"/><Run Text="  ·  Predictor groups: "/><Run Text="{Binding PredictorGroups}"/>
+                                                                        </TextBlock>
+                                                                        <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap">
+                                                                            <Run Text="Valid N — outcome "/><Run Text="{Binding OutcomeValidN}"/><Run Text=" (missing "/><Run Text="{Binding OutcomeMissingN}"/><Run Text="), predictor "/><Run Text="{Binding PredictorValidN}"/><Run Text=" (missing "/><Run Text="{Binding PredictorMissingN}"/><Run Text=")"/>
+                                                                        </TextBlock>
+                                                                    </StackPanel>
+                                                                    <StackPanel Grid.Column="1">
+                                                                        <TextBlock Text="Assumptions / checklist" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"/>
+                                                                        <ItemsControl ItemsSource="{Binding Checklist}" Margin="0,2,0,0">
+                                                                            <ItemsControl.ItemTemplate><DataTemplate>
+                                                                                <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                                                            </DataTemplate></ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </StackPanel>
+                                                                </Grid>
+
+                                                                <ItemsControl ItemsSource="{Binding Notes}" Margin="0,10,0,0">
+                                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                                        <TextBlock Text="{Binding}" FontSize="11.5" FontStyle="Italic" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <DataTemplate.Triggers>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Good">
+                                                                    <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
+                                                                    <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Warn">
+                                                                    <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource WarningSoftBrush}"/>
+                                                                    <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusKind}" Value="Bad">
+                                                                    <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource DangerSoftBrush}"/>
+                                                                    <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource DangerBrush}"/>
+                                                                </DataTrigger>
+                                                            </DataTemplate.Triggers>
+                                                        </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <TextBlock x:Name="StRecoEmptyText" Visibility="Collapsed" FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <!-- ============ END RECOMMENDED ANALYSIS ============ -->
+
                                 </StackPanel>
 
                                 <!-- RESULTS (Phase 4A — descriptive results overview) -->

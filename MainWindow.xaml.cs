@@ -2470,7 +2470,8 @@ public sealed partial class MainWindow : Window
 
         // Statistics/Results recalculate readiness and staleness on every open,
         // so the dashboards always describe the CURRENT sheet and dataset.
-        if (ReferenceEquals(active, SegStats)) RefreshStatisticsTab();
+        // Statistics always opens on its default Descriptive view.
+        if (ReferenceEquals(active, SegStats)) { SetRecommendedView(false); RefreshStatisticsTab(); }
         if (ReferenceEquals(active, SegResults)) RefreshResultsTab();
     }
 
@@ -7414,6 +7415,14 @@ public sealed partial class MainWindow : Window
     private string _statDatasetCacheKey = "";
     private bool _statUiReady;   // guards option handlers while controls initialize
 
+    // Phase 4B Part 1 — Recommended Analysis. The last data/match are cached from
+    // the Statistics refresh so the recommendation view + Refresh button reuse
+    // them without recomputing. _recoInDescriptive tracks the internal switch.
+    private StatisticsDataset? _statData;
+    private StatisticsMatchInput _statMatch = new();
+    private bool _recoShowingDescriptive = true;
+    private TestRecommendationResult? _recoResult;
+
     // Deterministic Magic Fix repair suggestions, recomputed on every Statistics
     // refresh. _magicFixReview is the working copy shown in the review modal.
     private List<MagicFixProposal> _magicFixProposals = new();
@@ -7578,8 +7587,149 @@ public sealed partial class MainWindow : Window
 
             if (p.DescriptiveStatistics is { } rec) RenderStatisticsOutput(rec);
             else { StOutputPanel.Visibility = Visibility.Collapsed; _statTables.Clear(); }
+
+            // Cache for Recommended Analysis (Phase 4B) and refresh that section.
+            _statData = data;
+            _statMatch = match;
+            RefreshRecommendedAnalysis(p);
         }
         catch (Exception ex) { HandleDxError("refresh the statistics dashboard", ex); }
+    }
+
+    // ---- Phase 4B Part 1: Recommended Analysis (deterministic test planning) ----
+
+    private void StShowDescriptive_Click(object sender, RoutedEventArgs e) => SetRecommendedView(false);
+    private void StShowRecommended_Click(object sender, RoutedEventArgs e) => SetRecommendedView(true);
+
+    private void SetRecommendedView(bool showRecommended)
+    {
+        _recoShowingDescriptive = !showRecommended;
+        var active = (Style)FindResource("SegTabActive");
+        var normal = (Style)FindResource("SegTab");
+        StSegDescriptive.Style = showRecommended ? normal : active;
+        StSegRecommended.Style = showRecommended ? active : normal;
+        StDescriptiveView.Visibility = showRecommended ? Visibility.Collapsed : Visibility.Visible;
+        StRecommendedView.Visibility = showRecommended ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Evaluates the gate and (when unlocked) builds the deterministic
+    // recommendations. Called on every Statistics refresh so the locked/unlocked
+    // state always reflects current Phase 4A readiness.
+    private void RefreshRecommendedAnalysis(ResearchProject p)
+    {
+        try
+        {
+            var vars = p.Variables ?? new List<ResearchVariable>();
+            var gate = TestRecommendationEngine.EvaluateGate(vars, _statData, _statMatch, _statReadiness);
+
+            StRecoChecklist.ItemsSource = null;
+            StRecoChecklist.ItemsSource = gate.Checklist;
+            StRecoLockedReason.Text = gate.PrimaryReason;
+
+            StRecoLockedCard.Visibility = gate.Locked ? Visibility.Visible : Visibility.Collapsed;
+            StRecoUnlocked.Visibility = gate.Locked ? Visibility.Collapsed : Visibility.Visible;
+
+            if (gate.Locked)
+            {
+                _recoResult = null;
+                return;
+            }
+
+            StRecoWarnBanner.Visibility = gate.HasWarnings ? Visibility.Visible : Visibility.Collapsed;
+            _recoResult = TestRecommendationEngine.Build(vars, _statData, _statMatch, _statReadiness);
+            RenderTestRecommendations(_recoResult);
+        }
+        catch (Exception ex) { HandleDxError("refresh recommended analysis", ex); }
+    }
+
+    private void RenderTestRecommendations(TestRecommendationResult r)
+    {
+        StRecoOutcomeText.Text = $"Outcome variable: {r.OutcomeDisplay}";
+        StRecoSummaryCards.ItemsSource = new List<StatisticsReadinessCard>
+        {
+            new() { Title = "Outcome variable", Value = r.OutcomeName.Length > 0 ? r.OutcomeName : "—" },
+            new() { Title = "Candidate variables", Value = r.CandidatePredictors.ToString() },
+            new() { Title = "Ready to plan", Value = r.ReadyCount.ToString(), Kind = r.ReadyCount > 0 ? "Good" : "Muted" },
+            new() { Title = "Needs assumption review", Value = r.AssumptionReviewCount.ToString(), Kind = r.AssumptionReviewCount > 0 ? "Warn" : "Muted" },
+            new() { Title = "Needs role review", Value = r.RoleReviewCount.ToString(), Kind = r.RoleReviewCount > 0 ? "Warn" : "Muted" },
+            new() { Title = "Unsupported", Value = r.UnsupportedCount.ToString(), Kind = r.UnsupportedCount > 0 ? "Bad" : "Muted" }
+        };
+
+        // Group the cards by status so the (potentially long) list reads as
+        // clearly-sorted sections instead of a flat all-ready wall.
+        var view = new System.Windows.Data.CollectionViewSource { Source = r.Recommendations };
+        view.SortDescriptions.Add(new System.ComponentModel.SortDescription("GroupOrder", System.ComponentModel.ListSortDirection.Ascending));
+        view.SortDescriptions.Add(new System.ComponentModel.SortDescription("PredictorName", System.ComponentModel.ListSortDirection.Ascending));
+        view.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription("GroupDisplay"));
+        StRecoList.ItemsSource = view.View;
+
+        bool empty = r.Recommendations.Count == 0;
+        StRecoEmptyText.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        StRecoEmptyText.Text = empty
+            ? "No candidate predictors were found to pair with the outcome. Add or match more variables in Data Extraction to plan comparisons."
+            : "";
+    }
+
+    // Recommendation actions never run tests — they only refresh/copy/export the
+    // deterministic plan. Guarded so they no-op when the section is locked.
+    private bool RecoUnlockedGuard()
+    {
+        if (_recoResult is null || StRecoUnlocked.Visibility != Visibility.Visible)
+        {
+            ShowToast("Complete Descriptive Statistics readiness first to use Recommended Analysis.");
+            return false;
+        }
+        return true;
+    }
+
+    private void StRecoRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshStatisticsTab();
+        if (StRecoUnlocked.Visibility == Visibility.Visible)
+            ShowToast("Recommendations refreshed from your current extraction sheet and dataset.");
+    }
+
+    private void StRecoCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RecoUnlockedGuard()) return;
+        try
+        {
+            Clipboard.SetText(TestRecommendationExport.BuildPlainText(_recoResult!));
+            ShowToast("Recommended analysis plan copied to the clipboard.");
+        }
+        catch { ShowToast("The recommendations could not be copied. Please try again."); }
+    }
+
+    private void StRecoExportTxt_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RecoUnlockedGuard()) return;
+        SaveStatExport("recommended_analysis_plan.txt", "Text files (*.txt)|*.txt",
+            TestRecommendationExport.BuildPlainText(_recoResult!), "Recommended analysis plan exported");
+    }
+
+    private void StRecoExportCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RecoUnlockedGuard()) return;
+        SaveStatExport("recommended_analysis_plan.csv", "CSV files (*.csv)|*.csv",
+            TestRecommendationExport.BuildCsv(_recoResult!), "Recommended analysis plan exported");
+    }
+
+    // Locked-state navigation buttons.
+    private void StRecoGoDescriptive_Click(object sender, RoutedEventArgs e) => SetRecommendedView(false);
+    private void StRecoGoDataExtraction_Click(object sender, RoutedEventArgs e)
+    {
+        SwitchResearchTab(SegDataExt);
+        ShowToast("Resolve any remaining items in Data Extraction, then return to Statistics.");
+    }
+    private void StRecoUploadCsv_Click(object sender, RoutedEventArgs e)
+    {
+        ImportCsv_Click(sender, e);
+        RefreshStatisticsTab();
+    }
+    private void StRecoRunMagicFix_Click(object sender, RoutedEventArgs e)
+    {
+        SetRecommendedView(false);
+        MagicFix_Click(sender, e);
     }
 
     private void RenderStatisticsReadiness()
