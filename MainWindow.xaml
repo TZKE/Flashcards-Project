@@ -3496,6 +3496,8 @@
                                                                 <Button Style="{StaticResource SoftButton}" Content="Copy" MinWidth="90" Margin="0,0,10,6" Click="StComputedCopy_Click"/>
                                                                 <Button Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="110" Margin="0,0,10,6" Click="StComputedExportTxt_Click"/>
                                                                 <Button Style="{StaticResource SoftButton}" Content="Export CSV" MinWidth="110" Margin="0,0,10,6" Click="StComputedExportCsv_Click"/>
+                                                                <Button Style="{StaticResource SoftButton}" Content="Re-run" MinWidth="90" Margin="0,0,10,6" Click="StComputedRerun_Click"/>
+                                                                <Button Style="{StaticResource GhostButton}" Content="Delete" MinWidth="90" Margin="0,0,10,6" Click="StComputedDelete_Click"/>
                                                             </WrapPanel>
                                                         </StackPanel>
                                                     </Border>

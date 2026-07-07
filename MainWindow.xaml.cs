@@ -8038,6 +8038,116 @@ public sealed partial class MainWindow : Window
         SaveStatExport("analysis_result.csv", "CSV files (*.csv)|*.csv", row.CsvText, "Analysis result exported");
     }
 
+    // ---- Phase 4C Slice 2: Delete one computed result -------------------------
+    // Removes exactly one result from the in-memory list AND the persisted
+    // project copy. Never touches the dataset, extraction sheet, recommendations,
+    // or the project itself. Safe no-op if the result is already gone.
+    private void StComputedDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
+        if (!_computedRows.Remove(row))
+        {
+            ShowToast("That result is no longer available.");
+            return;
+        }
+        if (_computedDetailsRow?.Id == row.Id)
+        {
+            _computedDetailsRow = null;
+            StComputedDetailsCard.Visibility = Visibility.Collapsed;
+        }
+        RenderComputedResults();
+        var p = CurrentResearchProject();
+        if (p is not null) PersistComputedResults(p);
+        ShowToast("Result deleted.");
+    }
+
+    // ---- Phase 4C Slice 2: Re-run one computed result --------------------------
+    // Re-locates the SAME pairing by its saved Outcome/Predictor names and
+    // recomputes it through the existing dispatch path — never a different test,
+    // never a guessed variable. Replaces the row IN PLACE (same Id, same card
+    // position); never inserts a duplicate.
+    private async void StComputedRerun_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recoRunning) return;
+        if ((sender as FrameworkElement)?.DataContext is not ComputedResultRow row) return;
+
+        var p = CurrentResearchProject();
+        if (p is null) return;
+        if (_statData is null)
+        {
+            ShowToast("Upload the complete CSV dataset to compute this analysis.");
+            return;
+        }
+        if (_recoResult is null)
+        {
+            ShowToast("This variable pairing is no longer available. Re-run it from Recommended Analysis instead.");
+            return;
+        }
+
+        // Look up by NAME only — if the pairing can't be found unambiguously,
+        // never guess a different variable; tell the user instead.
+        var rec = _recoResult.Recommendations.FirstOrDefault(r =>
+            r.OutcomeName == row.OutcomeName && r.PredictorName == row.PredictorName);
+        if (rec is null)
+        {
+            ShowToast("This variable pairing is no longer available. Re-run it from Recommended Analysis instead.");
+            return;
+        }
+        if (!IsRunnableReco(rec))
+        {
+            ShowToast("This pairing can no longer be computed. Re-run it from Recommended Analysis instead.");
+            return;
+        }
+
+        var vars = p.Variables ?? new List<ResearchVariable>();
+        var outcome = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.OutcomeName);
+        var predictor = vars.FirstOrDefault(v => (v.VariableName ?? "").Trim() == rec.PredictorName);
+        if (outcome is null || predictor is null)
+        {
+            ShowToast("The variables for this comparison could not be found in the extraction sheet.");
+            return;
+        }
+
+        _recoRunning = true;
+        try
+        {
+            StRunLoadingCard.Visibility = Visibility.Visible;
+
+            await StepRunLoading("Preparing variables…");
+            await StepRunLoading("Checking assumptions…");
+            await StepRunLoading("Computing locally…");
+            IInferenceExportable result = DispatchCompute(rec, outcome, predictor);
+            await StepRunLoading("Building result summary…");
+
+            var updated = BuildComputedRow(rec, result, p);
+            updated.Id = row.Id;   // replace in place — same identity, same card position
+
+            int idx = _computedRows.IndexOf(row);
+            if (idx >= 0) _computedRows[idx] = updated;
+            else _computedRows.Insert(0, updated);   // row vanished mid-run — never lose the result
+
+            if (_computedDetailsRow?.Id == row.Id)
+            {
+                _computedDetailsRow = updated;
+                StComputedDetailsTitle.Text = $"{updated.TestName} — {updated.Variables}";
+                StComputedDetailsText.Text = updated.FullPlainText;
+            }
+
+            PersistComputedResults(p);
+            StRunLoadingCard.Visibility = Visibility.Collapsed;
+            RenderComputedResults();
+            ShowToast(result.Computed
+                ? "Result re-run and updated (deterministic, no AI)."
+                : "This comparison could not produce a reliable result — see the details.");
+        }
+        catch (Exception ex)
+        {
+            StRunLoadingCard.Visibility = Visibility.Collapsed;
+            HandleDxError("re-run the analysis", ex);
+        }
+        finally { _recoRunning = false; }
+    }
+
     // ---- Computed Results productivity actions -------------------------------
     // Run every currently-runnable card in sequence (never parallel), adding each
     // result to Computed Results. Non-runnable cards (role review / unsupported)
