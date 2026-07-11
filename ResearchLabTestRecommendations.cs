@@ -217,6 +217,20 @@ public sealed class TestRecommendation
 
     private static bool IsNominalKindDisplay(string kind) =>
         string.Equals(kind, "Categorical", StringComparison.Ordinal);
+
+    // Phase 4D (Slice 3) eligibility — METADATA ONLY, not a calculation.
+    // A card's Pearson correlation may be COMPUTED only when BOTH variables are
+    // continuous AND the plan is Ready or Needs-assumption-review. Pearson is the
+    // headline PARAMETRIC correlation for a continuous×continuous pairing; it is a
+    // SUBSET of CanComputeSpearman (both-continuous ⊂ both-rankable), so dispatch
+    // runs Pearson BEFORE the Spearman fallback and Spearman becomes the named
+    // robust nonparametric alternative. Any ordinal-involving pair is never
+    // Pearson (it stays Spearman). Mutually exclusive with the grouping-based
+    // gates (Categorical/Rank/Welch/ANOVA), which all require a categorical side.
+    [JsonIgnore]
+    public bool CanComputePearson =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && IsContinuousKindDisplay(OutcomeKind) && IsContinuousKindDisplay(PredictorKind);
 }
 
 // The whole Recommended Analysis result for one project.
@@ -564,7 +578,7 @@ public static class TestRecommendationEngine
     // not recommended) keep the original wording unchanged.
     private static void ApplyPlanningNoteWording(TestRecommendation r)
     {
-        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch || r.CanComputeAnova)) return;
+        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch || r.CanComputeAnova || r.CanComputePearson)) return;
         const string RunNote = "Planning card only — no result has been calculated yet. Click Run this analysis to compute the supported test locally.";
         bool replaced = false;
         for (int i = r.Notes.Count - 1; i >= 0; i--)

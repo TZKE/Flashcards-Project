@@ -179,13 +179,80 @@ public sealed class OneWayAnovaResult : IInferenceExportable
     public string ToCsv() => OneWayAnovaExport.BuildCsv(this);
 }
 
+// Aggregate-only result of a Pearson correlation between two continuous
+// variables. Never stores participant rows.
+public sealed class PearsonCorrelationResult : IInferenceExportable
+{
+    public string XName { get; set; } = "";
+    public string XDisplay { get; set; } = "";
+    public string XKind { get; set; } = "";      // "Continuous"
+    public string YName { get; set; } = "";
+    public string YDisplay { get; set; } = "";
+    public string YKind { get; set; } = "";      // "Continuous"
+    public string PairTypeDisplay { get; set; } = "";
+
+    public ParametricStatus Status { get; set; } = ParametricStatus.NotRunnable;
+    public string StatusReason { get; set; } = "";
+    public string TestUsed { get; set; } = "Pearson correlation";
+
+    public int PairN { get; set; }
+    public int DroppedForMissing { get; set; }
+    public int DroppedInvalid { get; set; }
+
+    public double? MeanX { get; set; }
+    public double? MeanY { get; set; }
+    public double? SdX { get; set; }
+    public double? SdY { get; set; }
+    public double? Covariance { get; set; }
+
+    public double? R { get; set; }                // Pearson correlation coefficient
+    public double? RSquared { get; set; }          // coefficient of determination
+    public double? TStatistic { get; set; }
+    public int DegreesOfFreedom { get; set; }      // n − 2
+    public double? PValue { get; set; }
+
+    public bool PerfectCorrelation { get; set; }   // |r| == 1 (denominator floored for a finite t)
+
+    public List<string> Assumptions { get; set; } = new();
+    public List<string> Notes { get; set; } = new();
+
+    public bool AiInvolved => false;
+    public bool Computed => Status == ParametricStatus.Computed;
+    public string PValueDisplay => PValue is null ? "not calculated" : InferenceMath.FormatPValue(PValue.Value);
+    public string RDisplay => R is null ? "—" : InferenceMath.FormatNumber(R, 3);
+    public string GeneratedDisplay => DateTime.UtcNow.ToLocalTime().ToString("MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture);
+
+    // Pearson r is the headline effect size.
+    public string EffectName => "Pearson r";
+    public double? EffectValue => R;
+
+    // Heuristic strength band — labelled a heuristic, never a hard verdict.
+    public string StrengthBand
+    {
+        get
+        {
+            if (R is not { } r) return "";
+            double a = Math.Abs(r);
+            string s = a < 0.10 ? "negligible" : a < 0.30 ? "small" : a < 0.50 ? "moderate" : a < 0.70 ? "strong" : "very strong";
+            return $"{s} {(r < 0 ? "negative" : "positive")} linear association (heuristic)";
+        }
+    }
+
+    // IInferenceExportable.
+    public string ResultTitle => $"{XDisplay}  vs  {YDisplay}";
+    public string ToPlainText() => PearsonCorrelationExport.BuildPlainText(this);
+    public string ToCsv() => PearsonCorrelationExport.BuildCsv(this);
+}
+
 // ---------------------------------------------------------------------------
-// The deterministic parametric-inference engine (Welch t-test + one-way ANOVA).
+// The deterministic parametric-inference engine (Welch t-test + one-way ANOVA
+// + Pearson correlation).
 // ---------------------------------------------------------------------------
 public static class ParametricInferenceEngine
 {
     public const int MinGroupsForAnova = 3;   // fewer than 3 groups is a t-test, not ANOVA
     public const int MinGroupN = 2;   // sample variance needs n − 1 ≥ 1
+    public const int MinPairsForPearson = 3;   // Pearson t needs df = n − 2 ≥ 1
 
     public static bool IsRunnable(TestRecommendation? rec) => rec is not null && rec.CanComputeWelch;
 
@@ -572,6 +639,171 @@ public static class ParametricInferenceEngine
         return result;
     }
 
+    // =====================================================================
+    // Pearson correlation (Slice 3): two continuous variables. Parametric
+    // (assumes an approximately linear, bivariate-normal relationship); the
+    // significance test is the same Student-t tail already used by Welch. It is
+    // computed on the RAW values (not ranks), so it never touches the committed
+    // Spearman engine — Spearman remains the robust nonparametric alternative.
+    // =====================================================================
+    public static bool IsRunnablePearson(TestRecommendation? rec) => rec is not null && rec.CanComputePearson;
+
+    public static PearsonCorrelationResult ComputePearsonCorrelation(
+        TestRecommendation rec,
+        ResearchVariable? outcome,
+        ResearchVariable? predictor,
+        StatisticsDataset? data,
+        StatisticsMatchInput? match)
+    {
+        var result = new PearsonCorrelationResult { PairTypeDisplay = rec?.PairTypeDisplay ?? "" };
+        result.Notes.Add("Computed locally on this device by deterministic C# code. No AI was used to select or calculate this test.");
+        result.Notes.Add("Only the aggregate coefficient, sample size, and p-value are shown or exported — no individual participant rows.");
+
+        // --- Guard 1: eligibility. ------------------------------------------
+        if (!IsRunnablePearson(rec))
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "This pairing is not eligible for a Pearson correlation. Both variables must be continuous, and the plan must be ready to plan or need assumption review.";
+            return result;
+        }
+        if (outcome is null || predictor is null || data is null || data.RowCount == 0 || match is null)
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "The dataset or matched variables were not available to compute this test.";
+            return result;
+        }
+
+        // The eligibility gate guarantees both variables are continuous. Re-check
+        // defensively so the engine never guesses if called incorrectly.
+        if (!IsContinuousKind(rec!.OutcomeKind) || !IsContinuousKind(rec.PredictorKind))
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "A Pearson correlation needs two continuous variables.";
+            return result;
+        }
+
+        result.XName = outcome.VariableName.Trim();
+        result.XDisplay = Display(outcome);
+        result.XKind = "Continuous";
+        result.YName = predictor.VariableName.Trim();
+        result.YDisplay = Display(predictor);
+        result.YKind = "Continuous";
+
+        int xIdx = data.ColumnIndexOf(StatisticsVariablePreparer.Prepare(outcome, data, ResolveColumn(outcome, match)).MatchedColumn);
+        int yIdx = data.ColumnIndexOf(StatisticsVariablePreparer.Prepare(predictor, data, ResolveColumn(predictor, match)).MatchedColumn);
+        if (xIdx < 0 || yIdx < 0)
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "The matched dataset columns for these variables could not be found.";
+            return result;
+        }
+
+        // --- Assemble aligned (x, y) numeric pairs (listwise deletion). ------
+        var xs = new List<double>();
+        var ys = new List<double>();
+        for (int r = 0; r < data.RowCount; r++)
+        {
+            string xv = data.Cell(r, xIdx).Trim();
+            string yv = data.Cell(r, yIdx).Trim();
+            if (StatisticsMissingTokens.IsMissing(xv) || StatisticsMissingTokens.IsMissing(yv))
+            {
+                result.DroppedForMissing++;
+                continue;
+            }
+            if (!StatisticsVariablePreparer.TryParseNumeric(xv, out double x) || !StatisticsVariablePreparer.TryParseNumeric(yv, out double y))
+            {
+                result.DroppedInvalid++;   // both present but at least one is non-numeric
+                continue;
+            }
+            xs.Add(x);
+            ys.Add(y);
+        }
+        int n = xs.Count;
+        result.PairN = n;
+
+        // --- Guard 2: enough complete pairs. --------------------------------
+        if (n < MinPairsForPearson)
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = $"At least {MinPairsForPearson} complete pairs are needed to compute a correlation; only {n} valid pair(s) remain after removing missing/non-numeric values.";
+            AddMethodNotesPearson(result);
+            return result;
+        }
+
+        double meanX = xs.Average(), meanY = ys.Average();
+        double sxx = 0.0, syy = 0.0, sxy = 0.0;
+        for (int i = 0; i < n; i++)
+        {
+            double dx = xs[i] - meanX, dy = ys[i] - meanY;
+            sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+        }
+
+        result.MeanX = meanX; result.MeanY = meanY;
+        result.SdX = Math.Sqrt(sxx / (n - 1));
+        result.SdY = Math.Sqrt(syy / (n - 1));
+        result.Covariance = sxy / (n - 1);
+
+        // --- Guard 3: neither variable may be constant (zero variance). ------
+        if (sxx <= 0.0 || syy <= 0.0 || double.IsNaN(sxx) || double.IsNaN(syy))
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = (sxx <= 0.0 && syy <= 0.0)
+                ? "Both variables are constant (every value is identical), so a correlation cannot be computed."
+                : (sxx <= 0.0
+                    ? $"“{result.XDisplay}” has no variability (every value is identical), so a correlation cannot be computed."
+                    : $"“{result.YDisplay}” has no variability (every value is identical), so a correlation cannot be computed.");
+            AddMethodNotesPearson(result);
+            return result;
+        }
+
+        double r0 = sxy / Math.Sqrt(sxx * syy);
+        if (double.IsNaN(r0) || double.IsInfinity(r0))
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = "The correlation coefficient could not be computed from these values.";
+            AddMethodNotesPearson(result);
+            return result;
+        }
+        double rr = Math.Clamp(r0, -1.0, 1.0);   // numerical safety only (float noise just past ±1)
+
+        result.R = rr;
+        result.RSquared = rr * rr;
+        result.DegreesOfFreedom = n - 2;
+
+        // Perfect ±1: 1 − r² is 0. Floor the denominator so t is a finite large
+        // number (never Infinity), which the Student-t tail maps to a tiny
+        // p-value shown as "< .001". Never NaN/Infinity, never p = 0.
+        result.PerfectCorrelation = (1.0 - rr * rr) <= 1e-12;
+        double denom = Math.Max(1.0 - rr * rr, 1e-12);
+        double t = rr * Math.Sqrt((n - 2) / denom);
+        result.TStatistic = t;
+        result.PValue = InferenceMath.StudentTTwoSidedP(t, n - 2);
+
+        result.Status = ParametricStatus.Computed;
+        AddAssumptionsPearson(result);
+        AddMethodNotesPearson(result);
+        return result;
+    }
+
+    private static void AddAssumptionsPearson(PearsonCorrelationResult r)
+    {
+        r.Assumptions.Add("Linear relationship is assumed — Pearson measures the strength of a LINEAR association only.");
+        r.Assumptions.Add("Both variables are continuous.");
+        r.Assumptions.Add("Independent observations: assumed (study-design level; not verifiable from the data).");
+        r.Assumptions.Add("Approximate bivariate normality is assumed; this is not verified automatically in this version.");
+        r.Assumptions.Add("Pearson correlation is sensitive to outliers. If the relationship is monotonic but non-linear, or the data are skewed, the Spearman correlation may be considered as a robust alternative.");
+        r.Assumptions.Add("Correlation does NOT imply causation.");
+    }
+
+    private static void AddMethodNotesPearson(PearsonCorrelationResult r)
+    {
+        r.Notes.Add("Pearson r = covariance ÷ (SD_x × SD_y), using sample SDs (n − 1). r ranges from −1 to +1; r² is the share of variance the two variables share.");
+        r.Notes.Add("Significance: t = r × √((n − 2) ÷ (1 − r²)), df = n − 2, two-sided p from the Student-t distribution. A perfect ±1 correlation is handled with a floored denominator so the p-value is shown as \"< .001\" rather than as a NaN.");
+        r.Notes.Add("Strength labels (negligible/small/moderate/strong/very strong) are a rough heuristic, not a definitive judgement.");
+        r.Notes.Add("Rows missing either variable, or with a non-numeric value in either variable, are excluded pairwise. p-values are never shown as 0; values below .001 are shown as \"< .001\". Full precision is kept internally.");
+        r.Notes.Add("Pearson correlation only. No regression, partial/multiple correlation, Kendall's tau, odds ratio, confidence interval, or causal claim is calculated in this version.");
+    }
+
     private static void AddAssumptionsAnova(OneWayAnovaResult r)
     {
         r.Assumptions.Add("Independent observations: assumed (study-design level; not verifiable from the data).");
@@ -906,6 +1138,92 @@ public static class OneWayAnovaExport
                     Q(InferenceMath.FormatNumber(g.Mean, 4)), Q(InferenceMath.FormatNumber(g.Sd, 4))
                 }));
         }
+        return sb.ToString();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Export: plain text and CSV of a computed Pearson correlation. Aggregate only —
+// the coefficient, r², descriptives, the statistic, df, and p-value. No
+// participant-level data; no AI.
+// ---------------------------------------------------------------------------
+public static class PearsonCorrelationExport
+{
+    public static string BuildPlainText(PearsonCorrelationResult r)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("PEARSON CORRELATION RESULT");
+        sb.AppendLine($"Generated: {r.GeneratedDisplay}");
+        sb.AppendLine($"Variable X: {r.XDisplay}  (Continuous)");
+        sb.AppendLine($"Variable Y: {r.YDisplay}  (Continuous)");
+        sb.AppendLine($"Complete valid pairs (N): {r.PairN}   (excluded for missing: {r.DroppedForMissing}; non-numeric dropped: {r.DroppedInvalid})");
+        sb.AppendLine(new string('=', 78));
+
+        if (r.Status == ParametricStatus.NotRunnable)
+        {
+            sb.AppendLine("This pairing could not be run.");
+            sb.AppendLine(r.StatusReason);
+            AppendNotes(sb, r);
+            return sb.ToString();
+        }
+
+        sb.AppendLine();
+        if (r.Status == ParametricStatus.CannotCompute)
+        {
+            sb.AppendLine("RESULT: Cannot compute a reliable result — needs review.");
+            sb.AppendLine(r.StatusReason);
+        }
+        else
+        {
+            sb.AppendLine($"Test used: {r.TestUsed}");
+            sb.AppendLine($"Descriptives: mean X = {InferenceMath.FormatNumber(r.MeanX, 3)}, SD X = {InferenceMath.FormatNumber(r.SdX, 3)};  mean Y = {InferenceMath.FormatNumber(r.MeanY, 3)}, SD Y = {InferenceMath.FormatNumber(r.SdY, 3)}");
+            sb.AppendLine($"Pearson r: {InferenceMath.FormatNumber(r.R, 3)}   (r-squared: {InferenceMath.FormatNumber(r.RSquared, 3)})");
+            sb.AppendLine($"t = {InferenceMath.FormatNumber(r.TStatistic, 3)}   df = {r.DegreesOfFreedom}");
+            sb.AppendLine($"p-value: {r.PValueDisplay}");
+            sb.AppendLine($"Strength: {r.StrengthBand}");
+        }
+
+        if (r.Assumptions.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Assumptions:");
+            foreach (var a in r.Assumptions) sb.AppendLine("  - " + a);
+        }
+
+        AppendNotes(sb, r);
+        return sb.ToString();
+    }
+
+    private static void AppendNotes(StringBuilder sb, PearsonCorrelationResult r)
+    {
+        sb.AppendLine();
+        sb.AppendLine("Notes:");
+        foreach (var n in r.Notes) sb.AppendLine("  • " + n);
+    }
+
+    public static string BuildCsv(PearsonCorrelationResult r)
+    {
+        var sb = new StringBuilder();
+        string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+
+        sb.AppendLine(string.Join(",", new[]
+        {
+            "Test", "VariableX", "VariableY", "Status", "N", "MissingExcluded", "InvalidDropped",
+            "MeanX", "SdX", "MeanY", "SdY", "Covariance", "PearsonR", "RSquared", "t", "df", "p", "AiInvolved"
+        }.Select(Q)));
+
+        sb.AppendLine(string.Join(",", new[]
+        {
+            Q(r.TestUsed), Q(r.XDisplay), Q(r.YDisplay), Q(r.Status.ToString()),
+            r.PairN.ToString(CultureInfo.InvariantCulture), r.DroppedForMissing.ToString(CultureInfo.InvariantCulture),
+            r.DroppedInvalid.ToString(CultureInfo.InvariantCulture),
+            Q(InferenceMath.FormatNumber(r.MeanX, 4)), Q(InferenceMath.FormatNumber(r.SdX, 4)),
+            Q(InferenceMath.FormatNumber(r.MeanY, 4)), Q(InferenceMath.FormatNumber(r.SdY, 4)),
+            Q(InferenceMath.FormatNumber(r.Covariance, 4)),
+            Q(InferenceMath.FormatNumber(r.R, 4)), Q(InferenceMath.FormatNumber(r.RSquared, 4)),
+            Q(InferenceMath.FormatNumber(r.TStatistic, 4)), r.DegreesOfFreedom.ToString(CultureInfo.InvariantCulture),
+            Q(r.PValue is null ? "not calculated" : InferenceMath.FormatPValue(r.PValue.Value)), Q("no")
+        }));
         return sb.ToString();
     }
 }
