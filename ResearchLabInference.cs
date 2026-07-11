@@ -199,6 +199,20 @@ public static class InferenceMath
         return Math.Clamp(p, 0.0, 1.0);
     }
 
+    // Fractional-df overload for the Welch t-test (Welch-Satterthwaite df is not
+    // an integer). Identical formula, reusing the SAME RegularizedIncompleteBeta
+    // — NOT a second Student-t implementation. Callers passing an int df bind to
+    // the int overload above, so existing behaviour (e.g. Spearman) is unchanged.
+    public static double StudentTTwoSidedP(double t, double df)
+    {
+        if (double.IsNaN(df) || double.IsInfinity(df) || df < 1.0 || double.IsNaN(t) || double.IsInfinity(t)) return 1.0;
+        if (t == 0.0) return 1.0;
+        double x = df / (df + t * t);
+        double p = RegularizedIncompleteBeta(df / 2.0, 0.5, x);
+        if (double.IsNaN(p) || double.IsInfinity(p)) return 1.0;
+        return Math.Clamp(p, 0.0, 1.0);
+    }
+
     // p-value display rules (audit requirement):
     //   * never display p = 0;
     //   * a p-value below .001 is shown as "< .001";

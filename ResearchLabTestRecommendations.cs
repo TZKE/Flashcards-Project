@@ -179,6 +179,26 @@ public sealed class TestRecommendation
     public bool CanComputeSpearman =>
         (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
         && IsRankableKindDisplay(OutcomeKind) && IsRankableKindDisplay(PredictorKind);
+
+    // Phase 4D (Slice 1) eligibility — METADATA ONLY, not a calculation.
+    // A card's Welch t-test may be COMPUTED only when the OUTCOME is continuous
+    // and the PREDICTOR is binary (a two-level grouping variable — note a
+    // two-level categorical is classified as "Binary" kind) AND the plan is
+    // Ready or Needs-assumption-review. This is a SUBSET of CanComputeRank
+    // (a continuous outcome × binary group is also rank-eligible for the MWU
+    // robust alternative), so dispatch runs Welch first: Welch is the headline
+    // recommendation for this pairing, MWU is only its named alternative.
+    // Binary/ordinal outcomes and continuous×continuous are never Welch.
+    [JsonIgnore]
+    public bool CanComputeWelch =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && IsContinuousKindDisplay(OutcomeKind) && IsBinaryKindDisplay(PredictorKind);
+
+    private static bool IsContinuousKindDisplay(string kind) =>
+        string.Equals(kind, "Continuous", StringComparison.Ordinal);
+
+    private static bool IsBinaryKindDisplay(string kind) =>
+        string.Equals(kind, "Binary", StringComparison.Ordinal);
 }
 
 // The whole Recommended Analysis result for one project.
@@ -526,7 +546,7 @@ public static class TestRecommendationEngine
     // not recommended) keep the original wording unchanged.
     private static void ApplyPlanningNoteWording(TestRecommendation r)
     {
-        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman)) return;
+        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch)) return;
         const string RunNote = "Planning card only — no result has been calculated yet. Click Run this analysis to compute the supported test locally.";
         bool replaced = false;
         for (int i = r.Notes.Count - 1; i >= 0; i--)

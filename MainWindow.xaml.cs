@@ -7854,13 +7854,17 @@ public sealed partial class MainWindow : Window
     // compute gates is open. Role-review / unsupported / not-recommended cards
     // never qualify.
     private static bool IsRunnableReco(TestRecommendation rec)
-        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman;
+        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman || rec.CanComputeWelch;
 
     // Dispatches to the engine matching the recommended test. Precondition:
-    // IsRunnableReco(rec) is true and _statData is loaded. The three gates are
-    // mutually exclusive by variable kind, so exactly one branch applies.
+    // IsRunnableReco(rec) is true and _statData is loaded. Categorical / Spearman
+    // are mutually exclusive by kind. Welch (continuous outcome × binary group)
+    // is a SUBSET of Rank, so it is checked FIRST: for that pairing the headline
+    // recommendation is the Welch t-test, and Mann-Whitney U is only its named
+    // robust alternative — every other rank pairing still falls through to Rank.
     private IInferenceExportable DispatchCompute(TestRecommendation rec, ResearchVariable outcome, ResearchVariable predictor)
         => rec.CanComputeCategorical ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
+         : rec.CanComputeWelch ? ParametricInferenceEngine.ComputeWelchTTest(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeRank ? RankInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
          : SpearmanCorrelationEngine.Compute(rec, outcome, predictor, _statData!, _statMatch);
 
@@ -7906,6 +7910,13 @@ public sealed partial class MainWindow : Window
                 row.PValueDisplay = s.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(s.PValue.Value)}";
                 row.EffectDisplay = s.Rho is null ? "Effect: —" : $"ρ = {InferenceMath.FormatNumber(s.Rho, 3)}";
                 pv = s.PValue;
+                break;
+            case WelchTTestResult w:
+                row.TestName = w.TestUsed;
+                row.ValidNDisplay = $"N = {w.ValidN}";
+                row.PValueDisplay = w.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(w.PValue.Value)}";
+                row.EffectDisplay = w.HedgesG is { } hg ? $"Hedges g = {InferenceMath.FormatNumber(hg, 3)}" : "Effect: —";
+                pv = w.PValue;
                 break;
             default:
                 row.TestName = "Result";
