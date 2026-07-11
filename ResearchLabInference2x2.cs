@@ -6,11 +6,12 @@ namespace AIFlashcardMaker;
 // ===========================================================================
 // Research Lab — Phase 4E (Slice 1): deterministic 2×2 MEASURES — Odds Ratio.
 //
-// A single 2×2 association measure for a binary outcome (event) versus a binary
-// exposure (predictor). Slice 1 implements the ODDS RATIO ONLY, with a strict
-// event/exposed-level resolver so a reversed table can never be produced
-// silently. Risk ratio, risk difference, and confidence intervals are NOT in
-// this slice.
+// 2×2 association measures for a binary outcome (event) versus a binary exposure
+// (predictor). Slice 1 added the ODDS RATIO with a strict event/exposed-level
+// resolver so a reversed table can never be produced silently. Slice 2 adds the
+// RISK RATIO and RISK DIFFERENCE point estimates, but ONLY for cohort/RCT (as
+// risk) or cross-sectional (as prevalence) designs — case-control and unspecified
+// designs suppress them. Confidence intervals are NOT in this slice.
 //
 // HARD RULES (audit-critical):
 //   * Deterministic C# only (System.Math). Same inputs → bit-identical output.
@@ -22,8 +23,9 @@ namespace AIFlashcardMaker;
 //     CategoricalInferenceEngine.FisherExact2x2 (association p) and
 //     StatisticsVariablePreparer.ParseValueLabels (value labels). Nothing in
 //     ResearchLabInference.cs is changed.
-//   * ODDS RATIO ONLY. NO risk ratio, NO risk difference, NO confidence
-//     interval, NO regression. Those are later, separately-approved slices.
+//   * ODDS RATIO + design-gated RISK/PREVALENCE RATIO & DIFFERENCE only. NO
+//     confidence interval, NO regression. Those are later, separately-approved
+//     slices. RR/RD are point estimates suppressed for case-control/unknown.
 //   * The engine NEVER guesses the positive direction. If the event level or the
 //     exposed level cannot be resolved deterministically it returns a
 //     needs-level-review result and computes nothing.
@@ -36,6 +38,17 @@ public enum TwoByTwoStatus
     CannotCompute,   // valid-shaped but a guardrail blocks a reliable result
     NeedsLevelReview,// the positive event/exposed level could not be resolved
     NotRunnable      // the pairing is not eligible for 2×2 measures
+}
+
+// Conservative study-design classification for whether risk/prevalence measures
+// may be reported. Only the analytic designs that can estimate risk/prevalence
+// unlock RR/RD; everything else (including unspecified) is Unknown → suppressed.
+public enum TwoByTwoStudyDesignKind
+{
+    Cohort,          // cohort / RCT / trial → risk (incidence) measures valid
+    CrossSectional,  // cross-sectional → prevalence measures valid
+    CaseControl,     // case-control → risk NOT estimable; OR only
+    Unknown          // unspecified / not risk-estimable → RR/RD suppressed
 }
 
 public sealed class TwoByTwoMeasuresResult : IInferenceExportable
@@ -69,6 +82,30 @@ public sealed class TwoByTwoMeasuresResult : IInferenceExportable
 
     public double? AssociationP { get; set; }
     public string AssociationTest { get; set; } = "";
+
+    // --- Slice 2: design-gated risk / prevalence measures. ------------------
+    public string StudyDesignRaw { get; set; } = "";
+    public TwoByTwoStudyDesignKind StudyDesignKind { get; set; } = TwoByTwoStudyDesignKind.Unknown;
+    public string StudyDesignKindDisplay => StudyDesignKind switch
+    {
+        TwoByTwoStudyDesignKind.Cohort => "Cohort",
+        TwoByTwoStudyDesignKind.CrossSectional => "Cross-sectional",
+        TwoByTwoStudyDesignKind.CaseControl => "Case-control",
+        _ => "Unknown"
+    };
+
+    // Populated only when AreRiskMeasuresReported (cohort / cross-sectional).
+    public bool AreRiskMeasuresReported { get; set; }
+    public string SuppressionReason { get; set; } = "";
+    public double? EventProportionExposed { get; set; }     // raw a/(a+b)
+    public double? EventProportionUnexposed { get; set; }   // raw c/(c+d)
+    public string ProportionExposedLabel { get; set; } = "";   // "Risk in exposed" | "Prevalence in exposed"
+    public string ProportionUnexposedLabel { get; set; } = "";
+    public double? RatioMeasure { get; set; }               // risk ratio | prevalence ratio
+    public double? DifferenceMeasure { get; set; }          // risk difference | prevalence difference (raw)
+    public string RatioLabel { get; set; } = "";            // "Risk ratio" | "Prevalence ratio"
+    public string DifferenceLabel { get; set; } = "";       // "Risk difference" | "Prevalence difference"
+    public bool RatioUsesCorrection { get; set; }           // Haldane applied to the ratio (zero cell)
 
     public List<string> Assumptions { get; set; } = new();
     public List<string> Notes { get; set; } = new();
@@ -104,7 +141,8 @@ public sealed class TwoByTwoMeasuresResult : IInferenceExportable
 }
 
 // ---------------------------------------------------------------------------
-// The deterministic 2×2 measures engine (odds ratio only, Slice 1).
+// The deterministic 2×2 measures engine (odds ratio + design-gated risk/
+// prevalence ratio & difference; no confidence intervals yet).
 // ---------------------------------------------------------------------------
 public static class TwoByTwoMeasuresEngine
 {
@@ -128,11 +166,14 @@ public static class TwoByTwoMeasuresEngine
         ResearchVariable? outcome,
         ResearchVariable? predictor,
         StatisticsDataset? data,
-        StatisticsMatchInput? match)
+        StatisticsMatchInput? match,
+        string studyType = "")
     {
         var result = new TwoByTwoMeasuresResult { PairTypeDisplay = rec?.PairTypeDisplay ?? "" };
+        result.StudyDesignRaw = (studyType ?? "").Trim();
+        result.StudyDesignKind = ClassifyDesign(studyType);
         result.Notes.Add("Computed locally on this device by deterministic C# code. No AI was used to select or calculate this test.");
-        result.Notes.Add("Only aggregate 2×2 counts and the odds ratio are shown or exported — no individual participant rows.");
+        result.Notes.Add("Only aggregate 2×2 counts and the measures below are shown or exported — no individual participant rows.");
 
         // --- Guard 1: eligibility. ------------------------------------------
         if (!IsRunnable(rec))
@@ -286,10 +327,82 @@ public static class TwoByTwoMeasuresEngine
             result.AssociationTest = "Fisher exact test (two-sided)";
         }
 
+        // --- Slice 2: design-gated risk / prevalence measures. --------------
+        ComputeRiskMeasures(result, a, b, c, d);
+
         result.Status = TwoByTwoStatus.Computed;
         AddAssumptions(result);
         AddMethodNotes(result);
         return result;
+    }
+
+    // Conservative design classifier. Case-insensitive, trimmed. Matches the
+    // hyphenated "case-control" PHRASE (never bare "case", so "Case report" is
+    // Unknown). Only cohort/RCT/trial (risk) and cross-sectional (prevalence)
+    // unlock risk measures; retrospective / systematic review / meta-analysis /
+    // case report / not-sure / blank → Unknown → suppressed.
+    private static TwoByTwoStudyDesignKind ClassifyDesign(string? studyType)
+    {
+        string s = (studyType ?? "").Trim().ToLowerInvariant();
+        if (s.Length == 0) return TwoByTwoStudyDesignKind.Unknown;
+        if (s.Contains("case-control") || s.Contains("case control") || s.Contains("case–control"))
+            return TwoByTwoStudyDesignKind.CaseControl;
+        if (s.Contains("cohort") || s.Contains("trial") || s.Contains("rct") || s.Contains("randomi"))
+            return TwoByTwoStudyDesignKind.Cohort;
+        if (s.Contains("cross"))   // cross-sectional / cross sectional
+            return TwoByTwoStudyDesignKind.CrossSectional;
+        return TwoByTwoStudyDesignKind.Unknown;
+    }
+
+    // Computes the observed event proportions and, ONLY for cohort/cross-sectional
+    // designs, the ratio (risk/prevalence ratio) and difference. Case-control and
+    // Unknown suppress RR/RD (with a reason). Margins are already guaranteed > 0.
+    private static void ComputeRiskMeasures(TwoByTwoMeasuresResult r, int a, int b, int c, int d)
+    {
+        var design = r.StudyDesignKind;
+        bool cohort = design == TwoByTwoStudyDesignKind.Cohort;
+        bool crossSectional = design == TwoByTwoStudyDesignKind.CrossSectional;
+
+        if (!cohort && !crossSectional)
+        {
+            r.AreRiskMeasuresReported = false;
+            r.SuppressionReason = design == TwoByTwoStudyDesignKind.CaseControl
+                ? "Risk ratio and risk difference are not reported for a case-control design because incidence/risk cannot be estimated from case-control sampling. Use the odds ratio."
+                : "Risk ratio and risk difference are not reported because the study design is unspecified or not risk-estimable. Set the study design to Cohort or Cross-sectional if appropriate.";
+            return;
+        }
+
+        // Raw observed event proportions (margins > 0, so always defined).
+        double pExpRaw = (double)a / (a + b);
+        double pUnexpRaw = (double)c / (c + d);
+        r.EventProportionExposed = pExpRaw;
+        r.EventProportionUnexposed = pUnexpRaw;
+        r.AreRiskMeasuresReported = true;
+
+        bool prevalence = crossSectional;   // cross-sectional → prevalence wording
+        r.ProportionExposedLabel = prevalence ? "Prevalence in exposed" : "Risk in exposed";
+        r.ProportionUnexposedLabel = prevalence ? "Prevalence in unexposed" : "Risk in unexposed";
+        r.RatioLabel = prevalence ? "Prevalence ratio" : "Risk ratio";
+        r.DifferenceLabel = prevalence ? "Prevalence difference" : "Risk difference";
+
+        // Difference uses RAW counts (always defined).
+        r.DifferenceMeasure = pExpRaw - pUnexpRaw;
+
+        // Ratio: use Haldane-corrected counts when a zero cell would make it 0/∞;
+        // otherwise the raw ratio. (CorrectionApplied is already the zero-cell flag.)
+        if (r.CorrectionApplied)
+        {
+            double pExpC = (a + 0.5) / (a + b + 1.0);
+            double pUnexpC = (c + 0.5) / (c + d + 1.0);
+            r.RatioMeasure = pExpC / pUnexpC;
+            r.RatioUsesCorrection = true;
+        }
+        else
+        {
+            r.RatioMeasure = pExpRaw / pUnexpRaw;
+        }
+        if (r.RatioMeasure is double rat && (double.IsNaN(rat) || double.IsInfinity(rat)))
+            r.RatioMeasure = null;   // never emit NaN/Infinity
     }
 
     // Resolves the positive level of a two-level variable. Returns false (block)
@@ -338,19 +451,21 @@ public static class TwoByTwoMeasuresEngine
         r.Assumptions.Add("Independent observations: assumed (study-design level; not verifiable from the data).");
         r.Assumptions.Add("Both variables are binary (exactly two levels).");
         r.Assumptions.Add("The odds ratio measures ASSOCIATION, not causation.");
-        r.Assumptions.Add("The odds ratio is valid for 2×2 association and for case-control designs. Risk ratio and risk difference require additional design-aware handling and are added in later slices.");
+        r.Assumptions.Add("The odds ratio is valid for 2×2 association and for case-control designs. Risk ratio and risk difference are reported ONLY for cohort/RCT (as risk) or cross-sectional (as prevalence) designs, and are suppressed for case-control and unspecified designs.");
     }
 
     private static void AddMethodNotes(TwoByTwoMeasuresResult r)
     {
-        if (r.CorrectionApplied)
+        if (r.CorrectionApplied && r.RatioUsesCorrection)
+            r.Notes.Add("A zero cell was present; the odds ratio and risk/prevalence ratio use the Haldane-Anscombe correction (+0.5 to all cells). The risk/prevalence difference and the displayed event proportions use the raw counts. Sparse-data estimates are unstable — interpret with caution. The raw counts are shown unchanged.");
+        else if (r.CorrectionApplied)
             r.Notes.Add("A zero cell was present; the Haldane-Anscombe correction (+0.5 to all cells) was applied to the odds ratio. Sparse-data estimates are unstable — interpret with caution. The raw counts are shown unchanged.");
         r.Notes.Add("Odds ratio = (a×d) ÷ (b×c) from the exposure×outcome 2×2 table (a = exposed+event, b = exposed+no event, c = unexposed+event, d = unexposed+no event). The association p-value is the two-sided Fisher exact test.");
-        r.Notes.Add("Risk ratio is not calculated in this slice.");
-        r.Notes.Add("Risk difference is not calculated in this slice.");
-        r.Notes.Add("95% confidence interval is not calculated in this slice.");
+        if (r.AreRiskMeasuresReported)
+            r.Notes.Add("Risk/prevalence in exposed = a ÷ (a+b); in unexposed = c ÷ (c+d). Ratio = exposed ÷ unexposed; difference = exposed − unexposed (from raw counts).");
+        r.Notes.Add("95% confidence intervals are not calculated in this slice.");
         r.Notes.Add("p-values are never shown as 0; values below .001 are shown as \"< .001\". Full precision is kept internally.");
-        r.Notes.Add("Odds ratio only. No risk ratio, risk difference, confidence interval, or regression is calculated in this slice.");
+        r.Notes.Add("No 95% confidence interval or regression is calculated in this slice.");
     }
 
     // Display policy shared with the other engines (label when distinct, else
@@ -457,6 +572,34 @@ public static class TwoByTwoExport
             sb.AppendLine("Association p-value: —");
         if (r.DirectionNote.Length > 0) sb.AppendLine($"Interpretation: {r.DirectionNote}");
 
+        // --- Slice 2: study-design-gated risk / prevalence measures. --------
+        sb.AppendLine();
+        sb.AppendLine($"Study design: {r.StudyDesignKindDisplay}"
+            + (r.StudyDesignRaw.Length > 0 && !string.Equals(r.StudyDesignRaw, r.StudyDesignKindDisplay, StringComparison.OrdinalIgnoreCase)
+                ? $"  (from study type: {r.StudyDesignRaw})" : ""));
+        if (r.AreRiskMeasuresReported)
+        {
+            sb.AppendLine($"{r.ProportionExposedLabel}:   {InferenceMath.FormatNumber(r.EventProportionExposed, 3)}");
+            sb.AppendLine($"{r.ProportionUnexposedLabel}: {InferenceMath.FormatNumber(r.EventProportionUnexposed, 3)}");
+            sb.AppendLine($"{r.RatioLabel}: {InferenceMath.FormatNumber(r.RatioMeasure, 3)}"
+                + (r.RatioUsesCorrection ? "  (Haldane-Anscombe corrected)" : ""));
+            sb.AppendLine($"{r.DifferenceLabel}: {InferenceMath.FormatNumber(r.DifferenceMeasure, 3)}");
+            if (r.RatioMeasure is double rr)
+            {
+                string word = r.StudyDesignKind == TwoByTwoStudyDesignKind.CrossSectional ? "prevalence" : "risk";
+                string dir = rr > 1.0 ? "higher" : rr < 1.0 ? "lower" : "similar";
+                sb.AppendLine($"Interpretation: The exposed group has {dir} observed {word} of the event than the unexposed group (association, not causation).");
+            }
+            if (r.StudyDesignKind == TwoByTwoStudyDesignKind.CrossSectional)
+                sb.AppendLine("These are prevalence measures, not incidence risk.");
+        }
+        else
+        {
+            sb.AppendLine(r.SuppressionReason);
+            if (r.StudyDesignKind == TwoByTwoStudyDesignKind.CaseControl)
+                sb.AppendLine("The odds ratio is the appropriate reported measure for this 2×2 design.");
+        }
+
         if (r.Assumptions.Count > 0)
         {
             sb.AppendLine();
@@ -480,11 +623,19 @@ public static class TwoByTwoExport
         var sb = new StringBuilder();
         string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
 
+        string blankOrNum(double? v) => v is null ? "" : InferenceMath.FormatNumber(v, 4);
+        string ratioCell = r.AreRiskMeasuresReported ? blankOrNum(r.RatioMeasure) : "Not reported";
+        string diffCell = r.AreRiskMeasuresReported ? blankOrNum(r.DifferenceMeasure) : "Not reported";
+
         sb.AppendLine(string.Join(",", new[]
         {
             "Test", "Outcome", "Exposure", "Status", "EventLevel", "ExposedLevel",
             "a_exposed_event", "b_exposed_noevent", "c_unexposed_event", "d_unexposed_noevent",
-            "N", "OddsRatio", "CorrectionApplied", "AssociationTest", "AssociationP", "AiInvolved"
+            "N", "OddsRatio", "CorrectionApplied", "AssociationTest", "AssociationP",
+            "StudyDesignRaw", "StudyDesignClassified",
+            "ProportionExposedLabel", "ProportionUnexposedLabel", "ProportionExposed", "ProportionUnexposed",
+            "RatioLabel", "RatioMeasure", "DifferenceLabel", "DifferenceMeasure",
+            "RiskMeasuresReported", "SuppressionReason", "RatioUsesCorrection", "AiInvolved"
         }.Select(Q)));
 
         sb.AppendLine(string.Join(",", new[]
@@ -496,11 +647,16 @@ public static class TwoByTwoExport
             r.N.ToString(CultureInfo.InvariantCulture),
             Q(InferenceMath.FormatNumber(r.OddsRatio, 4)), Q(r.CorrectionApplied ? "yes" : "no"),
             Q(r.AssociationTest), Q(r.AssociationP is null ? "not calculated" : InferenceMath.FormatPValue(r.AssociationP.Value)),
-            Q("no")
+            Q(r.StudyDesignRaw), Q(r.StudyDesignKindDisplay),
+            Q(r.ProportionExposedLabel), Q(r.ProportionUnexposedLabel),
+            Q(blankOrNum(r.EventProportionExposed)), Q(blankOrNum(r.EventProportionUnexposed)),
+            Q(r.RatioLabel), Q(ratioCell), Q(r.DifferenceLabel), Q(diffCell),
+            Q(r.AreRiskMeasuresReported ? "yes" : "no"), Q(r.SuppressionReason),
+            Q(r.RatioUsesCorrection ? "yes" : "no"), Q("no")
         }));
 
         sb.AppendLine();
-        sb.AppendLine(Q("Note") + "," + Q("Risk ratio, risk difference, and 95% CI are not calculated in this slice."));
+        sb.AppendLine(Q("Note") + "," + Q("95% confidence intervals are not calculated in this slice."));
         return sb.ToString();
     }
 }

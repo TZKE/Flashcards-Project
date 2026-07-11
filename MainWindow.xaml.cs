@@ -7870,7 +7870,7 @@ public sealed partial class MainWindow : Window
     // rank pairing still falls through to Rank; ordinal-involving correlations
     // still fall through to Spearman.
     private IInferenceExportable DispatchCompute(TestRecommendation rec, ResearchVariable outcome, ResearchVariable predictor)
-        => rec.CanCompute2x2Measures ? TwoByTwoMeasuresEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
+        => rec.CanCompute2x2Measures ? TwoByTwoMeasuresEngine.Compute(rec, outcome, predictor, _statData!, _statMatch, CurrentResearchProject()?.StudyType ?? "")
          : rec.CanComputeCategorical ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeWelch ? ParametricInferenceEngine.ComputeWelchTTest(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeAnova ? ParametricInferenceEngine.ComputeOneWayAnova(rec, outcome, predictor, _statData!, _statMatch)
