@@ -9053,6 +9053,15 @@ public sealed partial class MainWindow : Window
                 if (fix.ChangesCoding)
                 {
                     v.Coding = fix.ProposedCoding.Trim();
+                    // ParseValueLabels lets ValueLabels override Coding, so a stale
+                    // ValueLabels (e.g. from AI extraction) would mask this repaired
+                    // coding and the "outside defined labels" readiness warning would
+                    // survive the apply. The proposed coding is the authoritative,
+                    // complete mapping (the added-labels branch already folds in any
+                    // existing labels), so clear the overriding field. Coding — not
+                    // ValueLabels — is what the AI prompts already send, so the
+                    // repaired mapping stays in the field other callers expect.
+                    v.ValueLabels = "";
                     labelSets++;
                 }
                 if (typeChanged) typeRepairs++;
