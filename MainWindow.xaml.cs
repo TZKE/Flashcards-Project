@@ -7456,6 +7456,17 @@ public sealed partial class MainWindow : Window
         public bool HasPValue { get; set; }
         public bool IsSignificant { get; set; }
 
+        // Phase 4F Slices 3-4 — SESSION-ONLY live typed result, kept so the
+        // narrative generator can produce copy/export text from structured values
+        // (never by parsing FullPlainText/CsvText). Set once at compute time in
+        // BuildComputedRow; NULL for rows reloaded from the saved project file.
+        // Never persisted: ToSavedComputedResult/FromSavedComputedResult do not
+        // map it and SavedComputedResult has no such field. JsonIgnore is
+        // defensive hygiene (this row is never itself serialized). Holds only the
+        // aggregate result object — no participant rows exist on it to leak.
+        [System.Text.Json.Serialization.JsonIgnore]
+        public IInferenceExportable? LiveResult { get; set; }
+
         // Phase 4C Slice 3 — set once per Computed Results render by comparing
         // AnalysisFingerprint against the CURRENT project fingerprint (computed
         // once per render, not per card). Never recomputed by a getter, so
@@ -7892,7 +7903,10 @@ public sealed partial class MainWindow : Window
             ComputedTimeDisplay = DateTime.Now.ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture),
             FullPlainText = result.ToPlainText(),
             CsvText = result.ToCsv(),
-            AnalysisFingerprint = CurrentStatisticsFingerprint(p)
+            AnalysisFingerprint = CurrentStatisticsFingerprint(p),
+            // Session-only — lets the narrative generator work from structured
+            // values. Never persisted (see ComputedResultRow.LiveResult).
+            LiveResult = result
         };
 
         double? pv = null;
@@ -8087,6 +8101,65 @@ public sealed partial class MainWindow : Window
         if (_computedDetailsRow is null) return;
         try { Clipboard.SetText(_computedDetailsRow.FullPlainText); ShowToast("Result copied to the clipboard."); }
         catch { ShowToast("The result could not be copied. Please try again."); }
+    }
+
+    // ---- Phase 4F Slices 3-4: manuscript narrative copy / TXT export ----------
+    // All four actions read the SESSION-ONLY LiveResult on the open details row
+    // and generate narrative from structured values (never by parsing
+    // FullPlainText/CsvText). A row reloaded from the saved project file has no
+    // LiveResult, so the user is asked to Re-run instead. Stale status is always
+    // surfaced (banner prepended to copies; flag + Notes banner in the export).
+    private const string NarrativeRerunMessage =
+        "Re-run this result to generate manuscript-ready Methods and Results text.";
+
+    // Returns the freshly-generated narrative for the open details row, or null
+    // (and a toast) when there is no row or no live typed result to work from.
+    private ResearchLabNarrativeResult? DetailsNarrativeOrToast()
+    {
+        var row = _computedDetailsRow;
+        if (row is null) return null;
+        if (row.LiveResult is null) { ShowToast(NarrativeRerunMessage); return null; }
+        return ResearchLabNarrativeGenerator.Generate(row.LiveResult, row.IsStale);
+    }
+
+    private void CopyNarrative(string? body, string what)
+    {
+        try
+        {
+            Clipboard.SetText(string.IsNullOrWhiteSpace(body) ? " " : body);
+            ShowToast($"{what} copied to the clipboard.");
+        }
+        catch { ShowToast("The text could not be copied. Please try again."); }
+    }
+
+    private void StComputedCopyMethods_Click(object sender, RoutedEventArgs e)
+    {
+        var n = DetailsNarrativeOrToast();
+        if (n is null) return;
+        CopyNarrative(ResearchLabNarrativeGenerator.WithStaleBanner(n.MethodsText, _computedDetailsRow!.IsStale), "Methods");
+    }
+
+    private void StComputedCopyResults_Click(object sender, RoutedEventArgs e)
+    {
+        var n = DetailsNarrativeOrToast();
+        if (n is null) return;
+        CopyNarrative(ResearchLabNarrativeGenerator.WithStaleBanner(n.ResultsText, _computedDetailsRow!.IsStale), "Results");
+    }
+
+    private void StComputedCopyMethodsResults_Click(object sender, RoutedEventArgs e)
+    {
+        var n = DetailsNarrativeOrToast();
+        if (n is null) return;
+        CopyNarrative(ResearchLabNarrativeGenerator.ComposeMethodsPlusResults(n, _computedDetailsRow!.IsStale), "Methods and Results");
+    }
+
+    private void StComputedExportNarrativeTxt_Click(object sender, RoutedEventArgs e)
+    {
+        var n = DetailsNarrativeOrToast();
+        if (n is null) return;
+        var row = _computedDetailsRow!;
+        string txt = ResearchLabNarrativeGenerator.ComposeNarrativeTxt(n, row.TestName, row.ComputedTimeDisplay, row.IsStale);
+        SaveStatExport("methods_and_results.txt", "Text files (*.txt)|*.txt", txt, "Narrative exported");
     }
 
     private void StComputedCopy_Click(object sender, RoutedEventArgs e)

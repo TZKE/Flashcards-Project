@@ -71,16 +71,77 @@ public sealed class ResearchLabNarrativeResult
 
 public static class ResearchLabNarrativeGenerator
 {
-    // Shared stale banner (section 11) — identical wording wherever it appears.
-    private const string StaleWarning =
+    // Canonical stale banner — exposed publicly so the UI (copy/export actions)
+    // surfaces stale status with EXACTLY this wording, never a duplicate string.
+    public const string StaleWarningText =
         "This result is marked stale because the dataset or extraction sheet changed after it was computed. "
         + "Re-run the analysis before using this text in a manuscript.";
+
+    // Shared stale banner (section 11) — identical wording wherever it appears.
+    private const string StaleWarning = StaleWarningText;
 
     // Shared privacy/determinism footer sentence (section 12).
     private const string DeterministicFooter =
         "Generated deterministically from aggregate computed results on this device. No AI was used.";
     private const string NoRowsFooter =
         "No participant-level rows or identifiers are included in this narrative.";
+
+    // ---------------------------------------------------------------------
+    // Additive UI-facing composition helpers (Phase 4F Slices 3-4). These do
+    // NOT generate or change any statistic — they only arrange already-produced
+    // narrative strings for the clipboard / a plain-text export. Aggregate-only.
+    // ---------------------------------------------------------------------
+
+    // Prepends the canonical stale banner (+ blank line) to a copy body when the
+    // source result is stale. The copy actions exclude the Notes section (where
+    // the banner otherwise lives), so this keeps stale status from being hidden.
+    public static string WithStaleBanner(string? body, bool isStale)
+    {
+        string b = (body ?? "").Trim();
+        return isStale ? StaleWarningText + "\n\n" + b : b;
+    }
+
+    // Composes Methods + a blank line + Results (no Notes) for the
+    // "Copy Methods + Results" action, prepending the stale banner when stale.
+    public static string ComposeMethodsPlusResults(ResearchLabNarrativeResult n, bool isStale)
+    {
+        string body = ((n.MethodsText ?? "").Trim() + "\n\n" + (n.ResultsText ?? "").Trim()).Trim();
+        return WithStaleBanner(body, isStale);
+    }
+
+    // Builds the standalone narrative TXT artifact for export: a header (title,
+    // test, computed time, optional stale flag), then Methods / Results / Notes,
+    // then the deterministic footer. Aggregate-only — no raw rows or identifiers.
+    public static string ComposeNarrativeTxt(ResearchLabNarrativeResult n, string? testName, string? computedTimeDisplay, bool isStale)
+    {
+        // Use the source result title (e.g. "Outcome by Grouping") for the header;
+        // the DTO Title already carries a "Methods and Results — " prefix, so using
+        // it here would double that prefix.
+        string headerTitle = !string.IsNullOrWhiteSpace(n.SourceResultTitle)
+            ? n.SourceResultTitle!.Trim()
+            : (n.Title ?? "").Trim();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("METHODS AND RESULTS — " + headerTitle);
+        if (!string.IsNullOrWhiteSpace(testName)) sb.AppendLine("Test: " + testName!.Trim());
+        if (!string.IsNullOrWhiteSpace(computedTimeDisplay)) sb.AppendLine("Computed: " + computedTimeDisplay!.Trim());
+        if (isStale) sb.AppendLine("Status: STALE — re-run before using in a manuscript (see Notes).");
+
+        void Section(string heading, string? body)
+        {
+            sb.AppendLine();
+            sb.AppendLine(heading);
+            sb.AppendLine();
+            sb.AppendLine((body ?? "").Trim());
+        }
+        Section("Methods", n.MethodsText);
+        Section("Results", n.ResultsText);
+        Section("Notes", n.NotesText);
+
+        sb.AppendLine();
+        sb.AppendLine("Generated deterministically on this device. No AI was used. Aggregate values only.");
+        return sb.ToString();
+    }
 
     // ---------------------------------------------------------------------
     // Public API. Never throws for null / unsupported / malformed results.
