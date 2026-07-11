@@ -465,7 +465,7 @@ public static class TestRecommendationEngine
             if (twoByTwo)
             {
                 r.AlternativeTest = "Fisher exact test (for small expected counts)";
-                r.Notes.Add("For this 2×2 table, click Run to compute the odds ratio with a Fisher exact association p-value (computed locally). Risk ratio, risk difference, and 95% CI are added in later slices.");
+                r.Notes.Add("For this 2×2 table, click Run to compute the odds ratio with a Fisher exact association p-value, plus the risk/prevalence ratio and difference with 95% confidence intervals when the study design allows. All calculations are performed locally.");
             }
             else
             {

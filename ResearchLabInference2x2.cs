@@ -540,7 +540,7 @@ public static class TwoByTwoMeasuresEngine
         r.Notes.Add("95% confidence intervals (z = 1.96): the odds ratio and risk/prevalence ratio use the log method (exp(ln(estimate) ± z·SE)); the risk/prevalence difference uses the approximate Wald method (estimate ± z·SE).");
         r.Notes.Add("An approximate Wald difference interval can extend beyond the logical −1 to +1 range, especially with sparse data or a proportion near 0 or 1; bounds are shown as computed (not clamped).");
         r.Notes.Add("p-values are never shown as 0; values below .001 are shown as \"< .001\". Full precision is kept internally.");
-        r.Notes.Add("No regression is calculated in this slice.");
+        r.Notes.Add("No regression is calculated in this version.");
     }
 
     // Display policy shared with the other engines (label when distinct, else
@@ -747,7 +747,7 @@ public static class TwoByTwoExport
         }));
 
         sb.AppendLine();
-        sb.AppendLine(Q("Note") + "," + Q("95% CIs (z = 1.96): odds ratio and risk/prevalence ratio use the log method; risk/prevalence difference uses the approximate Wald method. No regression is calculated in this slice."));
+        sb.AppendLine(Q("Note") + "," + Q("95% CIs (z = 1.96): odds ratio and risk/prevalence ratio use the log method; risk/prevalence difference uses the approximate Wald method. No regression is calculated in this version."));
         return sb.ToString();
     }
 }
