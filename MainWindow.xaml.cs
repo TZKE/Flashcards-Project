@@ -7854,7 +7854,7 @@ public sealed partial class MainWindow : Window
     // compute gates is open. Role-review / unsupported / not-recommended cards
     // never qualify.
     private static bool IsRunnableReco(TestRecommendation rec)
-        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman || rec.CanComputeWelch || rec.CanComputeAnova || rec.CanComputePearson;
+        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman || rec.CanComputeWelch || rec.CanComputeAnova || rec.CanComputePearson || rec.CanCompute2x2Measures;
 
     // Dispatches to the engine matching the recommended test. Precondition:
     // IsRunnableReco(rec) is true and _statData is loaded. Categorical is
@@ -7870,7 +7870,8 @@ public sealed partial class MainWindow : Window
     // rank pairing still falls through to Rank; ordinal-involving correlations
     // still fall through to Spearman.
     private IInferenceExportable DispatchCompute(TestRecommendation rec, ResearchVariable outcome, ResearchVariable predictor)
-        => rec.CanComputeCategorical ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
+        => rec.CanCompute2x2Measures ? TwoByTwoMeasuresEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
+         : rec.CanComputeCategorical ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeWelch ? ParametricInferenceEngine.ComputeWelchTTest(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeAnova ? ParametricInferenceEngine.ComputeOneWayAnova(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeRank ? RankInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
@@ -7940,6 +7941,13 @@ public sealed partial class MainWindow : Window
                 row.PValueDisplay = pr.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(pr.PValue.Value)}";
                 row.EffectDisplay = pr.R is null ? "Effect: —" : $"r = {InferenceMath.FormatNumber(pr.R, 3)}";
                 pv = pr.PValue;
+                break;
+            case TwoByTwoMeasuresResult m:
+                row.TestName = m.TestUsed;
+                row.ValidNDisplay = $"N = {m.N}";
+                row.PValueDisplay = m.AssociationP is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(m.AssociationP.Value)}";
+                row.EffectDisplay = m.OddsRatio is { } orv ? $"OR = {InferenceMath.FormatNumber(orv, 3)}" : "Effect: —";
+                pv = m.AssociationP;
                 break;
             default:
                 row.TestName = "Result";

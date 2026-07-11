@@ -231,6 +231,22 @@ public sealed class TestRecommendation
     public bool CanComputePearson =>
         (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
         && IsContinuousKindDisplay(OutcomeKind) && IsContinuousKindDisplay(PredictorKind);
+
+    // Phase 4E (Slice 1) eligibility — METADATA ONLY, not a calculation.
+    // 2×2 measures (Slice 1: odds ratio) may be COMPUTED only when BOTH the
+    // outcome and the predictor are binary (exactly two levels → kind "Binary")
+    // AND the plan is Ready or Needs-assumption-review. This is a STRICT SUBSET
+    // of CanComputeCategorical (binary×binary ⊂ categorical×categorical), so
+    // dispatch runs 2×2 measures BEFORE generic categorical: a 2×2 table gets the
+    // odds-ratio result (which also reports the Fisher association p), while every
+    // larger categorical table (3×2, 2×4, …) still runs the chi-square/Fisher
+    // categorical engine unchanged. Role/level clarity is enforced elsewhere
+    // (NeedsRoleReview never reaches Ready/AssumptionReview; the engine blocks
+    // when the positive event/exposed level cannot be resolved).
+    [JsonIgnore]
+    public bool CanCompute2x2Measures =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && IsBinaryKindDisplay(OutcomeKind) && IsBinaryKindDisplay(PredictorKind);
 }
 
 // The whole Recommended Analysis result for one project.
@@ -449,7 +465,7 @@ public static class TestRecommendationEngine
             if (twoByTwo)
             {
                 r.AlternativeTest = "Fisher exact test (for small expected counts)";
-                r.Notes.Add("For a 2×2 table, a future effect size may include the odds ratio — the odds ratio is not calculated in this phase.");
+                r.Notes.Add("For this 2×2 table, click Run to compute the odds ratio with a Fisher exact association p-value (computed locally). Risk ratio, risk difference, and 95% CI are added in later slices.");
             }
             else
             {
@@ -578,7 +594,7 @@ public static class TestRecommendationEngine
     // not recommended) keep the original wording unchanged.
     private static void ApplyPlanningNoteWording(TestRecommendation r)
     {
-        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch || r.CanComputeAnova || r.CanComputePearson)) return;
+        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch || r.CanComputeAnova || r.CanComputePearson || r.CanCompute2x2Measures)) return;
         const string RunNote = "Planning card only — no result has been calculated yet. Click Run this analysis to compute the supported test locally.";
         bool replaced = false;
         for (int i = r.Notes.Count - 1; i >= 0; i--)

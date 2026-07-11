@@ -3387,6 +3387,9 @@
                                                                 <DataTrigger Binding="{Binding CanComputePearson}" Value="True">
                                                                     <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
                                                                 </DataTrigger>
+                                                                <DataTrigger Binding="{Binding CanCompute2x2Measures}" Value="True">
+                                                                    <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
                                                                 <DataTrigger Binding="{Binding StatusKind}" Value="Good">
                                                                     <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
                                                                     <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
