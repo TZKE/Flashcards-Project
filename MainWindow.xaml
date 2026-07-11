@@ -3381,6 +3381,9 @@
                                                                 <DataTrigger Binding="{Binding CanComputeWelch}" Value="True">
                                                                     <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
                                                                 </DataTrigger>
+                                                                <DataTrigger Binding="{Binding CanComputeAnova}" Value="True">
+                                                                    <Setter TargetName="RunInferenceBtn" Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
                                                                 <DataTrigger Binding="{Binding StatusKind}" Value="Good">
                                                                     <Setter TargetName="StatusChip" Property="Background" Value="{StaticResource SuccessSoftBrush}"/>
                                                                     <Setter TargetName="StatusChipText" Property="Foreground" Value="{StaticResource SuccessBrush}"/>

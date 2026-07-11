@@ -4,25 +4,29 @@ using System.Text;
 namespace AIFlashcardMaker;
 
 // ===========================================================================
-// Research Lab — Phase 4D (Slice 1): deterministic PARAMETRIC inference.
+// Research Lab — Phase 4D: deterministic PARAMETRIC inference.
 //
-// Welch independent-samples t-test ONLY: a continuous outcome compared between
-// two independent groups (a binary / two-level grouping variable). Builds on
-// the earlier phases and shares InferenceMath.
+//   * Slice 1 — Welch independent-samples t-test: a continuous outcome compared
+//     between two independent groups (a binary / two-level grouping variable).
+//   * Slice 2 — one-way ANOVA: a continuous outcome compared across a categorical
+//     grouping variable with 3+ independent groups.
+//
+// Builds on the earlier phases and shares InferenceMath.
 //
 // HARD RULES (audit-critical):
 //   * Deterministic C# only (System.Math). Same inputs → bit-identical output.
-//   * NO randomness. The two-sided p-value is the Student-t tail with the
-//     Welch–Satterthwaite (fractional) degrees of freedom, computed via the
-//     already-validated InferenceMath.StudentTTwoSidedP(double, double).
+//   * NO randomness. The Welch p-value is the Student-t tail with the Welch–
+//     Satterthwaite (fractional) degrees of freedom; the ANOVA p-value is the
+//     right tail of the F distribution — both computed from the already-validated
+//     InferenceMath incomplete-beta core (no new special functions here).
 //   * NO AI, HTTP, network, logging, or file I/O. Consumes already-loaded,
 //     in-memory data; raw participant rows never leave this device or reach a
-//     log / AI.
-//   * WELCH ONLY. NO Student equal-variance t-test, NO paired t-test, NO
-//     ANOVA, NO Pearson, NO odds ratio / risk ratio / confidence interval,
+//     log / AI. Every result and export is aggregate-only.
+//   * WELCH t-test + one-way ANOVA ONLY. NO Student equal-variance t-test, NO
+//     paired t-test, NO two-way / repeated-measures ANOVA, NO ANCOVA, NO post-hoc
+//     (Tukey) tests, NO Pearson, NO odds ratio / risk ratio / confidence interval,
 //     NO regression. This engine never chooses a test — it executes ONLY the
-//     Welch recommendation for an eligible (continuous outcome × binary group)
-//     pairing that Part 1 already produced.
+//     recommendation that Part 1 already produced for an eligible pairing.
 //   * No WPF dependency — everything here is headless-testable.
 // ===========================================================================
 
@@ -101,11 +105,86 @@ public sealed class WelchTTestResult : IInferenceExportable
     public string ToCsv() => WelchTTestExport.BuildCsv(this);
 }
 
+// One group's aggregate summary for ANOVA (never any participant rows).
+public sealed class AnovaGroupSummary
+{
+    public string Label { get; set; } = "";
+    public int N { get; set; }
+    public double Mean { get; set; }
+    public double Sd { get; set; }
+}
+
+public sealed class OneWayAnovaResult : IInferenceExportable
+{
+    public string OutcomeName { get; set; } = "";
+    public string OutcomeDisplay { get; set; } = "";
+    public string OutcomeKind { get; set; } = "";        // "Continuous"
+    public string GroupingName { get; set; } = "";
+    public string GroupingDisplay { get; set; } = "";
+    public string GroupingKind { get; set; } = "";       // "Categorical"
+    public string PairTypeDisplay { get; set; } = "";
+
+    public ParametricStatus Status { get; set; } = ParametricStatus.NotRunnable;
+    public string StatusReason { get; set; } = "";
+    public string TestUsed { get; set; } = "One-way ANOVA";
+
+    public int ValidN { get; set; }
+    public int GroupCount { get; set; }
+    public int DroppedForMissing { get; set; }
+    public int DroppedInvalid { get; set; }
+
+    public List<AnovaGroupSummary> Groups { get; set; } = new();
+
+    public double? GrandMean { get; set; }
+    public double? SsBetween { get; set; }
+    public double? SsWithin { get; set; }
+    public double? SsTotal { get; set; }
+    public int DfBetween { get; set; }
+    public int DfWithin { get; set; }
+    public double? MsBetween { get; set; }
+    public double? MsWithin { get; set; }
+    public double? FStatistic { get; set; }
+    public double? PValue { get; set; }                  // right-tail F p-value
+
+    public double? EtaSquared { get; set; }              // SS_between / SS_total (headline)
+    public double? OmegaSquared { get; set; }            // small-sample corrected, clamped ≥ 0
+
+    public List<string> Assumptions { get; set; } = new();
+    public List<string> Notes { get; set; } = new();
+
+    public bool AiInvolved => false;
+    public bool Computed => Status == ParametricStatus.Computed;
+    public string PValueDisplay => PValue is null ? "not calculated" : InferenceMath.FormatPValue(PValue.Value);
+    public string GeneratedDisplay => DateTime.UtcNow.ToLocalTime().ToString("MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture);
+
+    // eta-squared is the headline effect size (share of variance explained).
+    public string EffectName => "eta-squared";
+    public double? EffectValue => EtaSquared;
+
+    // Heuristic strength band — labelled a heuristic, never a hard verdict.
+    // Cohen's eta-squared benchmarks: .01 small, .06 medium, .14 large.
+    public string StrengthBand
+    {
+        get
+        {
+            if (EtaSquared is not { } e) return "";
+            string s = e < 0.01 ? "negligible" : e < 0.06 ? "small" : e < 0.14 ? "medium" : "large";
+            return $"{s} share of variance explained (heuristic)";
+        }
+    }
+
+    // IInferenceExportable.
+    public string ResultTitle => $"{OutcomeDisplay}  by  {GroupingDisplay}";
+    public string ToPlainText() => OneWayAnovaExport.BuildPlainText(this);
+    public string ToCsv() => OneWayAnovaExport.BuildCsv(this);
+}
+
 // ---------------------------------------------------------------------------
-// The deterministic parametric-inference engine (Welch t-test only).
+// The deterministic parametric-inference engine (Welch t-test + one-way ANOVA).
 // ---------------------------------------------------------------------------
 public static class ParametricInferenceEngine
 {
+    public const int MinGroupsForAnova = 3;   // fewer than 3 groups is a t-test, not ANOVA
     public const int MinGroupN = 2;   // sample variance needs n − 1 ≥ 1
 
     public static bool IsRunnable(TestRecommendation? rec) => rec is not null && rec.CanComputeWelch;
@@ -278,6 +357,238 @@ public static class ParametricInferenceEngine
         AddAssumptions(result);
         AddMethodNotes(result);
         return result;
+    }
+
+    // =====================================================================
+    // One-way ANOVA (Slice 2): continuous outcome × categorical predictor
+    // with 3+ independent groups. Shares the same GroupAccumulator, display,
+    // and sample-variance helpers as the Welch path above.
+    // =====================================================================
+    public static bool IsRunnableAnova(TestRecommendation? rec) => rec is not null && rec.CanComputeAnova;
+
+    private static bool IsCategoricalKind(string k) => k == "Categorical";
+
+    public static OneWayAnovaResult ComputeOneWayAnova(
+        TestRecommendation rec,
+        ResearchVariable? outcome,
+        ResearchVariable? predictor,
+        StatisticsDataset? data,
+        StatisticsMatchInput? match)
+    {
+        var result = new OneWayAnovaResult { PairTypeDisplay = rec?.PairTypeDisplay ?? "" };
+        result.Notes.Add("Computed locally on this device by deterministic C# code. No AI was used to select or calculate this test.");
+        result.Notes.Add("Only aggregate group summaries are shown or exported — no individual participant rows.");
+
+        // --- Guard 1: eligibility. ------------------------------------------
+        if (!IsRunnableAnova(rec))
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "This pairing is not eligible for a one-way ANOVA. Only a continuous outcome compared across a categorical grouping variable with 3+ groups that is ready to plan or needs assumption review can be computed.";
+            return result;
+        }
+        if (outcome is null || predictor is null || data is null || data.RowCount == 0 || match is null)
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "The dataset or matched variables were not available to compute this test.";
+            return result;
+        }
+
+        // The eligibility gate guarantees outcome = Continuous, predictor =
+        // Categorical (3+ groups). Re-check defensively so the engine never
+        // guesses if called incorrectly.
+        if (!IsContinuousKind(rec!.OutcomeKind) || !IsCategoricalKind(rec.PredictorKind))
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "A one-way ANOVA needs a continuous outcome and a categorical grouping variable.";
+            return result;
+        }
+
+        ResearchVariable measured = outcome, grouping = predictor;
+        result.OutcomeName = measured.VariableName.Trim();
+        result.OutcomeDisplay = Display(measured);
+        result.OutcomeKind = "Continuous";
+        result.GroupingName = grouping.VariableName.Trim();
+        result.GroupingDisplay = Display(grouping);
+        result.GroupingKind = "Categorical";
+
+        var measuredPrep = StatisticsVariablePreparer.Prepare(measured, data, ResolveColumn(measured, match));
+        var groupPrep = StatisticsVariablePreparer.Prepare(grouping, data, ResolveColumn(grouping, match));
+        int mIdx = data.ColumnIndexOf(measuredPrep.MatchedColumn);
+        int gIdx = data.ColumnIndexOf(groupPrep.MatchedColumn);
+        if (mIdx < 0 || gIdx < 0)
+        {
+            result.Status = ParametricStatus.NotRunnable;
+            result.StatusReason = "The matched dataset columns for these variables could not be found.";
+            return result;
+        }
+
+        // --- Assemble aligned (numericValue, groupKey) pairs (listwise). -----
+        var valuesByGroup = new Dictionary<string, List<double>>(StringComparer.OrdinalIgnoreCase);
+        var groupAcc = new GroupAccumulator(StatisticsVariablePreparer.ParseValueLabels(grouping.ValueLabels, grouping.Coding));
+        for (int r = 0; r < data.RowCount; r++)
+        {
+            string mv = data.Cell(r, mIdx).Trim();
+            string gv = data.Cell(r, gIdx).Trim();
+            if (StatisticsMissingTokens.IsMissing(mv) || StatisticsMissingTokens.IsMissing(gv))
+            {
+                result.DroppedForMissing++;
+                continue;
+            }
+            if (!StatisticsVariablePreparer.TryParseNumeric(mv, out double d))
+            {
+                result.DroppedInvalid++;   // grouping present but the outcome value is non-numeric
+                continue;
+            }
+            string key = gv.Trim();
+            groupAcc.Observe(gv);
+            if (!valuesByGroup.TryGetValue(key, out var list)) { list = new List<double>(); valuesByGroup[key] = list; }
+            list.Add(d);
+        }
+        result.ValidN = valuesByGroup.Values.Sum(v => v.Count);
+
+        // Deterministic group order (numeric-asc when coded numerically, else
+        // count-desc with an ordinal tie-break) — never silently merges groups.
+        var groupKeys = groupAcc.OrderedKeys().Where(k => valuesByGroup.ContainsKey(k)).ToList();
+        result.GroupCount = groupKeys.Count;
+
+        // --- Guard 2: at least three groups. --------------------------------
+        if (groupKeys.Count < MinGroupsForAnova)
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = groupKeys.Count == 2
+                ? "Only two groups were observed after removing missing values. A two-group comparison uses a t-test, not a one-way ANOVA."
+                : $"A one-way ANOVA needs at least {MinGroupsForAnova} groups; only {groupKeys.Count} observed group(s) remain after removing missing values.";
+            foreach (var k in groupKeys)
+                result.Groups.Add(new AnovaGroupSummary { Label = groupAcc.DisplayLabel(k), N = valuesByGroup[k].Count });
+            AddMethodNotesAnova(result);
+            return result;
+        }
+
+        // --- Group means + grand mean (needed by every remaining branch). ---
+        var means = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        double grandSum = 0.0; int grandN = 0;
+        foreach (var k in groupKeys)
+        {
+            var xs = valuesByGroup[k];
+            means[k] = xs.Average();
+            grandSum += xs.Sum();
+            grandN += xs.Count;
+        }
+        double grandMean = grandN > 0 ? grandSum / grandN : double.NaN;
+        foreach (var k in groupKeys)
+        {
+            var xs = valuesByGroup[k];
+            double sd = Math.Sqrt(SampleVariance(xs, means[k]));
+            result.Groups.Add(new AnovaGroupSummary { Label = groupAcc.DisplayLabel(k), N = xs.Count, Mean = means[k], Sd = sd });
+        }
+
+        // --- Guard 3: every group needs n >= 2 for a within-group variance. -
+        var smallGroups = groupKeys.Where(k => valuesByGroup[k].Count < MinGroupN).ToList();
+        if (smallGroups.Count > 0)
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            string names = string.Join(", ", smallGroups.Select(k => $"{groupAcc.DisplayLabel(k)} (n={valuesByGroup[k].Count})"));
+            result.StatusReason = $"Each group needs at least {MinGroupN} valid observations to estimate a variance. Too few in: {names}.";
+            AddMethodNotesAnova(result);
+            return result;
+        }
+
+        // --- Sums of squares. -----------------------------------------------
+        int k_ = groupKeys.Count;
+        int N = grandN;
+        double ssBetween = 0.0, ssWithin = 0.0;
+        foreach (var k in groupKeys)
+        {
+            var xs = valuesByGroup[k];
+            double diffB = means[k] - grandMean;
+            ssBetween += xs.Count * diffB * diffB;
+            foreach (double x in xs) { double dv = x - means[k]; ssWithin += dv * dv; }
+        }
+        double ssTotal = ssBetween + ssWithin;
+        int dfBetween = k_ - 1;
+        int dfWithin = N - k_;
+
+        result.GrandMean = grandMean;
+        result.SsBetween = ssBetween;
+        result.SsWithin = ssWithin;
+        result.SsTotal = ssTotal;
+        result.DfBetween = dfBetween;
+        result.DfWithin = dfWithin;
+
+        // --- Guard 4: total variability must be positive. -------------------
+        if (ssTotal <= 0.0 || double.IsNaN(ssTotal))
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = "The outcome has no variability at all (every value is identical), so a one-way ANOVA cannot be computed.";
+            AddMethodNotesAnova(result);
+            return result;
+        }
+
+        // --- Guard 5: within-group variability must be positive to form F. --
+        if (dfWithin < 1 || ssWithin <= 0.0 || double.IsNaN(ssWithin))
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = ssWithin <= 0.0
+                ? "Every value within each group is identical (zero within-group variance), so a reliable F statistic cannot be formed. The group means and between-group variation are shown, but no p-value is reported."
+                : "There are too few residual degrees of freedom to compute a within-group variance.";
+            AddMethodNotesAnova(result);
+            return result;
+        }
+
+        double msBetween = ssBetween / dfBetween;
+        double msWithin = ssWithin / dfWithin;
+        result.MsBetween = msBetween;
+        result.MsWithin = msWithin;
+
+        if (msWithin <= 0.0 || double.IsNaN(msWithin))
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = "The within-group mean square is zero, so an F statistic cannot be formed.";
+            AddMethodNotesAnova(result);
+            return result;
+        }
+
+        double f = msBetween / msWithin;
+        if (double.IsNaN(f) || double.IsInfinity(f) || f < 0.0)
+        {
+            result.Status = ParametricStatus.CannotCompute;
+            result.StatusReason = "The F statistic could not be computed from these groups.";
+            AddMethodNotesAnova(result);
+            return result;
+        }
+
+        result.FStatistic = f;
+        result.PValue = InferenceMath.FDistributionRightTailP(f, dfBetween, dfWithin);
+
+        // --- Effect sizes: eta-squared (headline) + omega-squared. ----------
+        result.EtaSquared = ssTotal > 0 ? ssBetween / ssTotal : (double?)null;
+        double omega = (ssBetween - dfBetween * msWithin) / (ssTotal + msWithin);
+        if (double.IsNaN(omega) || double.IsInfinity(omega)) omega = 0.0;
+        result.OmegaSquared = Math.Max(0.0, omega);   // clamp a negative sampling artefact to 0
+
+        result.Status = ParametricStatus.Computed;
+        AddAssumptionsAnova(result);
+        AddMethodNotesAnova(result);
+        return result;
+    }
+
+    private static void AddAssumptionsAnova(OneWayAnovaResult r)
+    {
+        r.Assumptions.Add("Independent observations: assumed (study-design level; not verifiable from the data).");
+        r.Assumptions.Add("Continuous outcome measured across 3+ independent groups.");
+        r.Assumptions.Add("Approximate normality within each group is assumed; this is not verified automatically in this version.");
+        r.Assumptions.Add("Homogeneity of variance (similar spread across groups) is assumed by the standard one-way ANOVA; this is not automatically verified in this version.");
+        r.Assumptions.Add("ANOVA is sensitive to outliers. If the data are skewed or the variances differ, the Kruskal-Wallis test may be considered as a robust nonparametric alternative.");
+        r.Assumptions.Add("A significant ANOVA indicates that at least one group mean differs; it does NOT identify which groups differ. Post-hoc pairwise comparisons (not available in this version) are needed for that.");
+    }
+
+    private static void AddMethodNotesAnova(OneWayAnovaResult r)
+    {
+        r.Notes.Add("Group means and sample standard deviations use n − 1 (sample variance). Between-groups SS = Σ nᵢ(meanᵢ − grand mean)²; within-groups SS = Σ Σ (x − meanᵢ)²; total SS = between + within.");
+        r.Notes.Add("df between = k − 1; df within = N − k. Mean square = SS ÷ df. F = MS between ÷ MS within. The p-value is the right tail of the F distribution (from the regularized incomplete beta).");
+        r.Notes.Add("Effect size: eta-squared η² = SS between ÷ SS total (headline). Omega-squared ω² applies a small-sample correction and is clamped at 0 when a sampling artefact makes it negative. Strength labels (negligible/small/medium/large) are a rough heuristic, not a definitive judgement.");
+        r.Notes.Add("Rows missing either variable, or with a non-numeric outcome value, are excluded. p-values are never shown as 0; values below .001 are shown as \"< .001\". Full precision is kept internally.");
+        r.Notes.Add("One-way ANOVA only. No two-way / repeated-measures ANOVA, ANCOVA, post-hoc (Tukey) tests, equal/unequal-variance t-test, Pearson, odds ratio, confidence interval, or regression is calculated in this version.");
     }
 
     private static double SampleVariance(List<double> xs, double mean)
@@ -482,6 +793,119 @@ public static class WelchTTestExport
             Q(r.PValue is null ? "not calculated" : InferenceMath.FormatPValue(r.PValue.Value)),
             Q(InferenceMath.FormatNumber(r.CohensD, 4)), Q(InferenceMath.FormatNumber(r.HedgesG, 4)), Q("no")
         }));
+        return sb.ToString();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Export: plain text and CSV of a computed one-way ANOVA result. Aggregate only
+// — per-group sizes/means/SDs, the ANOVA table (SS/df/MS), F, p-value, and effect
+// sizes. No participant-level data; no AI.
+// ---------------------------------------------------------------------------
+public static class OneWayAnovaExport
+{
+    public static string BuildPlainText(OneWayAnovaResult r)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("ONE-WAY ANOVA RESULT");
+        sb.AppendLine($"Generated: {r.GeneratedDisplay}");
+        sb.AppendLine($"Outcome:   {r.OutcomeDisplay}  (Continuous)");
+        sb.AppendLine($"Grouping:  {r.GroupingDisplay}  (Categorical)");
+        sb.AppendLine($"Complete valid observations (N): {r.ValidN}   (groups: {r.GroupCount}; excluded for missing: {r.DroppedForMissing}; non-numeric outcome dropped: {r.DroppedInvalid})");
+        sb.AppendLine(new string('=', 78));
+
+        if (r.Status == ParametricStatus.NotRunnable)
+        {
+            sb.AppendLine("This pairing could not be run.");
+            sb.AppendLine(r.StatusReason);
+            AppendNotes(sb, r);
+            return sb.ToString();
+        }
+
+        if (r.Groups.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Groups (aggregate summary):");
+            foreach (var g in r.Groups)
+                sb.AppendLine($"  {g.Label}:  n = {g.N},  mean = {InferenceMath.FormatNumber(g.Mean, 3)},  SD = {InferenceMath.FormatNumber(g.Sd, 3)}");
+        }
+
+        sb.AppendLine();
+        if (r.Status == ParametricStatus.CannotCompute)
+        {
+            sb.AppendLine("RESULT: Cannot compute a reliable result — needs review.");
+            sb.AppendLine(r.StatusReason);
+        }
+        else
+        {
+            sb.AppendLine($"Test used: {r.TestUsed}");
+            sb.AppendLine($"Grand mean: {InferenceMath.FormatNumber(r.GrandMean, 3)}");
+            sb.AppendLine("ANOVA table:");
+            sb.AppendLine($"  Between groups: SS = {InferenceMath.FormatNumber(r.SsBetween, 3)},  df = {r.DfBetween},  MS = {InferenceMath.FormatNumber(r.MsBetween, 3)}");
+            sb.AppendLine($"  Within groups:  SS = {InferenceMath.FormatNumber(r.SsWithin, 3)},  df = {r.DfWithin},  MS = {InferenceMath.FormatNumber(r.MsWithin, 3)}");
+            sb.AppendLine($"  Total:          SS = {InferenceMath.FormatNumber(r.SsTotal, 3)},  df = {r.DfBetween + r.DfWithin}");
+            sb.AppendLine($"F({r.DfBetween}, {r.DfWithin}) = {InferenceMath.FormatNumber(r.FStatistic, 3)}");
+            sb.AppendLine($"p-value: {r.PValueDisplay}");
+            sb.AppendLine($"Effect size — eta-squared: {InferenceMath.FormatNumber(r.EtaSquared, 3)}   (omega-squared: {InferenceMath.FormatNumber(r.OmegaSquared, 3)})");
+            sb.AppendLine($"Strength: {r.StrengthBand}");
+        }
+
+        if (r.Assumptions.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Assumptions:");
+            foreach (var a in r.Assumptions) sb.AppendLine("  - " + a);
+        }
+
+        AppendNotes(sb, r);
+        return sb.ToString();
+    }
+
+    private static void AppendNotes(StringBuilder sb, OneWayAnovaResult r)
+    {
+        sb.AppendLine();
+        sb.AppendLine("Notes:");
+        foreach (var n in r.Notes) sb.AppendLine("  • " + n);
+    }
+
+    public static string BuildCsv(OneWayAnovaResult r)
+    {
+        var sb = new StringBuilder();
+        string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+
+        sb.AppendLine(string.Join(",", new[]
+        {
+            "Test", "Outcome", "Grouping", "Status", "Groups", "ValidN", "MissingExcluded", "InvalidDropped",
+            "GrandMean", "SSbetween", "dfBetween", "MSbetween", "SSwithin", "dfWithin", "MSwithin", "SStotal",
+            "F", "p", "EtaSquared", "OmegaSquared", "AiInvolved"
+        }.Select(Q)));
+
+        sb.AppendLine(string.Join(",", new[]
+        {
+            Q(r.TestUsed), Q(r.OutcomeDisplay), Q(r.GroupingDisplay), Q(r.Status.ToString()),
+            r.GroupCount.ToString(CultureInfo.InvariantCulture), r.ValidN.ToString(CultureInfo.InvariantCulture),
+            r.DroppedForMissing.ToString(CultureInfo.InvariantCulture), r.DroppedInvalid.ToString(CultureInfo.InvariantCulture),
+            Q(InferenceMath.FormatNumber(r.GrandMean, 4)),
+            Q(InferenceMath.FormatNumber(r.SsBetween, 4)), r.DfBetween.ToString(CultureInfo.InvariantCulture), Q(InferenceMath.FormatNumber(r.MsBetween, 4)),
+            Q(InferenceMath.FormatNumber(r.SsWithin, 4)), r.DfWithin.ToString(CultureInfo.InvariantCulture), Q(InferenceMath.FormatNumber(r.MsWithin, 4)),
+            Q(InferenceMath.FormatNumber(r.SsTotal, 4)),
+            Q(InferenceMath.FormatNumber(r.FStatistic, 4)),
+            Q(r.PValue is null ? "not calculated" : InferenceMath.FormatPValue(r.PValue.Value)),
+            Q(InferenceMath.FormatNumber(r.EtaSquared, 4)), Q(InferenceMath.FormatNumber(r.OmegaSquared, 4)), Q("no")
+        }));
+
+        // Second section: per-group aggregate summaries (no participant rows).
+        if (r.Groups.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(string.Join(",", new[] { "Group", "n", "mean", "sd" }.Select(Q)));
+            foreach (var g in r.Groups)
+                sb.AppendLine(string.Join(",", new[]
+                {
+                    Q(g.Label), g.N.ToString(CultureInfo.InvariantCulture),
+                    Q(InferenceMath.FormatNumber(g.Mean, 4)), Q(InferenceMath.FormatNumber(g.Sd, 4))
+                }));
+        }
         return sb.ToString();
     }
 }

@@ -213,6 +213,26 @@ public static class InferenceMath
         return Math.Clamp(p, 0.0, 1.0);
     }
 
+    // Right-tail (upper) p-value for an F statistic with (df1, df2) degrees of
+    // freedom: P(F ≥ f). Uses the F↔beta identity — the F CDF is
+    // CDF(f) = I_x(df1/2, df2/2) with x = df1·f / (df1·f + df2), so the right tail
+    // is the complement I_{1−x}(df2/2, df1/2). Computing 1−x = df2/(df1·f + df2)
+    // directly (rather than 1 − CDF) preserves precision far out in the tail.
+    // Reuses the SAME RegularizedIncompleteBeta as the Student-t tail — NOT a new
+    // special function. Guarded — never NaN/Infinity; a valid F ≥ 0 never yields a
+    // p that formats as exactly 0.
+    public static double FDistributionRightTailP(double f, double df1, double df2)
+    {
+        if (double.IsNaN(f) || double.IsInfinity(f) || f <= 0.0
+            || double.IsNaN(df1) || double.IsNaN(df2) || df1 < 1.0 || df2 < 1.0) return 1.0;
+        double denom = df1 * f + df2;
+        if (denom <= 0.0 || double.IsNaN(denom) || double.IsInfinity(denom)) return 1.0;
+        double oneMinusX = df2 / denom;   // = 1 − x, formed directly for tail accuracy
+        double p = RegularizedIncompleteBeta(df2 / 2.0, df1 / 2.0, oneMinusX);
+        if (double.IsNaN(p) || double.IsInfinity(p)) return 1.0;
+        return Math.Clamp(p, 0.0, 1.0);
+    }
+
     // p-value display rules (audit requirement):
     //   * never display p = 0;
     //   * a p-value below .001 is shown as "< .001";

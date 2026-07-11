@@ -199,6 +199,24 @@ public sealed class TestRecommendation
 
     private static bool IsBinaryKindDisplay(string kind) =>
         string.Equals(kind, "Binary", StringComparison.Ordinal);
+
+    // Phase 4D (Slice 2) eligibility — METADATA ONLY, not a calculation.
+    // A card's one-way ANOVA may be COMPUTED only when the OUTCOME is continuous
+    // and the PREDICTOR is a categorical grouping variable with 3+ observed groups
+    // (kind "Categorical" — a two-level grouping is kind "Binary" and runs the
+    // Welch t-test instead) AND the plan is Ready or Needs-assumption-review.
+    // Like Welch, this is a SUBSET of CanComputeRank, so dispatch runs ANOVA
+    // BEFORE Rank: ANOVA is the headline recommendation for a continuous outcome
+    // across 3+ groups, and the Kruskal-Wallis test is only its named robust
+    // alternative. Mutually exclusive with CanComputeWelch (which needs a Binary
+    // predictor). Binary/ordinal outcomes and continuous×continuous are never ANOVA.
+    [JsonIgnore]
+    public bool CanComputeAnova =>
+        (Status == TestRecoStatus.Ready || Status == TestRecoStatus.NeedsAssumptionReview)
+        && IsContinuousKindDisplay(OutcomeKind) && IsNominalKindDisplay(PredictorKind);
+
+    private static bool IsNominalKindDisplay(string kind) =>
+        string.Equals(kind, "Categorical", StringComparison.Ordinal);
 }
 
 // The whole Recommended Analysis result for one project.
@@ -546,7 +564,7 @@ public static class TestRecommendationEngine
     // not recommended) keep the original wording unchanged.
     private static void ApplyPlanningNoteWording(TestRecommendation r)
     {
-        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch)) return;
+        if (!(r.CanComputeCategorical || r.CanComputeRank || r.CanComputeSpearman || r.CanComputeWelch || r.CanComputeAnova)) return;
         const string RunNote = "Planning card only — no result has been calculated yet. Click Run this analysis to compute the supported test locally.";
         bool replaced = false;
         for (int i = r.Notes.Count - 1; i >= 0; i--)

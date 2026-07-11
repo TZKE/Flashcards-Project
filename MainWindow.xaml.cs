@@ -7854,17 +7854,21 @@ public sealed partial class MainWindow : Window
     // compute gates is open. Role-review / unsupported / not-recommended cards
     // never qualify.
     private static bool IsRunnableReco(TestRecommendation rec)
-        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman || rec.CanComputeWelch;
+        => rec.CanComputeCategorical || rec.CanComputeRank || rec.CanComputeSpearman || rec.CanComputeWelch || rec.CanComputeAnova;
 
     // Dispatches to the engine matching the recommended test. Precondition:
     // IsRunnableReco(rec) is true and _statData is loaded. Categorical / Spearman
     // are mutually exclusive by kind. Welch (continuous outcome × binary group)
-    // is a SUBSET of Rank, so it is checked FIRST: for that pairing the headline
-    // recommendation is the Welch t-test, and Mann-Whitney U is only its named
-    // robust alternative — every other rank pairing still falls through to Rank.
+    // and ANOVA (continuous outcome × categorical 3+-group predictor) are each a
+    // SUBSET of Rank, so both are checked BEFORE Rank: for those pairings the
+    // headline recommendation is the parametric test (Welch / one-way ANOVA), and
+    // the rank test (Mann-Whitney U / Kruskal-Wallis) is only its named robust
+    // alternative. Welch and ANOVA are mutually exclusive (binary vs 3+ groups).
+    // Every other rank pairing still falls through to Rank.
     private IInferenceExportable DispatchCompute(TestRecommendation rec, ResearchVariable outcome, ResearchVariable predictor)
         => rec.CanComputeCategorical ? CategoricalInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeWelch ? ParametricInferenceEngine.ComputeWelchTTest(rec, outcome, predictor, _statData!, _statMatch)
+         : rec.CanComputeAnova ? ParametricInferenceEngine.ComputeOneWayAnova(rec, outcome, predictor, _statData!, _statMatch)
          : rec.CanComputeRank ? RankInferenceEngine.Compute(rec, outcome, predictor, _statData!, _statMatch)
          : SpearmanCorrelationEngine.Compute(rec, outcome, predictor, _statData!, _statMatch);
 
@@ -7917,6 +7921,13 @@ public sealed partial class MainWindow : Window
                 row.PValueDisplay = w.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(w.PValue.Value)}";
                 row.EffectDisplay = w.HedgesG is { } hg ? $"Hedges g = {InferenceMath.FormatNumber(hg, 3)}" : "Effect: —";
                 pv = w.PValue;
+                break;
+            case OneWayAnovaResult a:
+                row.TestName = a.TestUsed;
+                row.ValidNDisplay = $"N = {a.ValidN}";
+                row.PValueDisplay = a.PValue is null ? "p: not calculated" : $"p = {InferenceMath.FormatPValue(a.PValue.Value)}";
+                row.EffectDisplay = a.EtaSquared is { } es ? $"η² = {InferenceMath.FormatNumber(es, 3)}" : "Effect: —";
+                pv = a.PValue;
                 break;
             default:
                 row.TestName = "Result";
