@@ -8,10 +8,12 @@ namespace AIFlashcardMaker;
 //
 // 2×2 association measures for a binary outcome (event) versus a binary exposure
 // (predictor). Slice 1 added the ODDS RATIO with a strict event/exposed-level
-// resolver so a reversed table can never be produced silently. Slice 2 adds the
+// resolver so a reversed table can never be produced silently. Slice 2 added the
 // RISK RATIO and RISK DIFFERENCE point estimates, but ONLY for cohort/RCT (as
 // risk) or cross-sectional (as prevalence) designs — case-control and unspecified
-// designs suppress them. Confidence intervals are NOT in this slice.
+// designs suppress them. Slice 3 adds 95% CONFIDENCE INTERVALS: OR + ratio via
+// the log (Woolf) method, difference via the approximate Wald method (ratio/diff
+// CIs only when the ratio/diff is reported). NO exact/mid-P/bootstrap/profile CI.
 //
 // HARD RULES (audit-critical):
 //   * Deterministic C# only (System.Math). Same inputs → bit-identical output.
@@ -23,9 +25,9 @@ namespace AIFlashcardMaker;
 //     CategoricalInferenceEngine.FisherExact2x2 (association p) and
 //     StatisticsVariablePreparer.ParseValueLabels (value labels). Nothing in
 //     ResearchLabInference.cs is changed.
-//   * ODDS RATIO + design-gated RISK/PREVALENCE RATIO & DIFFERENCE only. NO
-//     confidence interval, NO regression. Those are later, separately-approved
-//     slices. RR/RD are point estimates suppressed for case-control/unknown.
+//   * ODDS RATIO + design-gated RISK/PREVALENCE RATIO & DIFFERENCE + their 95%
+//     CIs only. NO regression, NO exact/mid-P/bootstrap/profile-likelihood CI.
+//     RR/RD (and their CIs) are suppressed for case-control/unknown designs.
 //   * The engine NEVER guesses the positive direction. If the event level or the
 //     exposed level cannot be resolved deterministically it returns a
 //     needs-level-review result and computes nothing.
@@ -107,6 +109,27 @@ public sealed class TwoByTwoMeasuresResult : IInferenceExportable
     public string DifferenceLabel { get; set; } = "";       // "Risk difference" | "Prevalence difference"
     public bool RatioUsesCorrection { get; set; }           // Haldane applied to the ratio (zero cell)
 
+    // --- Slice 3: 95% confidence intervals. ---------------------------------
+    // OR always (when computed); ratio/difference CIs only when reported.
+    public string CiLevelDisplay => "95%";
+    public double? OddsRatioCiLower { get; set; }
+    public double? OddsRatioCiUpper { get; set; }
+    public string OddsRatioCiMethod => "log (Woolf)";
+    public bool OddsRatioCiUsesCorrection { get; set; }      // == CorrectionApplied when a CI was formed
+    public double? RatioCiLower { get; set; }
+    public double? RatioCiUpper { get; set; }
+    public string RatioCiMethod => "log";
+    public bool RatioCiUsesCorrection { get; set; }          // == RatioUsesCorrection when a CI was formed
+    public double? DifferenceCiLower { get; set; }
+    public double? DifferenceCiUpper { get; set; }
+    public string DifferenceCiMethod => "Wald";              // approximate (raw counts, never corrected)
+    public bool DifferenceCiUsesCorrection => false;
+
+    // "0.354 to 101.556" | "—" when the interval could not be formed.
+    public static string CiText(double? lo, double? hi) =>
+        lo is null || hi is null ? "—"
+        : $"{InferenceMath.FormatNumber(lo, 3)} to {InferenceMath.FormatNumber(hi, 3)}";
+
     public List<string> Assumptions { get; set; } = new();
     public List<string> Notes { get; set; } = new();
 
@@ -142,7 +165,7 @@ public sealed class TwoByTwoMeasuresResult : IInferenceExportable
 
 // ---------------------------------------------------------------------------
 // The deterministic 2×2 measures engine (odds ratio + design-gated risk/
-// prevalence ratio & difference; no confidence intervals yet).
+// prevalence ratio & difference, each with a 95% confidence interval).
 // ---------------------------------------------------------------------------
 public static class TwoByTwoMeasuresEngine
 {
@@ -317,6 +340,16 @@ public static class TwoByTwoMeasuresEngine
             return result;
         }
 
+        // --- Odds ratio 95% CI (log/Woolf), using the SAME counts as the OR
+        //     point estimate (Haldane-corrected when a zero cell is present). --
+        {
+            double ca = zeroCell ? a + 0.5 : a, cb = zeroCell ? b + 0.5 : b,
+                   cc = zeroCell ? c + 0.5 : c, cd = zeroCell ? d + 0.5 : d;
+            double seLogOr = Math.Sqrt(1.0 / ca + 1.0 / cb + 1.0 / cc + 1.0 / cd);
+            (result.OddsRatioCiLower, result.OddsRatioCiUpper) = LogCi(result.OddsRatio, seLogOr);
+            result.OddsRatioCiUsesCorrection = zeroCell && result.OddsRatioCiLower is not null;
+        }
+
         // --- Association p-value: the EXISTING public two-sided Fisher exact
         //     (always valid for a 2×2, including sparse cells). Uses raw counts;
         //     never modifies the categorical engine. --------------------------
@@ -367,8 +400,8 @@ public static class TwoByTwoMeasuresEngine
         {
             r.AreRiskMeasuresReported = false;
             r.SuppressionReason = design == TwoByTwoStudyDesignKind.CaseControl
-                ? "Risk ratio and risk difference are not reported for a case-control design because incidence/risk cannot be estimated from case-control sampling. Use the odds ratio."
-                : "Risk ratio and risk difference are not reported because the study design is unspecified or not risk-estimable. Set the study design to Cohort or Cross-sectional if appropriate.";
+                ? "Risk ratio, risk difference, and their confidence intervals are not reported for a case-control design because incidence/risk cannot be estimated from case-control sampling. Use the odds ratio."
+                : "Risk ratio, risk difference, and their confidence intervals are not reported because the study design is unspecified or not risk-estimable. Set the study design to Cohort or Cross-sectional if risk/prevalence measures are appropriate.";
             return;
         }
 
@@ -403,6 +436,47 @@ public static class TwoByTwoMeasuresEngine
         }
         if (r.RatioMeasure is double rat && (double.IsNaN(rat) || double.IsInfinity(rat)))
             r.RatioMeasure = null;   // never emit NaN/Infinity
+
+        // --- Slice 3: 95% CIs — ratio (log method), difference (Wald). ------
+        // The ratio CI uses the SAME counts as the ratio point estimate
+        // (Haldane-corrected on a zero cell); the difference CI uses RAW counts.
+        {
+            double ra = r.RatioUsesCorrection ? a + 0.5 : a;
+            double rab = r.RatioUsesCorrection ? a + b + 1.0 : a + b;
+            double rc = r.RatioUsesCorrection ? c + 0.5 : c;
+            double rcd = r.RatioUsesCorrection ? c + d + 1.0 : c + d;
+            double seLogRr = Math.Sqrt(1.0 / ra - 1.0 / rab + 1.0 / rc - 1.0 / rcd);
+            (r.RatioCiLower, r.RatioCiUpper) = LogCi(r.RatioMeasure, seLogRr);
+            r.RatioCiUsesCorrection = r.RatioUsesCorrection && r.RatioCiLower is not null;
+        }
+        {
+            double seRd = Math.Sqrt(pExpRaw * (1 - pExpRaw) / (a + b) + pUnexpRaw * (1 - pUnexpRaw) / (c + d));
+            (r.DifferenceCiLower, r.DifferenceCiUpper) = WaldCi(r.DifferenceMeasure, seRd);
+        }
+    }
+
+    // 95% CI constant (z for a two-sided normal). A literal — NOT a new special
+    // function and NOT an inverse-normal implementation.
+    private const double Z = 1.959963984540054;
+
+    // log/Woolf CI for a positive ratio: exp(ln(est) ± z·SE). Returns (null,null)
+    // if the estimate is missing/non-positive or any bound is NaN/Infinity.
+    private static (double? lo, double? hi) LogCi(double? estimate, double seLog)
+    {
+        if (estimate is not double e || e <= 0.0 || double.IsNaN(seLog) || double.IsInfinity(seLog)) return (null, null);
+        double lnE = Math.Log(e);
+        double lo = Math.Exp(lnE - Z * seLog), hi = Math.Exp(lnE + Z * seLog);
+        if (double.IsNaN(lo) || double.IsInfinity(lo) || double.IsNaN(hi) || double.IsInfinity(hi)) return (null, null);
+        return (lo, hi);
+    }
+
+    // Approximate Wald CI for a difference: est ± z·SE (NOT clamped to [-1,1]).
+    private static (double? lo, double? hi) WaldCi(double? estimate, double se)
+    {
+        if (estimate is not double e || double.IsNaN(se) || double.IsInfinity(se)) return (null, null);
+        double lo = e - Z * se, hi = e + Z * se;
+        if (double.IsNaN(lo) || double.IsInfinity(lo) || double.IsNaN(hi) || double.IsInfinity(hi)) return (null, null);
+        return (lo, hi);
     }
 
     // Resolves the positive level of a two-level variable. Returns false (block)
@@ -457,15 +531,16 @@ public static class TwoByTwoMeasuresEngine
     private static void AddMethodNotes(TwoByTwoMeasuresResult r)
     {
         if (r.CorrectionApplied && r.RatioUsesCorrection)
-            r.Notes.Add("A zero cell was present; the odds ratio and risk/prevalence ratio use the Haldane-Anscombe correction (+0.5 to all cells). The risk/prevalence difference and the displayed event proportions use the raw counts. Sparse-data estimates are unstable — interpret with caution. The raw counts are shown unchanged.");
+            r.Notes.Add("A zero cell was present; the odds ratio and risk/prevalence ratio (and their 95% CIs) use the Haldane-Anscombe correction (+0.5 to all cells). The risk/prevalence difference (and its 95% CI) and the displayed event proportions use the raw counts. Sparse-data estimates and intervals are unstable — interpret with caution. The raw counts are shown unchanged.");
         else if (r.CorrectionApplied)
-            r.Notes.Add("A zero cell was present; the Haldane-Anscombe correction (+0.5 to all cells) was applied to the odds ratio. Sparse-data estimates are unstable — interpret with caution. The raw counts are shown unchanged.");
+            r.Notes.Add("A zero cell was present; the Haldane-Anscombe correction (+0.5 to all cells) was applied to the odds ratio and its 95% CI. Sparse-data estimates and intervals are unstable — interpret with caution. The raw counts are shown unchanged.");
         r.Notes.Add("Odds ratio = (a×d) ÷ (b×c) from the exposure×outcome 2×2 table (a = exposed+event, b = exposed+no event, c = unexposed+event, d = unexposed+no event). The association p-value is the two-sided Fisher exact test.");
         if (r.AreRiskMeasuresReported)
             r.Notes.Add("Risk/prevalence in exposed = a ÷ (a+b); in unexposed = c ÷ (c+d). Ratio = exposed ÷ unexposed; difference = exposed − unexposed (from raw counts).");
-        r.Notes.Add("95% confidence intervals are not calculated in this slice.");
+        r.Notes.Add("95% confidence intervals (z = 1.96): the odds ratio and risk/prevalence ratio use the log method (exp(ln(estimate) ± z·SE)); the risk/prevalence difference uses the approximate Wald method (estimate ± z·SE).");
+        r.Notes.Add("An approximate Wald difference interval can extend beyond the logical −1 to +1 range, especially with sparse data or a proportion near 0 or 1; bounds are shown as computed (not clamped).");
         r.Notes.Add("p-values are never shown as 0; values below .001 are shown as \"< .001\". Full precision is kept internally.");
-        r.Notes.Add("No 95% confidence interval or regression is calculated in this slice.");
+        r.Notes.Add("No regression is calculated in this slice.");
     }
 
     // Display policy shared with the other engines (label when distinct, else
@@ -565,7 +640,8 @@ public static class TwoByTwoExport
         sb.AppendLine("  (a = exposed+event, b = exposed+no event, c = unexposed+event, d = unexposed+no event)");
         sb.AppendLine();
         sb.AppendLine($"Test used: {r.TestUsed}");
-        sb.AppendLine($"Odds Ratio: {r.OrDisplay}" + (r.CorrectionApplied ? "  (Haldane-Anscombe corrected)" : ""));
+        sb.AppendLine($"Odds Ratio: {r.OrDisplay}  ({r.CiLevelDisplay} CI {TwoByTwoMeasuresResult.CiText(r.OddsRatioCiLower, r.OddsRatioCiUpper)})"
+            + (r.CorrectionApplied ? "  (Haldane-Anscombe corrected)" : ""));
         if (r.AssociationP is not null)
             sb.AppendLine($"Association p-value ({r.AssociationTest}): {r.PValueDisplay}");
         else
@@ -581,9 +657,9 @@ public static class TwoByTwoExport
         {
             sb.AppendLine($"{r.ProportionExposedLabel}:   {InferenceMath.FormatNumber(r.EventProportionExposed, 3)}");
             sb.AppendLine($"{r.ProportionUnexposedLabel}: {InferenceMath.FormatNumber(r.EventProportionUnexposed, 3)}");
-            sb.AppendLine($"{r.RatioLabel}: {InferenceMath.FormatNumber(r.RatioMeasure, 3)}"
+            sb.AppendLine($"{r.RatioLabel}: {InferenceMath.FormatNumber(r.RatioMeasure, 3)}  ({r.CiLevelDisplay} CI {TwoByTwoMeasuresResult.CiText(r.RatioCiLower, r.RatioCiUpper)})"
                 + (r.RatioUsesCorrection ? "  (Haldane-Anscombe corrected)" : ""));
-            sb.AppendLine($"{r.DifferenceLabel}: {InferenceMath.FormatNumber(r.DifferenceMeasure, 3)}");
+            sb.AppendLine($"{r.DifferenceLabel}: {InferenceMath.FormatNumber(r.DifferenceMeasure, 3)}  ({r.CiLevelDisplay} CI {TwoByTwoMeasuresResult.CiText(r.DifferenceCiLower, r.DifferenceCiUpper)})");
             if (r.RatioMeasure is double rr)
             {
                 string word = r.StudyDesignKind == TwoByTwoStudyDesignKind.CrossSectional ? "prevalence" : "risk";
@@ -626,6 +702,15 @@ public static class TwoByTwoExport
         string blankOrNum(double? v) => v is null ? "" : InferenceMath.FormatNumber(v, 4);
         string ratioCell = r.AreRiskMeasuresReported ? blankOrNum(r.RatioMeasure) : "Not reported";
         string diffCell = r.AreRiskMeasuresReported ? blankOrNum(r.DifferenceMeasure) : "Not reported";
+        // CIs: OR CI always (when formed); ratio/difference CIs only when reported.
+        string orCiLo = blankOrNum(r.OddsRatioCiLower), orCiHi = blankOrNum(r.OddsRatioCiUpper);
+        string ratioCiLo = r.AreRiskMeasuresReported ? blankOrNum(r.RatioCiLower) : "Not reported";
+        string ratioCiHi = r.AreRiskMeasuresReported ? blankOrNum(r.RatioCiUpper) : "Not reported";
+        string diffCiLo = r.AreRiskMeasuresReported ? blankOrNum(r.DifferenceCiLower) : "Not reported";
+        string diffCiHi = r.AreRiskMeasuresReported ? blankOrNum(r.DifferenceCiUpper) : "Not reported";
+        string sparseNote = r.CorrectionApplied
+            ? "Zero cell present; the Haldane-Anscombe correction was applied to the odds ratio, risk/prevalence ratio, and their 95% CIs. The difference and its CI use raw counts."
+            : "";
 
         sb.AppendLine(string.Join(",", new[]
         {
@@ -635,6 +720,9 @@ public static class TwoByTwoExport
             "StudyDesignRaw", "StudyDesignClassified",
             "ProportionExposedLabel", "ProportionUnexposedLabel", "ProportionExposed", "ProportionUnexposed",
             "RatioLabel", "RatioMeasure", "DifferenceLabel", "DifferenceMeasure",
+            "OddsRatioCI_Lower", "OddsRatioCI_Upper", "RatioCI_Lower", "RatioCI_Upper", "DifferenceCI_Lower", "DifferenceCI_Upper",
+            "CILevel", "CIMethod_OR", "CIMethod_Ratio", "CIMethod_Difference",
+            "CIUsesCorrection_OR", "CIUsesCorrection_Ratio", "CIUsesCorrection_Difference", "SparseDataNote",
             "RiskMeasuresReported", "SuppressionReason", "RatioUsesCorrection", "AiInvolved"
         }.Select(Q)));
 
@@ -651,12 +739,15 @@ public static class TwoByTwoExport
             Q(r.ProportionExposedLabel), Q(r.ProportionUnexposedLabel),
             Q(blankOrNum(r.EventProportionExposed)), Q(blankOrNum(r.EventProportionUnexposed)),
             Q(r.RatioLabel), Q(ratioCell), Q(r.DifferenceLabel), Q(diffCell),
+            Q(orCiLo), Q(orCiHi), Q(ratioCiLo), Q(ratioCiHi), Q(diffCiLo), Q(diffCiHi),
+            Q(r.CiLevelDisplay), Q(r.OddsRatioCiMethod), Q(r.RatioCiMethod), Q(r.DifferenceCiMethod),
+            Q(r.OddsRatioCiUsesCorrection ? "yes" : "no"), Q(r.RatioCiUsesCorrection ? "yes" : "no"), Q(r.DifferenceCiUsesCorrection ? "yes" : "no"), Q(sparseNote),
             Q(r.AreRiskMeasuresReported ? "yes" : "no"), Q(r.SuppressionReason),
             Q(r.RatioUsesCorrection ? "yes" : "no"), Q("no")
         }));
 
         sb.AppendLine();
-        sb.AppendLine(Q("Note") + "," + Q("95% confidence intervals are not calculated in this slice."));
+        sb.AppendLine(Q("Note") + "," + Q("95% CIs (z = 1.96): odds ratio and risk/prevalence ratio use the log method; risk/prevalence difference uses the approximate Wald method. No regression is calculated in this slice."));
         return sb.ToString();
     }
 }
