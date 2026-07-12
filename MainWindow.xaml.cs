@@ -322,7 +322,8 @@ public sealed partial class MainWindow : Window
         UserSummaryText.Text = GetAccountSummary();
 
         RefreshAll();
-        ShowPage(PageResearch);   // Phase 2: research-only shell lands on Research Lab (legacy flashcard Dashboard hidden, not deleted)
+        ShowPage(PageOverview);   // Phase 3A: research-only shell lands on the OrbitLab dashboard (Research Lab is one click away)
+        LicenseStubCombo.SelectedIndex = (int)_licenseStub;   // design-review stub only; no server
         SetStatus("Logged in successfully.");
     }
 
@@ -352,6 +353,8 @@ public sealed partial class MainWindow : Window
         _navMap[PageAccount] = NavAccount;
         _navMap[PageResearch] = NavResearch;
         _navMap[PageResearchDashboard] = NavResearch;
+        _navMap[PageOverview] = NavOverview;
+        _navMap[PageChartsStudio] = NavChartsStudio;
     }
 
     private void SetActiveNav(UIElement page)
@@ -420,6 +423,27 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // Phase 3A stub: validate the new Commercial Beta onboarding fields in the UI.
+        // These are NOT persisted yet (account persistence schema unchanged); real
+        // capture + backend device binding is Phase 5-7.
+        if (string.IsNullOrWhiteSpace(SignupFullNameBox.Text))
+        {
+            ShowToast("Enter your full name.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SignupTelegramBox.Text))
+        {
+            ShowToast("Enter your Telegram username.");
+            return;
+        }
+
+        if (SignupTelegramAckCheck.IsChecked != true)
+        {
+            ShowToast("Please acknowledge the official Telegram channel notice to continue.");
+            return;
+        }
+
         if (_store.Accounts.Any(x => string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
             ShowToast("This email already has an account.");
@@ -464,6 +488,15 @@ public sealed partial class MainWindow : Window
 
         _currentUser = user;
         ShowApp();
+
+        // Phase 3A stub: show the one-time Activation Welcome after a successful (stub)
+        // activation. Session-only guard here; the real per-device one-time trigger
+        // (userId + subscriptionId + deviceHash) is Phase 7.
+        if (!_activationWelcomeShownThisSession)
+        {
+            _activationWelcomeShownThisSession = true;
+            ShowActivationWelcome();
+        }
     }
 
     private void Logout_Click(object sender, RoutedEventArgs e)
@@ -496,6 +529,111 @@ public sealed partial class MainWindow : Window
         {
             e.Handled = true;
             Signup_Click(sender, e);
+        }
+    }
+
+    // ============ Phase 3A: OrbitLab dashboard, Charts Studio (coming soon), Activation Welcome (stub) ============
+    // UI / navigation + a local design-review stub only. No backend, no server, no persistence, no secrets.
+
+    private void Overview_Click(object sender, RoutedEventArgs e) => ShowPage(PageOverview);
+
+    private void ChartsStudio_Click(object sender, RoutedEventArgs e) => ShowPage(PageChartsStudio);
+
+    private void Research_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => ShowPage(PageResearch);
+
+    private void ChartsStudio_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => ShowPage(PageChartsStudio);
+
+    // Local, in-memory license state for DESIGN REVIEW ONLY. Real (signed-token) licensing is Phase 5-7.
+    private enum LicenseStubState { Unlicensed, ActiveCommercialBeta, GraceOffline, Expired }
+    private LicenseStubState _licenseStub = LicenseStubState.ActiveCommercialBeta;
+    private bool _activationWelcomeShownThisSession;
+
+    private void LicenseStubCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (LicenseStubCombo is null) return;
+        int i = LicenseStubCombo.SelectedIndex;
+        if (i < 0) return;
+        _licenseStub = (LicenseStubState)i;
+        ApplyLicenseStub();
+    }
+
+    private void ApplyLicenseStub()
+    {
+        if (PlanStateChip is null || PlanStateNote is null) return;   // dashboard not built yet
+
+        switch (_licenseStub)
+        {
+            case LicenseStubState.ActiveCommercialBeta:
+                PlanStateChip.Text = "Active";
+                PlanStateNote.Text = "Your Commercial Beta plan is active on this device.";
+                break;
+            case LicenseStubState.GraceOffline:
+                PlanStateChip.Text = "Offline grace";
+                PlanStateNote.Text = "Working offline — reconnect within your grace period to keep OrbitLab active.";
+                break;
+            case LicenseStubState.Expired:
+                PlanStateChip.Text = "Expired";
+                PlanStateNote.Text = "Your access expired. Existing local projects stay readable; renew to run new analyses.";
+                break;
+            default:
+                PlanStateChip.Text = "Unlicensed";
+                PlanStateNote.Text = "No active plan on this device. Enter an activation code to unlock OrbitLab.";
+                break;
+        }
+    }
+
+    // ----- Activation Welcome (visual / stub only) -----
+
+    private void ShowActivationWelcome()
+    {
+        ActivationWelcomeOverlay.Visibility = Visibility.Visible;
+        FadeIn(ActivationWelcomeOverlay, 240);
+
+        // Subtle scale-up entrance on the card (premium, not flashy).
+        var scale = new System.Windows.Media.ScaleTransform(0.95, 0.95);
+        ActivationWelcomeCard.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+        ActivationWelcomeCard.RenderTransform = scale;
+        var anim = new System.Windows.Media.Animation.DoubleAnimation(0.95, 1.0, new System.Windows.Duration(TimeSpan.FromMilliseconds(280)))
+        {
+            EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
+        scale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, anim);
+        scale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, anim);
+    }
+
+    private void HideActivationWelcome() => ActivationWelcomeOverlay.Visibility = Visibility.Collapsed;
+
+    private void WelcomePreview_Click(object sender, RoutedEventArgs e) => ShowActivationWelcome();
+
+    private void WelcomeGoDashboard_Click(object sender, RoutedEventArgs e)
+    {
+        HideActivationWelcome();
+        ShowPage(PageOverview);
+    }
+
+    private void WelcomeOpenResearch_Click(object sender, RoutedEventArgs e)
+    {
+        HideActivationWelcome();
+        ShowPage(PageResearch);
+    }
+
+    private void JoinTelegram_Click(object sender, RoutedEventArgs e)
+    {
+        // The app never ships a hardcoded seller list; users are pointed to the official channel.
+        // The real URL replaces the placeholder before beta launch.
+        if (Branding.TelegramChannelUrl.StartsWith("{{"))
+        {
+            ShowToast("The official Telegram channel link will be provided at beta launch.");
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Branding.TelegramChannelUrl) { UseShellExecute = true });
+        }
+        catch
+        {
+            ShowToast("Could not open the Telegram channel link.");
         }
     }
 
@@ -9666,7 +9804,9 @@ public sealed partial class MainWindow : Window
         if (_currentUser is null)
             return "";
 
-        return $"{_currentUser.Email}  •  {_currentUser.Plan}  •  {FormatExpiry(_currentUser.SubscriptionExpiresAt)}";
+        // Phase 3A UI/stub: product-appropriate account chip. Real plan/expiry wording
+        // returns when licensing is wired (Phase 6-7); account fields/persistence unchanged.
+        return $"{Branding.CommercialBetaPlan}  •  Active";
     }
 
     private static string FormatExpiry(DateTime expiry)

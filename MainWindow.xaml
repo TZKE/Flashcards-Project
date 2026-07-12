@@ -39,7 +39,7 @@
                     </StackPanel>
                 </StackPanel>
 
-                <TextBlock Text="Generate, organize, and study high-yield flashcards."
+                <TextBlock Text="Deterministic statistics and manuscript-ready reports."
                            FontSize="29"
                            FontWeight="Bold"
                            Foreground="{StaticResource TextBrush}"
@@ -47,7 +47,7 @@
                            LineHeight="37"
                            Margin="0,0,34,12"/>
 
-                <TextBlock Text="A clean Windows desktop app for medical students: decks, Z.ai generation, spaced repetition, export, and animated study feedback."
+                <TextBlock Text="A private Windows workspace for researchers: import data, run recommended analyses, and generate journal-ready Methods, Results, and reports — your data stays on your device."
                            FontSize="14"
                            Foreground="{StaticResource MutedBrush}"
                            TextWrapping="Wrap"
@@ -72,8 +72,8 @@
                         </Border>
 
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="Study smarter, not harder" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Create decks, review weak cards, and export to Anki when needed."
+                            <TextBlock Text="From data to manuscript" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="Import a CSV, review variables, run the recommended tests, and export clean Methods &amp; Results."
                                        TextWrapping="Wrap"
                                        Foreground="{StaticResource MutedBrush}"
                                        Margin="0,6,0,0"/>
@@ -87,8 +87,8 @@
                             <Border Background="{StaticResource PrimarySoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
                                 <Path Data="{StaticResource IconDecks}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock Text="Multi-deck" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Organize topics cleanly." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                            <TextBlock Text="Deterministic" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
+                            <TextBlock Text="Reproducible statistics." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
 
@@ -97,8 +97,8 @@
                             <Border Background="{StaticResource PrimarySoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
                                 <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock Text="Z.ai Cards" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Generate from notes." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                            <TextBlock Text="Report Builder" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
+                            <TextBlock Text="Manuscript-ready drafts." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
 
@@ -107,8 +107,8 @@
                             <Border Background="{StaticResource WarningSoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
                                 <Path Data="{StaticResource IconFire}" Fill="{StaticResource WarningBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock Text="Streaks" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Track daily progress." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                            <TextBlock Text="Local-first" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
+                            <TextBlock Text="Your data stays on device." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
 
@@ -117,8 +117,8 @@
                             <Border Background="{StaticResource PrimarySoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
                                 <Path Data="{StaticResource IconExport}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock Text="Export" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Copy or save for Anki." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                            <TextBlock Text="Exports" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
+                            <TextBlock Text="DOCX, PDF, and more." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
                 </UniformGrid>
@@ -150,7 +150,7 @@
                                            HorizontalAlignment="Center"
                                            Margin="0,16,0,4"/>
 
-                                <TextBlock Text="Sign in to continue your flashcard workspace."
+                                <TextBlock Text="Sign in to continue to OrbitLab by StarshipAI."
                                            FontSize="14"
                                            Foreground="{StaticResource MutedBrush}"
                                            HorizontalAlignment="Center"/>
@@ -207,60 +207,93 @@
                     </TabItem>
 
                     <TabItem Header="Create Account">
-                        <StackPanel Margin="10,14,10,10">
+                        <!-- Phase 3A: OrbitLab Commercial Beta onboarding form (UI/stub only; new fields not persisted yet). -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="560" Margin="0,4,0,0">
+                        <StackPanel Margin="10,10,16,10">
 
-                            <StackPanel HorizontalAlignment="Center" Margin="0,4,0,24">
-                                <Border Width="68" Height="68" Background="{StaticResource SuccessSoftBrush}" CornerRadius="20" HorizontalAlignment="Center">
+                            <StackPanel HorizontalAlignment="Center" Margin="0,2,0,16">
+                                <Border Width="60" Height="60" Background="{StaticResource SuccessSoftBrush}" CornerRadius="18" HorizontalAlignment="Center">
                                     <Path Data="{StaticResource IconAccount}"
                                           Fill="{StaticResource SuccessBrush}"
-                                          Width="34"
-                                          Height="34"
+                                          Width="30"
+                                          Height="30"
                                           Stretch="Uniform"
                                           HorizontalAlignment="Center"
                                           VerticalAlignment="Center"/>
                                 </Border>
 
-                                <TextBlock Text="Create account"
-                                           FontSize="30"
+                                <TextBlock Text="Create your OrbitLab account"
+                                           FontSize="24"
                                            FontWeight="Bold"
                                            Foreground="{StaticResource TextBrush}"
                                            HorizontalAlignment="Center"
-                                           Margin="0,14,0,4"/>
+                                           TextAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Margin="0,12,0,3"/>
 
-                                <TextBlock Text="Use a local demo code to unlock the app."
-                                           FontSize="14"
+                                <TextBlock Text="OrbitLab by StarshipAI · Commercial Beta"
+                                           FontSize="13"
                                            Foreground="{StaticResource MutedBrush}"
                                            HorizontalAlignment="Center"/>
                             </StackPanel>
 
+                            <!-- Official Telegram Channel notice -->
+                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Official Telegram Channel" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" FontSize="14"/>
+                                    <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,0"
+                                               Text="Please join our official Telegram channel to receive:"/>
+                                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"
+                                               Text="&#8226; product updates&#10;&#8226; beta instructions&#10;&#8226; bug-fix announcements&#10;&#8226; trusted activation-code seller list&#10;&#8226; important subscription notices"/>
+                                    <TextBlock FontSize="12.5" Margin="0,8,0,0" TextWrapping="Wrap">
+                                        <Run Text="Channel: " Foreground="{StaticResource MutedBrush}"/>
+                                        <Run Text="{x:Static local:Branding.TelegramChannelUrl}" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Full name" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupFullNameBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
+                                     KeyDown="SignupField_KeyDown" local:Watermark.Text="Jane Researcher"/>
+
                             <TextBlock Text="Email" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
-                            <TextBox x:Name="SignupEmailBox"
-                                     Height="48"
-                                     FontSize="15"
-                                     Padding="15,0"
-                                     VerticalContentAlignment="Center"
-                                     Margin="0,0,0,14"
-                                     KeyDown="SignupField_KeyDown"
-                                     local:Watermark.Text="you@email.com"/>
+                            <TextBox x:Name="SignupEmailBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
+                                     KeyDown="SignupField_KeyDown" local:Watermark.Text="you@email.com"/>
 
                             <TextBlock Text="Password" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
-                            <PasswordBox x:Name="SignupPasswordBox"
-                                         Height="48"
-                                         FontSize="15"
-                                         Padding="15,0"
-                                         VerticalContentAlignment="Center"
-                                         Margin="0,0,0,14"
+                            <PasswordBox x:Name="SignupPasswordBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
                                          KeyDown="SignupField_KeyDown"/>
 
-                            <TextBlock Text="Activation Code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
-                            <TextBox x:Name="SignupCodeBox"
-                                     Height="48"
-                                     FontSize="15"
-                                     Padding="15,0"
-                                     VerticalContentAlignment="Center"
-                                     Margin="0,0,0,20"
-                                     KeyDown="SignupField_KeyDown"
-                                     local:Watermark.Text="FLASH-MONTH-2026"/>
+                            <TextBlock Text="Institution / organization" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupInstitutionBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
+                                     KeyDown="SignupField_KeyDown" local:Watermark.Text="University / lab / hospital"/>
+
+                            <TextBlock Text="Role / title" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupRoleBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
+                                     KeyDown="SignupField_KeyDown" local:Watermark.Text="e.g. PhD student, clinician, researcher"/>
+
+                            <TextBlock Text="Telegram username" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupTelegramBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
+                                     KeyDown="SignupField_KeyDown" local:Watermark.Text="@username"/>
+
+                            <TextBlock Text="Activation code" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                            <TextBox x:Name="SignupCodeBox" Height="44" FontSize="14" Padding="14,0" VerticalContentAlignment="Center" Margin="0,0,0,12"
+                                     KeyDown="SignupField_KeyDown" local:Watermark.Text="FLASH-MONTH-2026"/>
+
+                            <!-- Activation Code Safety Notice -->
+                            <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="13" Margin="0,2,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Activation Code Safety Notice" FontWeight="Bold" Foreground="{StaticResource WarningBrush}" FontSize="13"/>
+                                    <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0"
+                                               Text="Please purchase activation codes only from trusted sellers listed in our official Telegram channel. We are not responsible for activation codes purchased from unofficial sellers, unknown stores, or people not listed in the official channel."/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Required acknowledgement -->
+                            <CheckBox x:Name="SignupTelegramAckCheck" Margin="0,0,0,16" VerticalContentAlignment="Center">
+                                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextBrush}" FontSize="12.5" Margin="6,0,0,0"
+                                           Text="I understand that important beta updates and trusted seller announcements will be posted in the official Telegram channel."/>
+                            </CheckBox>
 
                             <Button Content="Create Account"
                                     Style="{StaticResource PremiumButton}"
@@ -270,15 +303,66 @@
                                     FontSize="15"
                                     Margin="0"/>
 
-                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Padding="15" Margin="0,22,0,0">
-                                <TextBlock Foreground="{StaticResource PrimaryBrush}"
+                            <Border Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="12" Margin="0,16,0,0">
+                                <TextBlock Foreground="{StaticResource MutedBrush}"
                                            FontFamily="Consolas"
-                                           FontSize="12"
-                                           Text="Demo codes: FLASH-MONTH-2026, FLASH-YEAR-2026, FLASH-LIFE-2026"/>
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
+                                           Text="Local demo codes (stub — no server yet): FLASH-MONTH-2026, FLASH-YEAR-2026, FLASH-LIFE-2026"/>
                             </Border>
                         </StackPanel>
+                        </ScrollViewer>
                     </TabItem>
                 </TabControl>
+            </Border>
+        </Grid>
+
+        <!-- Phase 3A: Activation Welcome overlay (visual / stub only; full-window, painted above the app). -->
+        <Grid x:Name="ActivationWelcomeOverlay" Panel.ZIndex="200" Visibility="Collapsed" Background="#B0101018">
+            <Border x:Name="ActivationWelcomeCard" Style="{StaticResource CardBorder}" MaxWidth="560" Padding="36" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <Border Width="76" Height="76" Background="{StaticResource SuccessSoftBrush}" CornerRadius="22" HorizontalAlignment="Center">
+                        <TextBlock Text="&#10003;" FontSize="40" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="You're all set" FontSize="27" FontWeight="Bold" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" Margin="0,18,0,4"/>
+                    <TextBlock Text="OrbitLab by StarshipAI" FontSize="13" Foreground="{StaticResource PrimaryBrush}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Your account is activated on this device." FontSize="14" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
+
+                    <Border Background="{StaticResource SoftCardBrush}" CornerRadius="12" Padding="16" Margin="0,18,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Current plan" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="Commercial Beta" Foreground="{StaticResource TextBrush}" FontWeight="Bold" FontSize="12.5"/>
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Device" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="Linked to your account" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" FontSize="12.5"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" Margin="0,16,0,0"
+                               Text="Please follow the official Telegram channel for updates and trusted seller announcements."/>
+
+                    <Button Content="Go to Dashboard" Style="{StaticResource PremiumButton}" Click="WelcomeGoDashboard_Click" Height="46" Margin="0,18,0,0"/>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="10"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Open Research Lab" Style="{StaticResource SoftButton}" Click="WelcomeOpenResearch_Click" Height="44"/>
+                        <Button Grid.Column="2" Content="Join Telegram Channel" Style="{StaticResource SoftButton}" Click="JoinTelegram_Click" Height="44"/>
+                    </Grid>
+                </StackPanel>
             </Border>
         </Grid>
 
@@ -361,12 +445,31 @@
                             </StackPanel>
                             <!-- /LegacyWorkspaceNav -->
 
+                            <!-- Phase 3A: OrbitLab dashboard entry -->
+                            <Button x:Name="NavOverview" Style="{StaticResource NavButton}" Click="Overview_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconHome}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Dashboard" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+
                             <TextBlock Text="RESEARCH" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold" Margin="0,14,0,8"/>
 
                             <Button x:Name="NavResearch" Style="{StaticResource NavButton}" Click="ResearchPage_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Data="{StaticResource IconResearch}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"/>
                                     <TextBlock Text="Research Lab" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Phase 3A: Charts Studio (coming soon) -->
+                            <Button x:Name="NavChartsStudio" Style="{StaticResource NavButton}" Click="ChartsStudio_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconGenerate}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Charts Studio" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="6" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Soon" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
+                                    </Border>
                                 </StackPanel>
                             </Button>
 
@@ -438,7 +541,7 @@
                                 <TextBox x:Name="TopSearchBox"
                                          Grid.Column="1"
                                          Style="{StaticResource SearchBoxInner}"
-                                         local:Watermark.Text="Search decks, cards, tags…"
+                                         local:Watermark.Text="Search projects, variables, reports…"
                                          TextChanged="TopSearch_Changed"
                                          KeyDown="TopSearch_KeyDown"/>
                             </Grid>
@@ -468,6 +571,173 @@
                 <Grid Grid.Row="1" Margin="24,10,24,14" x:Name="ContentRoot">
 
                     <!-- DASHBOARD -->
+                    <!-- ============ Phase 3A: OrbitLab dashboard (post-login landing) ============ -->
+                    <Grid x:Name="PageOverview" Visibility="Collapsed">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="0,0,4,10">
+
+                                <!-- Header -->
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}"/>
+                                        <TextBlock Text="OrbitLab by StarshipAI" FontSize="13" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="14,8" VerticalAlignment="Center">
+                                        <TextBlock Text="Logo coming soon" Foreground="{StaticResource SoftMutedBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Local data notice -->
+                                <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Padding="14" Margin="0,0,0,16">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="{StaticResource IconKey}" Fill="{StaticResource PrimaryBrush}" Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Top" Margin="0,2,10,0"/>
+                                        <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" MaxWidth="900"
+                                                   Text="Your research data is stored on this device. It is not uploaded to our servers. Please keep your own backups."/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Plan card + Telegram card -->
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Plan" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="8" Padding="8,3" Margin="10,0,0,0">
+                                                    <TextBlock x:Name="PlanStateChip" Text="Active" Foreground="{StaticResource SuccessBrush}" FontSize="12" FontWeight="Bold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="Commercial Beta" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0"/>
+                                            <TextBlock x:Name="PlanStateNote" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Text="Your Commercial Beta plan is active on this device."/>
+
+                                            <!-- Design-preview only (dev). Collapsed by default; removed when real licensing lands (Phase 6-7). -->
+                                            <Expander Margin="0,16,0,0" IsExpanded="False">
+                                                <Expander.Header>
+                                                    <TextBlock Text="Design preview (dev only)" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="SemiBold"/>
+                                                </Expander.Header>
+                                                <StackPanel Margin="0,8,0,2">
+                                                    <TextBlock Text="License state (stub · no server)" Foreground="{StaticResource SoftMutedBrush}" FontSize="10.5" Margin="0,0,0,4"/>
+                                                    <ComboBox x:Name="LicenseStubCombo" SelectionChanged="LicenseStubCombo_SelectionChanged" FontSize="12" MaxWidth="240" HorizontalAlignment="Left">
+                                                        <ComboBoxItem Content="Unlicensed"/>
+                                                        <ComboBoxItem Content="Active Commercial Beta"/>
+                                                        <ComboBoxItem Content="Grace (offline)"/>
+                                                        <ComboBoxItem Content="Expired"/>
+                                                    </ComboBox>
+                                                    <Button Content="Preview Activation Welcome" Style="{StaticResource GhostButton}" Click="WelcomePreview_Click" Margin="0,8,0,0" HorizontalAlignment="Left" FontSize="11.5"/>
+                                                </StackPanel>
+                                            </Expander>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="20">
+                                        <StackPanel>
+                                            <TextBlock Text="Official Telegram Channel" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" FontSize="15"/>
+                                            <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"
+                                                       Text="Join the official Telegram channel for beta updates, trusted seller announcements, and important product notices."/>
+                                            <Button Content="Join Telegram Channel" Style="{StaticResource PremiumButton}" Click="JoinTelegram_Click" Margin="0,14,0,0" HorizontalAlignment="Left" Height="42"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Quick actions -->
+                                <TextBlock Text="Quick actions" Style="{StaticResource SectionHeader}" Margin="0,4,0,10"/>
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="18" Cursor="Hand" MouseLeftButtonUp="Research_QuickAction">
+                                        <StackPanel>
+                                            <Border Background="{StaticResource PrimarySoftBrush}" Width="42" Height="42" CornerRadius="12" HorizontalAlignment="Left">
+                                                <Path Data="{StaticResource IconResearch}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="Research Lab" FontWeight="Bold" Foreground="{StaticResource TextBrush}" FontSize="15" Margin="0,10,0,2"/>
+                                            <TextBlock Text="Projects, data, statistics, and report builder." Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="18" Cursor="Hand" MouseLeftButtonUp="Research_QuickAction">
+                                        <StackPanel>
+                                            <Border Background="{StaticResource SuccessSoftBrush}" Width="42" Height="42" CornerRadius="12" HorizontalAlignment="Left">
+                                                <Path Data="{StaticResource IconExport}" Fill="{StaticResource SuccessBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="Reports &amp; exports" FontWeight="Bold" Foreground="{StaticResource TextBrush}" FontSize="15" Margin="0,10,0,2"/>
+                                            <TextBlock Text="Build manuscripts and export to DOCX, PDF, TXT, Markdown." Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="4" Style="{StaticResource CardBorder}" Padding="18" Cursor="Hand" MouseLeftButtonUp="ChartsStudio_QuickAction">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Background="{StaticResource WarningSoftBrush}" Width="42" Height="42" CornerRadius="12">
+                                                    <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource WarningBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="8" Padding="8,3" VerticalAlignment="Center" Margin="10,0,0,0" Height="24">
+                                                    <TextBlock Text="Coming soon" Foreground="{StaticResource WarningBrush}" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="Charts Studio" FontWeight="Bold" Foreground="{StaticResource TextBrush}" FontSize="15" Margin="0,10,0,2"/>
+                                            <TextBlock Text="Journal-ready charts and figures — coming soon in a future beta update." Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Tips & Notices -->
+                                <Border Style="{StaticResource CardBorder}" Padding="20">
+                                    <StackPanel>
+                                        <TextBlock Text="Tips &amp; Notices" Style="{StaticResource SectionHeader}"/>
+                                        <StackPanel Margin="0,10,0,0">
+                                            <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                                                       Text="&#8226; Welcome to the OrbitLab Commercial Beta. Your feedback shapes the product."/>
+                                            <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,8"
+                                                       Text="&#8226; Product updates, beta instructions, and bug-fix notices are posted in the official Telegram channel."/>
+                                            <TextBlock Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"
+                                                       Text="&#8226; Charts Studio is coming in a future beta update."/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- ============ Phase 3A: Charts Studio (coming soon, non-functional) ============ -->
+                    <Grid x:Name="PageChartsStudio" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="Charts Studio" Style="{StaticResource PageTitle}"/>
+                            <Border Style="{StaticResource CardBorder}" Padding="40" Margin="0,16,0,0" HorizontalAlignment="Left" MaxWidth="740">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Background="{StaticResource WarningSoftBrush}" Width="56" Height="56" CornerRadius="16">
+                                            <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource WarningBrush}" Width="28" Height="28" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="8" Padding="9,4" VerticalAlignment="Center" Margin="14,0,0,0">
+                                            <TextBlock Text="Coming soon" Foreground="{StaticResource WarningBrush}" FontSize="12" FontWeight="Bold"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="Charts Studio" FontSize="26" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,16,0,4"/>
+                                    <TextBlock Text="Journal-ready charts and figures for your research reports." FontSize="14" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                                    <TextBlock Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,16,0,0" MaxWidth="640"
+                                               Text="Charts Studio will help you create publication-ready charts and figures from your analyzed research results. This feature will be released in a future beta update."/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+
                     <Grid x:Name="PageDashboard">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
@@ -1312,13 +1582,86 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel>
-                            <TextBlock Text="AI Settings" Style="{StaticResource PageTitle}"/>
-                            <TextBlock Text="Configure your Z.ai provider used to generate flashcards."
+                            <TextBlock Text="Settings" Style="{StaticResource PageTitle}"/>
+                            <TextBlock Text="Manage OrbitLab preferences, your research data, license, and AI connections."
                                        Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
                         </StackPanel>
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <StackPanel>
+
+                                <!-- Phase 3A: Sneat-inspired settings groups (UI/stub). Existing AI settings kept intact below. -->
+                                <Grid Margin="0,4,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="22">
+                                        <StackPanel>
+                                            <TextBlock Text="Appearance" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Theme and accent used across OrbitLab." Style="{StaticResource Caption}" Margin="0,2,0,14"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Theme" Foreground="{StaticResource TextBrush}" FontSize="13" VerticalAlignment="Center"/>
+                                                <Border Grid.Column="1" Background="{StaticResource PrimarySoftBrush}" CornerRadius="8" Padding="10,4">
+                                                    <TextBlock Text="Light" Foreground="{StaticResource PrimaryBrush}" FontSize="12" FontWeight="Bold"/>
+                                                </Border>
+                                            </Grid>
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Accent color" Foreground="{StaticResource TextBrush}" FontSize="13" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                    <Border Width="20" Height="20" CornerRadius="6" Background="{StaticResource PrimaryBrush}"/>
+                                                    <TextBlock Text="Purple" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="More theme options arrive in a future beta update." Style="{StaticResource Caption}" Margin="0,14,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="22">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="License &amp; beta" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+                                                <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="8" Padding="9,3" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="Active" Foreground="{StaticResource SuccessBrush}" FontSize="11" FontWeight="Bold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="Plan: Commercial Beta" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                                            <TextBlock Text="Your OrbitLab license activates on one device. Device binding links your account to this computer; an admin can reset it if you change machines." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                            <TextBlock Text="Online license validation and offline grace arrive with the backend." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="22">
+                                        <StackPanel>
+                                            <TextBlock Text="Research data" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Your research data is stored on this device. It is not uploaded to our servers. Please keep your own backups." Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="9" Padding="12" Margin="0,12,0,0">
+                                                <TextBlock Text="Tip: export important projects and reports regularly to a safe location." Foreground="{StaticResource PrimaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="22">
+                                        <StackPanel>
+                                            <TextBlock Text="Updates &amp; Telegram" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Product updates, beta instructions, bug-fix notices, and trusted seller announcements are posted in the official Telegram channel." Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                            <Button Content="Join Telegram Channel" Style="{StaticResource SoftButton}" Click="JoinTelegram_Click" Margin="0,12,0,0" HorizontalAlignment="Left"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
                                 <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,4,0,16">
                                     <StackPanel MaxWidth="920" HorizontalAlignment="Left">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
@@ -1438,6 +1781,14 @@
                                         </Border>
                                     </StackPanel>
                                 </Border>
+
+                                <!-- Advanced / developer preview (Phase 3A) -->
+                                <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,16,0,0">
+                                    <StackPanel MaxWidth="920" HorizontalAlignment="Left">
+                                        <TextBlock Text="Advanced · developer preview" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="This build is a design-review preview. Some controls — such as the license-state preview and the Activation Welcome preview — live on the Dashboard under Design preview (dev only) and are not customer features." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
@@ -1451,12 +1802,76 @@
 
                         <StackPanel>
                             <TextBlock Text="Account" Style="{StaticResource PageTitle}"/>
-                            <TextBlock Text="Your local account and subscription information."
+                            <TextBlock Text="Your OrbitLab profile, subscription, and product notices."
                                        Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
                         </StackPanel>
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <StackPanel>
+
+                                <!-- Phase 3A: Sneat-inspired Profile + Subscription cards (UI/stub, display only) -->
+                                <Grid Margin="0,4,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="24">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Width="56" Height="56" Background="{StaticResource PrimarySoftBrush}" CornerRadius="16" Margin="0,0,14,0">
+                                                    <Path Data="{StaticResource IconAccount}" Fill="{StaticResource PrimaryBrush}" Width="28" Height="28" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Profile" Style="{StaticResource SectionHeader}"/>
+                                                    <TextBlock Text="OrbitLab by StarshipAI" Style="{StaticResource Caption}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Status" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <Border Grid.Column="1" Background="{StaticResource SuccessSoftBrush}" CornerRadius="8" Padding="9,3" HorizontalAlignment="Right">
+                                                    <TextBlock Text="Active" Foreground="{StaticResource SuccessBrush}" FontSize="11" FontWeight="Bold"/>
+                                                </Border>
+                                            </Grid>
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Plan" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="Commercial Beta" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="12.5" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <TextBlock Text="Your email and activation details are shown in Account details below." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="24">
+                                        <StackPanel>
+                                            <TextBlock Text="Subscription" Style="{StaticResource SectionHeader}"/>
+                                            <Grid Margin="0,14,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Status" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="Active" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" FontSize="12.5" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Device" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="Linked to this device" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="12.5" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Exports" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="Unlimited" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="12.5" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Projects" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="1 active project" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="12.5" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <TextBlock Text="Online validation and renewal arrive with the backend (Commercial Beta)." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
                                 <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,4,0,16">
                                     <StackPanel MaxWidth="920" HorizontalAlignment="Left">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,22">
@@ -1514,11 +1929,43 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border Background="{StaticResource DangerSoftBrush}" CornerRadius="12" Padding="18">
-                                    <TextBlock Text="This is not a real online subscription system yet. A future release will add backend login, verified activation codes, and secure subscription checks."
-                                               Foreground="{StaticResource DangerBrush}"
-                                               TextWrapping="Wrap"
-                                               FontWeight="SemiBold"/>
+                                <!-- Phase 3A: Sneat-inspired Telegram / Local data / Support cards (UI/stub) -->
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="24">
+                                        <StackPanel>
+                                            <TextBlock Text="Telegram &amp; updates" Style="{StaticResource SectionHeader}"/>
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Telegram" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="@your-username" Foreground="{StaticResource SoftMutedBrush}" FontSize="12.5" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <TextBlock Text="Follow the official Telegram channel for beta updates, bug-fix notices, and trusted seller announcements." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                            <Button Content="Join Telegram Channel" Style="{StaticResource SoftButton}" Click="JoinTelegram_Click" Margin="0,12,0,0" HorizontalAlignment="Left"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="24">
+                                        <StackPanel>
+                                            <TextBlock Text="Local data &amp; backups" Style="{StaticResource SectionHeader}"/>
+                                            <TextBlock Text="Your research data is stored on this device. It is not uploaded to our servers. Please keep your own backups." Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                            <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="9" Padding="12" Margin="0,12,0,0">
+                                                <TextBlock Text="Back up your projects and exports regularly — a lost or reset device means lost local data." Foreground="{StaticResource PrimaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <Border Style="{StaticResource CardBorder}" Padding="24" Margin="0,0,0,16">
+                                    <StackPanel>
+                                        <TextBlock Text="Support &amp; product notices" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock Text="OrbitLab is in Commercial Beta. Support, release notes, and important product notices are shared in the official Telegram channel. Full online license validation, verified activation codes, and secure subscription checks arrive with the backend." Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    </StackPanel>
                                 </Border>
                             </StackPanel>
                         </ScrollViewer>

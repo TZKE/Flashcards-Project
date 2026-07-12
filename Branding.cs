@@ -22,4 +22,13 @@ public static class Branding
 
     /// <summary>Full product/company lockup for premium / signature surfaces.</summary>
     public const string Lockup = "OrbitLab by StarshipAI";
+
+    /// <summary>Commercial Beta plan display name.</summary>
+    public const string CommercialBetaPlan = "Commercial Beta";
+
+    /// <summary>
+    /// Official Telegram channel URL. Placeholder token until the real link is
+    /// supplied before beta launch — not a secret; safe to display.
+    /// </summary>
+    public const string TelegramChannelUrl = "{{TELEGRAM_CHANNEL_URL}}";
 }
