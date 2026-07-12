@@ -7839,7 +7839,7 @@ public sealed partial class MainWindow : Window
             IInferenceExportable result = DispatchCompute(rec, outcome, predictor);
             await StepRunLoading("Building result summary…");
 
-            _computedRows.Insert(0, BuildComputedRow(rec, result, p));
+            AddOrReplaceComputedRow(BuildComputedRow(rec, result, p));
             _computedResultsProjectId = p.Id;
             PersistComputedResults(p);
 
@@ -7982,6 +7982,44 @@ public sealed partial class MainWindow : Window
         }
         return row;
     }
+
+    // ---- Beta fix: prevent duplicate computed-result rows --------------------
+    // Running the SAME analysis again via "Run this analysis" or "Run all
+    // supported analyses" must UPDATE the existing row in place instead of
+    // appending a confusing identical duplicate (the row-level Re-run already
+    // replaces in place; this brings the Run/Run-all paths in line). A genuinely
+    // new result — a different variable pairing, a different test, or the same
+    // analysis after the dataset/extraction sheet changed (new fingerprint) — is
+    // still inserted newest-first. This changes nothing statistical: it only
+    // decides insert-vs-replace on the display collection.
+    private void AddOrReplaceComputedRow(ComputedResultRow newRow)
+    {
+        int idx = -1;
+        for (int i = 0; i < _computedRows.Count; i++)
+            if (IsSameComputedResult(_computedRows[i], newRow)) { idx = i; break; }
+
+        if (idx >= 0)
+        {
+            newRow.Id = _computedRows[idx].Id;   // keep identity stable (details card / selection)
+            _computedRows[idx] = newRow;          // replace in place — Total unchanged, position preserved
+        }
+        else
+        {
+            _computedRows.Insert(0, newRow);      // genuinely new — newest first
+        }
+    }
+
+    // Two rows describe the SAME computed result when they share the outcome and
+    // predictor variables, the test that was run, AND the analysis fingerprint
+    // (dataset + extraction-sheet state). Requiring all three means distinct
+    // tests for a pairing, or the same analysis over DIFFERENT data, are never
+    // collapsed together — only an exact re-run of the identical analysis is
+    // treated as a replacement.
+    private static bool IsSameComputedResult(ComputedResultRow a, ComputedResultRow b)
+        => string.Equals(a.OutcomeName, b.OutcomeName, StringComparison.Ordinal)
+        && string.Equals(a.PredictorName, b.PredictorName, StringComparison.Ordinal)
+        && string.Equals(a.TestName, b.TestName, StringComparison.Ordinal)
+        && string.Equals(a.AnalysisFingerprint, b.AnalysisFingerprint, StringComparison.Ordinal);
 
     // ---- Phase 4C (Slice 1): Computed Results persistence --------------------
     // Single source of truth for saving to disk: converts the current in-memory
@@ -8329,7 +8367,7 @@ public sealed partial class MainWindow : Window
                 if (outcome is null || predictor is null) { review++; continue; }
 
                 var result = DispatchCompute(rec, outcome, predictor);
-                _computedRows.Insert(0, BuildComputedRow(rec, result, p));
+                AddOrReplaceComputedRow(BuildComputedRow(rec, result, p));
                 if (result.Computed) computed++; else review++;
             }
             _computedResultsProjectId = p.Id;
