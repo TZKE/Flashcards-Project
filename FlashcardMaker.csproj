@@ -17,4 +17,8 @@
     <Resource Include="Assets\appicon.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Assets\Brand\*.png" />
+  </ItemGroup>
+
 </Project>

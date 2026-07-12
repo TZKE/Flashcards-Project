@@ -247,6 +247,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // Phase 3: load the real OrbitLab brand PNGs if present (safe neutral fallback otherwise).
+        LoadBrandAssets();
+
         // Never open larger than the usable screen area (keeps the window on
         // small laptops and clear of the taskbar).
         Width = Math.Min(Width, SystemParameters.WorkArea.Width);
@@ -308,6 +311,53 @@ public sealed partial class MainWindow : Window
         AppGrid.Visibility = Visibility.Collapsed;
 
         FadeIn(AuthGrid, 220);
+    }
+
+    // Phase 3: load the real OrbitLab brand PNGs (Assets/Brand/*) if they are present and
+    // included as WPF Resources. If not, the neutral fallback UI stays visible. This never
+    // throws and never breaks the build — the PNGs simply appear once placed + resourced.
+    private void LoadBrandAssets()
+    {
+        var logo = TryLoadBrandBitmap("pack://application:,,,/Assets/Brand/orbitlab-logo.png");
+        if (logo is not null)
+        {
+            BrandLogoImage.Source = logo;
+            BrandLogoImage.Visibility = Visibility.Visible;
+            BrandLogoFallback.Visibility = Visibility.Collapsed;
+
+            AuthCardLogoImage.Source = logo;
+            AuthCardLogoImage.Visibility = Visibility.Visible;
+
+            SignupLogoImage.Source = logo;
+            SignupLogoImage.Visibility = Visibility.Visible;
+        }
+
+        var hero = TryLoadBrandBitmap("pack://application:,,,/Assets/Brand/orbitlab-login-hero.png");
+        if (hero is not null)
+        {
+            LoginHeroImage.Source = hero;
+            LoginHeroImage.Visibility = Visibility.Visible;
+            LoginHeroFallback.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static System.Windows.Media.Imaging.BitmapImage? TryLoadBrandBitmap(string packUri)
+    {
+        try
+        {
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(packUri, UriKind.Absolute);
+            bmp.EndInit();   // throws if the resource is not present/embedded
+            bmp.Freeze();
+            return bmp;
+        }
+        catch
+        {
+            // Asset not placed yet (or not yet included as a WPF Resource) — callers keep their fallback UI.
+            return null;
+        }
     }
 
     private void ShowApp()
@@ -1012,16 +1062,12 @@ public sealed partial class MainWindow : Window
         RefreshCardLists();
     }
 
-    // Global top-bar search: mirror the query into the My Decks card filter so results
-    // are live, and jump to My Decks on Enter. Never mutates data, only filters.
+    // Global top-bar search — Phase 3A stub. Research search is not implemented yet, so
+    // searching never mirrors into, filters, or navigates to any legacy flashcard/deck
+    // surface (My Decks, cards, decks, study). It stays on the current page.
     private void TopSearch_Changed(object sender, RoutedEventArgs e)
     {
-        if (_currentUser is null)
-            return;
-
-        // Setting SearchBox.Text raises SearchFilter_Changed, which refreshes the lists.
-        if (!string.Equals(SearchBox.Text, TopSearchBox.Text, StringComparison.Ordinal))
-            SearchBox.Text = TopSearchBox.Text;
+        // Intentionally no-op for Phase 3A: do not touch the legacy deck/card filter.
     }
 
     private void TopSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -1029,16 +1075,8 @@ public sealed partial class MainWindow : Window
         if (e.Key != System.Windows.Input.Key.Enter)
             return;
 
-        if (string.IsNullOrWhiteSpace(TopSearchBox.Text))
-        {
-            ShowToast("Type something to search decks and cards.");
-            return;
-        }
-
-        SearchBox.Text = TopSearchBox.Text;
-        ShowPage(PageDecks);
-        RefreshCardLists();
-        SetStatus($"Showing cards matching “{TopSearchBox.Text.Trim()}”.");
+        e.Handled = true;
+        ShowToast("Research search will be available in a future beta update.");
     }
 
     private void DueOnly_Checked(object sender, RoutedEventArgs e)
@@ -1958,8 +1996,10 @@ public sealed partial class MainWindow : Window
     private void RefreshAccountPage()
     {
         AccountEmailText.Text = string.IsNullOrWhiteSpace(_currentUser?.Email) ? "—" : _currentUser!.Email;
-        AccountPlanText.Text = string.IsNullOrWhiteSpace(_currentUser?.Plan) ? "—" : _currentUser!.Plan;
-        AccountExpiryText.Text = FormatExpiry(_currentUser?.SubscriptionExpiresAt ?? DateTime.UtcNow);
+        // Phase 3A UI/stub: show Commercial Beta entitlement wording, not the legacy
+        // Monthly/expiry-date values. Account fields and persistence are unchanged.
+        AccountPlanText.Text = Branding.CommercialBetaPlan;
+        AccountExpiryText.Text = "Active";
     }
 
     private void RefreshExportPreview()

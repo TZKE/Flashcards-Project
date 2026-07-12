@@ -20,135 +20,161 @@
 
         <!-- AUTH SCREEN -->
         <Grid x:Name="AuthGrid" Margin="34">
+            <Grid.Resources>
+                <!-- Segmented Login / Create Account switcher — scoped to the auth screen only -->
+                <Style x:Key="AuthTabControlStyle" TargetType="TabControl">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabControl">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Background="{StaticResource SoftCardBrush}"
+                                            BorderBrush="{StaticResource BorderBrushSoft}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="4">
+                                        <UniformGrid Rows="1" IsItemsHost="True"/>
+                                    </Border>
+                                    <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Margin="0,10,0,0"/>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <Style x:Key="AuthTabItemStyle" TargetType="TabItem">
+                    <Setter Property="Cursor" Value="Hand"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="Segment" CornerRadius="9" Background="Transparent" Padding="0,11" Margin="2,0">
+                                    <ContentPresenter x:Name="SegmentHeader"
+                                                      ContentSource="Header"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      TextElement.FontSize="15"
+                                                      TextElement.FontWeight="SemiBold"
+                                                      TextElement.Foreground="{StaticResource MutedBrush}"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Segment" Property="Background" Value="White"/>
+                                        <Setter TargetName="SegmentHeader" Property="TextElement.Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                        <Setter TargetName="Segment" Property="Effect">
+                                            <Setter.Value>
+                                                <DropShadowEffect Color="#566A7F" BlurRadius="10" ShadowDepth="1" Opacity="0.18"/>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Trigger>
+                                    <MultiTrigger>
+                                        <MultiTrigger.Conditions>
+                                            <Condition Property="IsSelected" Value="False"/>
+                                            <Condition Property="IsMouseOver" Value="True"/>
+                                        </MultiTrigger.Conditions>
+                                        <Setter TargetName="SegmentHeader" Property="TextElement.Foreground" Value="{StaticResource TextBrush}"/>
+                                    </MultiTrigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Grid.Resources>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="0.46*" MinWidth="360"/>
                 <ColumnDefinition Width="0.54*" MinWidth="520"/>
             </Grid.ColumnDefinitions>
 
-            <!-- LEFT HERO -->
-            <StackPanel Grid.Column="0" Margin="28,26,28,18" VerticalAlignment="Center">
+            <!-- LEFT HERO (reference layout: logo top-left, heading, description, hero illustration below) -->
+            <Grid Grid.Column="0" Margin="34,18,42,14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                    <Border Width="56" Height="56" Background="{StaticResource PrimaryBrush}" CornerRadius="16" Margin="0,0,14,0">
-                        <Path Data="{StaticResource IconBolt}" Fill="White" Width="27" Height="27" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <!-- OrbitLab logo — real PNG asset (Assets/Brand/orbitlab-logo.png) with safe fallback until placed -->
+                <Grid HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <Image x:Name="BrandLogoImage" MaxHeight="84" MaxWidth="230" Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <Border x:Name="BrandLogoFallback" Background="{StaticResource PrimarySoftBrush}" CornerRadius="14" Padding="16,12" HorizontalAlignment="Left">
+                        <StackPanel>
+                            <TextBlock Text="OrbitLab by StarshipAI" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="Logo coming soon — place Assets/Brand/orbitlab-logo.png" FontSize="11" Foreground="{StaticResource SoftMutedBrush}" Margin="0,3,0,0"/>
+                        </StackPanel>
                     </Border>
+                </Grid>
 
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="{x:Static local:Branding.ProductName}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                        <TextBlock Text="Research analysis &amp; reporting workspace" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
-                    </StackPanel>
+                <StackPanel Grid.Row="1" Margin="0,40,0,0">
+                    <TextBlock Text="Deterministic statistics and manuscript-ready reports."
+                               FontSize="34"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource TextBrush}"
+                               TextWrapping="Wrap"
+                               LineHeight="44"
+                               Margin="0,0,30,14"/>
+
+                    <TextBlock Text="A private Windows workspace for researchers — import your data, run recommended analyses, generate journal-ready reports, and keep your research data on your device."
+                               FontSize="14.5"
+                               Foreground="{StaticResource MutedBrush}"
+                               TextWrapping="Wrap"
+                               LineHeight="22"
+                               Margin="0,0,64,0"/>
                 </StackPanel>
 
-                <TextBlock Text="Deterministic statistics and manuscript-ready reports."
-                           FontSize="29"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource TextBrush}"
-                           TextWrapping="Wrap"
-                           LineHeight="37"
-                           Margin="0,0,34,12"/>
-
-                <TextBlock Text="A private Windows workspace for researchers: import data, run recommended analyses, and generate journal-ready Methods, Results, and reports — your data stays on your device."
-                           FontSize="14"
-                           Foreground="{StaticResource MutedBrush}"
-                           TextWrapping="Wrap"
-                           LineHeight="21"
-                           Margin="0,0,54,16"/>
-
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,54,14" Padding="16">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="78"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Border Background="{StaticResource PrimarySoftBrush}" CornerRadius="15" Width="58" Height="58">
-                            <Path Data="{StaticResource IconStudy}"
-                                  Fill="{StaticResource PrimaryBrush}"
-                                  Width="30"
-                                  Height="30"
-                                  Stretch="Uniform"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"/>
-                        </Border>
-
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="From data to manuscript" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="Import a CSV, review variables, run the recommended tests, and export clean Methods &amp; Results."
-                                       TextWrapping="Wrap"
-                                       Foreground="{StaticResource MutedBrush}"
-                                       Margin="0,6,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <UniformGrid Columns="2" Margin="0,0,54,0">
-                    <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,10,10">
-                        <StackPanel>
-                            <Border Background="{StaticResource PrimarySoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
-                                <Path Data="{StaticResource IconDecks}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Deterministic" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Reproducible statistics." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+                <!-- Login hero — real PNG asset (Assets/Brand/orbitlab-login-hero.png) with safe fallback until placed -->
+                <Grid Grid.Row="2" Margin="0,20,34,0">
+                    <Image x:Name="LoginHeroImage" Stretch="Uniform" MaxHeight="480"
+                           HorizontalAlignment="Left" VerticalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality" Visibility="Collapsed"/>
+                    <Border x:Name="LoginHeroFallback" CornerRadius="24" SnapsToDevicePixels="True" MaxHeight="280">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#EFEFFF" Offset="0"/>
+                                <GradientStop Color="#F6F1FF" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="Hero illustration" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Place Assets/Brand/orbitlab-login-hero.png" FontSize="12" Foreground="{StaticResource SoftMutedBrush}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
+                </Grid>
 
-                    <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,0,10">
-                        <StackPanel>
-                            <Border Background="{StaticResource PrimarySoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
-                                <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Report Builder" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Manuscript-ready drafts." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource SoftCardBorder}" Margin="0,0,10,0">
-                        <StackPanel>
-                            <Border Background="{StaticResource WarningSoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
-                                <Path Data="{StaticResource IconFire}" Fill="{StaticResource WarningBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Local-first" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="Your data stays on device." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource SoftCardBorder}">
-                        <StackPanel>
-                            <Border Background="{StaticResource PrimarySoftBrush}" Width="40" Height="40" CornerRadius="11" HorizontalAlignment="Left">
-                                <Path Data="{StaticResource IconExport}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Exports" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,10,0,2"/>
-                            <TextBlock Text="DOCX, PDF, and more." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
-                </UniformGrid>
-
-            </StackPanel>
+            </Grid>
 
             <!-- AUTH CARD -->
             <Border x:Name="AuthCard"
                     Grid.Column="1"
                     Style="{StaticResource CardBorder}"
-                    MaxWidth="560"
+                    CornerRadius="22"
+                    MaxWidth="620"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Padding="34">
+                    VerticalAlignment="Stretch"
+                    Margin="0,2"
+                    Padding="28,26">
 
-                <TabControl x:Name="AuthTabs" Margin="0,14,0,0">
-                    <TabItem Header="Login">
-                        <StackPanel Margin="10,14,10,10">
+                <TabControl x:Name="AuthTabs" Style="{StaticResource AuthTabControlStyle}">
+                    <TabItem Header="Login" Style="{StaticResource AuthTabItemStyle}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="24,8,24,6">
 
-                            <StackPanel HorizontalAlignment="Center" Margin="0,8,0,28">
-                                <Border Width="68" Height="68" Background="{StaticResource PrimarySoftBrush}" CornerRadius="20" HorizontalAlignment="Center">
-                                    <Path Data="{StaticResource IconBolt}" Fill="{StaticResource PrimaryBrush}" Width="34" Height="34" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
+                            <StackPanel HorizontalAlignment="Center" Margin="0,24,0,30">
+                                <Image x:Name="AuthCardLogoImage"
+                                       MaxHeight="104"
+                                       Stretch="Uniform"
+                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                       Visibility="Collapsed"/>
 
                                 <TextBlock Text="Welcome back"
-                                           FontSize="28"
+                                           FontSize="30"
                                            FontWeight="Bold"
                                            Foreground="{StaticResource TextBrush}"
                                            HorizontalAlignment="Center"
-                                           Margin="0,16,0,4"/>
+                                           Margin="0,14,0,6"/>
 
                                 <TextBlock Text="Sign in to continue to OrbitLab by StarshipAI."
                                            FontSize="14"
@@ -204,23 +230,21 @@
                                 </Grid>
                             </Border>
                         </StackPanel>
+                        </ScrollViewer>
                     </TabItem>
 
-                    <TabItem Header="Create Account">
+                    <TabItem Header="Create Account" Style="{StaticResource AuthTabItemStyle}">
                         <!-- Phase 3A: OrbitLab Commercial Beta onboarding form (UI/stub only; new fields not persisted yet). -->
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="560" Margin="0,4,0,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,0,0">
                         <StackPanel Margin="10,10,16,10">
 
-                            <StackPanel HorizontalAlignment="Center" Margin="0,2,0,16">
-                                <Border Width="60" Height="60" Background="{StaticResource SuccessSoftBrush}" CornerRadius="18" HorizontalAlignment="Center">
-                                    <Path Data="{StaticResource IconAccount}"
-                                          Fill="{StaticResource SuccessBrush}"
-                                          Width="30"
-                                          Height="30"
-                                          Stretch="Uniform"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
-                                </Border>
+                            <StackPanel HorizontalAlignment="Center" Margin="0,6,0,16">
+                                <Image x:Name="SignupLogoImage"
+                                       MaxHeight="84"
+                                       Stretch="Uniform"
+                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                       HorizontalAlignment="Center"
+                                       Visibility="Collapsed"/>
 
                                 <TextBlock Text="Create your OrbitLab account"
                                            FontSize="24"
@@ -1840,7 +1864,7 @@
                                                 <TextBlock Text="Plan" Foreground="{StaticResource MutedBrush}" FontSize="12.5" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="1" Text="Commercial Beta" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="12.5" HorizontalAlignment="Right"/>
                                             </Grid>
-                                            <TextBlock Text="Your email and activation details are shown in Account details below." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                                            <TextBlock Text="Your email and activation code are shown in Local activation below." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,14,0,0"/>
                                         </StackPanel>
                                     </Border>
 
@@ -1880,8 +1904,8 @@
                                             </Border>
 
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Subscription details" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Local demo activation — backend login comes later." Style="{StaticResource Caption}"/>
+                                                <TextBlock Text="Local activation (beta stub)" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Design-review stub. Real activation and license validation arrive with the backend." Style="{StaticResource Caption}"/>
                                             </StackPanel>
                                         </StackPanel>
 
@@ -1908,7 +1932,7 @@
 
                                             <Border Grid.Column="2" Background="{StaticResource InfoSoftBrush}" CornerRadius="12" Padding="16,14">
                                                 <StackPanel>
-                                                    <TextBlock Text="EXPIRES" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
+                                                    <TextBlock Text="STATUS" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="Bold"/>
                                                     <TextBlock x:Name="AccountExpiryText" Foreground="{StaticResource InfoBrush}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                                 </StackPanel>
                                             </Border>
@@ -1921,7 +1945,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox x:Name="ApplyCodeBox" Height="48" Margin="0,0,12,0"
-                                                     local:Watermark.Text="Enter a new activation code (e.g. FLASH-YEAR-2026)"/>
+                                                     local:Watermark.Text="Enter an activation code (local stub)"/>
                                             <Button Grid.Column="1" Content="Apply Code" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="ApplyCode_Click" Width="130"/>
                                         </Grid>
 
