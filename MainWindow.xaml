@@ -3647,7 +3647,11 @@
                                             <Button x:Name="RptExportMdBtn" Style="{StaticResource SoftButton}" Content="Export Markdown" MinWidth="140" Margin="0,0,10,6" Click="RptExportMd_Click"/>
                                         </WrapPanel>
 
-                                        <TextBlock x:Name="RptSummary" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        <CheckBox x:Name="RptAppendixCheck" Content="Include full statistical appendix (longer, technical)" Margin="0,2,0,0"
+                                                  Foreground="{StaticResource TextBrush}" FontSize="12.5"
+                                                  Checked="RptAppendix_Changed" Unchecked="RptAppendix_Changed"/>
+
+                                        <TextBlock x:Name="RptSummary" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
                                         <!-- Report preview -->
                                         <Border Background="{StaticResource SoftCardBrush}" CornerRadius="12" Padding="4" Margin="0,14,0,0">

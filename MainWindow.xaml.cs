@@ -2508,8 +2508,21 @@ public sealed partial class MainWindow : Window
                     narratives[row.Id] = ResearchLabNarrativeGenerator.Generate(row.LiveResult, row.IsStale);
         }
 
-        var options = new ResearchLabReportBuilderOptions { CurrentFingerprint = CurrentStatisticsFingerprint(p) };
+        var options = new ResearchLabReportBuilderOptions
+        {
+            CurrentFingerprint = CurrentStatisticsFingerprint(p),
+            Style = RptAppendixCheck.IsChecked == true
+                ? ReportStyle.FullTechnicalAppendix
+                : ReportStyle.ManuscriptSummary
+        };
         return ResearchLabReportBuilder.Build(p, narratives, options);
+    }
+
+    private void RptAppendix_Changed(object sender, RoutedEventArgs e)
+    {
+        // Toggling the appendix option just re-renders the preview from current data.
+        if (CurrentResearchProject() is null) return;
+        RefreshManuscriptTab();
     }
 
     private void RefreshManuscriptTab()
