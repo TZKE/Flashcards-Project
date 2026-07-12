@@ -322,7 +322,7 @@ public sealed partial class MainWindow : Window
         UserSummaryText.Text = GetAccountSummary();
 
         RefreshAll();
-        ShowPage(PageDashboard);
+        ShowPage(PageResearch);   // Phase 2: research-only shell lands on Research Lab (legacy flashcard Dashboard hidden, not deleted)
         SetStatus("Logged in successfully.");
     }
 
