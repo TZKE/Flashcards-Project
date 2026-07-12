@@ -2735,15 +2735,17 @@ public sealed partial class MainWindow : Window
     private void RptExportDocx_Click(object sender, RoutedEventArgs e)
     {
         if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.TextReport)) { ShowToast("Build a report first."); return; }
+        var report = _lastReport;
         SaveReportFile("research_report.docx", "Word document (*.docx)|*.docx",
-            path => ResearchLabDocxExporter.Export(_lastReport.TextReport, path), "Report exported");
+            path => ResearchLabDocxExporter.Export(report, path), "Report exported");
     }
 
     private void RptExportPdf_Click(object sender, RoutedEventArgs e)
     {
         if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.TextReport)) { ShowToast("Build a report first."); return; }
+        var report = _lastReport;
         SaveReportFile("research_report.pdf", "PDF document (*.pdf)|*.pdf",
-            path => ResearchLabPdfExporter.Export(_lastReport.TextReport, path), "Report exported");
+            path => ResearchLabPdfExporter.Export(report, path), "Report exported");
     }
 
     // Binary-safe variant of SaveStatExport for DOCX/PDF: the writer owns the file,

@@ -84,6 +84,51 @@ public sealed class ResearchLabReportBuilderResult
     public int IncludedResultCount { get; set; }
     public int RerunNeededCount { get; set; }
     public int StaleResultCount { get; set; }
+
+    // Structured view of the SAME content as TextReport/MarkdownReport, accumulated
+    // in parallel while composing. Rich exporters (DOCX/PDF) render from this so
+    // they can produce real Word styles/tables and cleaner PDF layout without
+    // parsing the text. Purely additive — it never changes the text/markdown output.
+    public List<ReportBlock> Blocks { get; set; } = new();
+}
+
+public enum ReportBlockKind
+{
+    Heading1, Heading2, Heading3, Paragraph, Note, Callout, KeyValues, Table, BulletList, CodeBlock
+}
+
+// Detects "system" dataset columns that researcher-facing exports (DOCX/PDF)
+// de-emphasize by default. These are metadata/plumbing columns, not privacy leaks
+// (values are already excluded everywhere) — hiding their NAMES just avoids user
+// concern in a manuscript draft. TXT/Markdown keep the full column list.
+public static class ReportExportColumns
+{
+    private static readonly HashSet<string> SystemNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "sample_id", "sample_type", "timestamp", "username"
+    };
+
+    public static bool IsSystem(string? name)
+    {
+        string n = (name ?? "").Trim().Replace(' ', '_');
+        return SystemNames.Contains(n);
+    }
+}
+
+// One structured piece of the report. Exporters interpret Kind + Role.
+//   KeyValues : Rows are 2-element [label, value] pairs; Columns empty.
+//   Table     : Columns is the header; Rows are data rows.
+//   BulletList: Rows are 1-element [item].
+//   CodeBlock : Text is an optional caption; CodeText is the preformatted body.
+//   others    : Text carries the heading/paragraph/note content.
+public sealed class ReportBlock
+{
+    public ReportBlockKind Kind { get; set; }
+    public string Text { get; set; } = "";
+    public string Role { get; set; } = "";
+    public List<string> Columns { get; set; } = new();
+    public List<string[]> Rows { get; set; } = new();
+    public string CodeText { get; set; } = "";
 }
 
 public static class ResearchLabReportBuilder
@@ -215,7 +260,8 @@ public static class ResearchLabReportBuilder
                     Fallback(c.InferredType, "—"),
                     c.UniqueCount.ToString(CultureInfo.InvariantCulture),
                     c.MissingPercent.ToString(CultureInfo.InvariantCulture) + "%"
-                }).ToList());
+                }).ToList(),
+                role: "dataset-columns");
             w.Note("Column metadata only. Example cell values are intentionally excluded so no participant-level data appears in this report.");
         }
 
@@ -239,7 +285,8 @@ public static class ResearchLabReportBuilder
                     Fallback(v.MeasurementLevel, "—"),
                     Fallback(v.Role, "—"),
                     CodingSummary(v)
-                }).ToList());
+                }).ToList(),
+                role: "variables");
         }
 
         // ---- 5. Descriptive statistics summary -------------------------------
@@ -337,6 +384,10 @@ public static class ResearchLabReportBuilder
         }
 
         w.H2("Results");
+        // When several selected results lack manuscript prose, one consolidated note
+        // gives context so the per-result Re-run prompts read less repetitively.
+        if (options.IncludeComputedResults && rerunNeeded >= 2)
+            w.Note("Some older results do not yet have saved manuscript prose. Re-run those analyses once to persist Methods/Results text.");
         if (!options.IncludeComputedResults)
             w.Para("Computed results were excluded from this report.");
         else if (computed.Count == 0)
@@ -434,6 +485,7 @@ public static class ResearchLabReportBuilder
 
         result.TextReport = w.Text;
         result.MarkdownReport = w.Markdown;
+        result.Blocks = w.Blocks;
         return result;
     }
 
@@ -576,12 +628,26 @@ public static class ResearchLabReportBuilder
     {
         private readonly StringBuilder _t = new();
         private readonly StringBuilder _m = new();
+        private readonly List<ReportBlock> _blocks = new();
+        private readonly List<string[]> _kv = new();   // pending consecutive key/values
 
         public string Text => _t.ToString().TrimEnd() + "\n";
         public string Markdown => _m.ToString().TrimEnd() + "\n";
+        public List<ReportBlock> Blocks { get { FlushKv(); return _blocks; } }
+
+        // Consecutive KeyVal calls are grouped into ONE KeyValues block (a 2-column
+        // table for the rich exporters); it is flushed when any other block starts.
+        private void FlushKv()
+        {
+            if (_kv.Count == 0) return;
+            _blocks.Add(new ReportBlock { Kind = ReportBlockKind.KeyValues, Rows = new List<string[]>(_kv) });
+            _kv.Clear();
+        }
+        private void Add(ReportBlock b) { FlushKv(); _blocks.Add(b); }
 
         public void H1(string s)
         {
+            Add(new ReportBlock { Kind = ReportBlockKind.Heading1, Text = s });
             _t.AppendLine(s.ToUpperInvariant());
             _t.AppendLine(new string('=', Math.Max(3, s.Length)));
             _t.AppendLine();
@@ -591,6 +657,7 @@ public static class ResearchLabReportBuilder
 
         public void H2(string s)
         {
+            Add(new ReportBlock { Kind = ReportBlockKind.Heading2, Text = s });
             _t.AppendLine();
             _t.AppendLine(s);
             _t.AppendLine(new string('-', Math.Max(3, s.Length)));
@@ -601,6 +668,7 @@ public static class ResearchLabReportBuilder
 
         public void H3(string s)
         {
+            Add(new ReportBlock { Kind = ReportBlockKind.Heading3, Text = s });
             _t.AppendLine();
             _t.AppendLine(s);
             _m.AppendLine();
@@ -611,6 +679,7 @@ public static class ResearchLabReportBuilder
         public void Para(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return;
+            Add(new ReportBlock { Kind = ReportBlockKind.Paragraph, Text = s.Trim() });
             _t.AppendLine(s.Trim());
             _t.AppendLine();
             _m.AppendLine(s.Trim());
@@ -621,6 +690,7 @@ public static class ResearchLabReportBuilder
         public void Note(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return;
+            Add(new ReportBlock { Kind = ReportBlockKind.Note, Text = s.Trim() });
             _t.AppendLine("> " + s.Trim());
             _t.AppendLine();
             _m.AppendLine("> " + s.Trim());
@@ -631,6 +701,7 @@ public static class ResearchLabReportBuilder
         public void Callout(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return;
+            Add(new ReportBlock { Kind = ReportBlockKind.Callout, Text = s.Trim() });
             _t.AppendLine("!! " + s.Trim());
             _t.AppendLine();
             _m.AppendLine("> **⚠ " + s.Trim() + "**");
@@ -639,17 +710,19 @@ public static class ResearchLabReportBuilder
 
         public void KeyVal(string label, string value)
         {
+            _kv.Add(new[] { label, value });
             _t.AppendLine($"{label,-18}: {value}");
             _m.AppendLine($"- **{label}:** {value}");
         }
 
         public void BulletList(IEnumerable<string> items)
         {
-            foreach (var it in items)
+            var list = items.Where(it => !string.IsNullOrWhiteSpace(it)).Select(it => new[] { it.Trim() }).ToList();
+            if (list.Count > 0) Add(new ReportBlock { Kind = ReportBlockKind.BulletList, Rows = list });
+            foreach (var it in list)
             {
-                if (string.IsNullOrWhiteSpace(it)) continue;
-                _t.AppendLine("  - " + it.Trim());
-                _m.AppendLine("- " + it.Trim());
+                _t.AppendLine("  - " + it[0]);
+                _m.AppendLine("- " + it[0]);
             }
             _t.AppendLine();
             _m.AppendLine();
@@ -661,9 +734,17 @@ public static class ResearchLabReportBuilder
             _m.AppendLine();
         }
 
-        // TXT: fixed-width aligned table. MD: pipe table.
-        public void Table(IReadOnlyList<string> headers, List<string[]> rows)
+        // TXT: fixed-width aligned table. MD: pipe table. role tags the block for the
+        // rich exporters (e.g. "dataset-columns" so they can de-emphasize system cols).
+        public void Table(IReadOnlyList<string> headers, List<string[]> rows, string role = "")
         {
+            Add(new ReportBlock
+            {
+                Kind = ReportBlockKind.Table,
+                Role = role,
+                Columns = headers.ToList(),
+                Rows = rows.Select(r => (string[])r.Clone()).ToList()
+            });
             int cols = headers.Count;
             var widths = new int[cols];
             for (int c = 0; c < cols; c++) widths[c] = headers[c].Length;
@@ -691,6 +772,15 @@ public static class ResearchLabReportBuilder
         // can keep the engine's own plain-text rendering instead of duplicating).
         public void MarkdownOnlyTable(StatisticsOutputTable tbl)
         {
+            if (tbl.Columns.Count > 0)
+                Add(new ReportBlock
+                {
+                    Kind = ReportBlockKind.Table,
+                    Role = "descriptive",
+                    Text = tbl.Title?.Trim() ?? "",
+                    Columns = tbl.Columns.ToList(),
+                    Rows = tbl.Rows.Select(r => r.Cells.ToArray()).ToList()
+                });
             if (!string.IsNullOrWhiteSpace(tbl.Title)) _m.AppendLine("**" + tbl.Title.Trim() + "**\n");
             if (tbl.Columns.Count == 0) return;
             _m.AppendLine("| " + string.Join(" | ", tbl.Columns.Select(MdCell)) + " |");
@@ -713,6 +803,7 @@ public static class ResearchLabReportBuilder
         public void CodeBlock(string caption, string body)
         {
             if (string.IsNullOrWhiteSpace(body)) return;
+            Add(new ReportBlock { Kind = ReportBlockKind.CodeBlock, Text = caption ?? "", CodeText = body.TrimEnd() });
             if (!string.IsNullOrWhiteSpace(caption))
             {
                 _t.AppendLine(caption + ":");
