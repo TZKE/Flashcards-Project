@@ -3623,18 +3623,41 @@
 
                                 <!-- MANUSCRIPT -->
                                 <Border x:Name="TabManuscript" Style="{StaticResource CardBorder}" Padding="30" Visibility="Collapsed" VerticalAlignment="Top">
-                                    <StackPanel MaxWidth="760">
+                                    <StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
                                                 <Path Data="{StaticResource IconBook}" Fill="{StaticResource PrimaryBrush}" Width="22" Height="22" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Manuscript" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Coming in the next phase" Style="{StaticResource Caption}"/>
+                                                <TextBlock Text="Report Builder" Style="{StaticResource SectionHeader}"/>
+                                                <TextBlock Text="Deterministic, local, no AI — a manuscript-style draft assembled from this project's aggregate data." Style="{StaticResource Caption}"/>
                                             </StackPanel>
                                         </StackPanel>
-                                        <TextBlock Text="Manuscript writer will draft sections from real project data, real results, and user-provided references."
-                                                   Foreground="{StaticResource MutedBrush}" FontSize="14" TextWrapping="Wrap" Margin="0,18,0,0"/>
+
+                                        <!-- Stale warning banner (shown only when included content may be stale) -->
+                                        <Border x:Name="RptStaleBanner" Background="{StaticResource WarningSoftBrush}" CornerRadius="10" Padding="14,11" Margin="0,18,0,0" Visibility="Collapsed">
+                                            <TextBlock x:Name="RptStaleText" Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                        </Border>
+
+                                        <!-- Actions -->
+                                        <WrapPanel Margin="0,18,0,0">
+                                            <Button x:Name="RptRebuildBtn" Style="{StaticResource PremiumButton}" Content="Rebuild report" MinWidth="150" Margin="0,0,10,6" Click="RptRebuild_Click"/>
+                                            <Button x:Name="RptCopyBtn" Style="{StaticResource SoftButton}" Content="Copy report" MinWidth="130" Margin="0,0,10,6" Click="RptCopy_Click"/>
+                                            <Button x:Name="RptExportTxtBtn" Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="120" Margin="0,0,10,6" Click="RptExportTxt_Click"/>
+                                            <Button x:Name="RptExportMdBtn" Style="{StaticResource SoftButton}" Content="Export Markdown" MinWidth="140" Margin="0,0,10,6" Click="RptExportMd_Click"/>
+                                        </WrapPanel>
+
+                                        <TextBlock x:Name="RptSummary" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                                        <!-- Report preview -->
+                                        <Border Background="{StaticResource SoftCardBrush}" CornerRadius="12" Padding="4" Margin="0,14,0,0">
+                                            <TextBox x:Name="RptPreview" IsReadOnly="True" TextWrapping="NoWrap"
+                                                     FontFamily="Consolas" FontSize="12.5"
+                                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                                     BorderThickness="0" Background="Transparent" Foreground="{StaticResource TextBrush}"
+                                                     MinHeight="360" MaxHeight="600" Padding="12"
+                                                     Text="Open the Manuscript tab to build a report draft from this project's data."/>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
 

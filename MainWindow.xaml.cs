@@ -2473,6 +2473,96 @@ public sealed partial class MainWindow : Window
         // Statistics always opens on its default Descriptive view.
         if (ReferenceEquals(active, SegStats)) { SetRecommendedView(false); RefreshStatisticsTab(); }
         if (ReferenceEquals(active, SegResults)) RefreshResultsTab();
+
+        // Report Builder rebuilds its draft from the CURRENT project state every
+        // time the Manuscript tab opens, so it always reflects the latest data,
+        // descriptive stats, and computed results.
+        if (ReferenceEquals(active, SegManuscript)) RefreshManuscriptTab();
+    }
+
+    // =====================================================================
+    // Report Builder (Manuscript tab) — deterministic, local, aggregate-only.
+    // Assembles project metadata, extraction variables, dataset summary,
+    // descriptive statistics, and computed results (plus current-session
+    // manuscript narratives where a live typed result is available) into a
+    // TXT/Markdown draft via the headless ResearchLabReportBuilder. No AI, no
+    // network, no new statistics — it only arranges already-computed values.
+    // =====================================================================
+    private ResearchLabReportBuilderResult? _lastReport;
+
+    // Builds the report for the open project, supplying manuscript narratives for
+    // any current-session computed rows that still carry a live typed result
+    // (keyed by row Id, which equals the saved result Id via ToSaved/FromSaved).
+    // Rows reloaded from disk after a restart have no LiveResult, so those results
+    // fall back to the Re-run prompt inside the composer.
+    private ResearchLabReportBuilderResult? BuildCurrentReport()
+    {
+        var p = CurrentResearchProject();
+        if (p is null) return null;
+
+        var narratives = new Dictionary<string, ResearchLabNarrativeResult>();
+        if (_computedResultsProjectId == p.Id)
+        {
+            foreach (var row in _computedRows)
+                if (row.LiveResult is not null)
+                    narratives[row.Id] = ResearchLabNarrativeGenerator.Generate(row.LiveResult, row.IsStale);
+        }
+
+        var options = new ResearchLabReportBuilderOptions { CurrentFingerprint = CurrentStatisticsFingerprint(p) };
+        return ResearchLabReportBuilder.Build(p, narratives, options);
+    }
+
+    private void RefreshManuscriptTab()
+    {
+        var report = BuildCurrentReport();
+        _lastReport = report;
+
+        if (report is null)
+        {
+            RptPreview.Text = "Open a research project to build a report.";
+            RptStaleBanner.Visibility = Visibility.Collapsed;
+            RptSummary.Text = "";
+            return;
+        }
+
+        RptPreview.Text = report.TextReport;
+        RptSummary.Text =
+            $"{report.IncludedResultCount} computed result(s) included · "
+            + $"{report.RerunNeededCount} need a Re-run for manuscript text · "
+            + $"{report.StaleResultCount} stale.";
+
+        bool stale = report.StaleResultCount > 0;
+        RptStaleBanner.Visibility = stale ? Visibility.Visible : Visibility.Collapsed;
+        if (stale)
+            RptStaleText.Text =
+                "Some included content may be stale because the dataset or extraction sheet "
+                + "changed after it was computed. Re-run the affected analyses before using this draft.";
+    }
+
+    private void RptRebuild_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentResearchProject() is null) { ShowToast("Open a project first."); return; }
+        RefreshManuscriptTab();
+        ShowToast("Report rebuilt from current project data (deterministic, no AI).");
+    }
+
+    private void RptCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.TextReport)) { ShowToast("Build a report first."); return; }
+        try { Clipboard.SetText(_lastReport.TextReport); ShowToast("Report copied to the clipboard."); }
+        catch { ShowToast("The report could not be copied. Please try again."); }
+    }
+
+    private void RptExportTxt_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.TextReport)) { ShowToast("Build a report first."); return; }
+        SaveStatExport("research_report.txt", "Text files (*.txt)|*.txt", _lastReport.TextReport, "Report exported");
+    }
+
+    private void RptExportMd_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.MarkdownReport)) { ShowToast("Build a report first."); return; }
+        SaveStatExport("research_report.md", "Markdown files (*.md)|*.md|Text files (*.txt)|*.txt", _lastReport.MarkdownReport, "Report exported");
     }
 
     private void SaveDashNotes_Click(object sender, RoutedEventArgs e)
