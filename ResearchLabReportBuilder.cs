@@ -56,6 +56,15 @@ public sealed class ResearchLabReportBuilderOptions
 
     public bool IncludeDescriptiveStatistics { get; set; } = true;
     public bool IncludeComputedResults { get; set; } = true;
+
+    // Include/exclude selection for computed results (Slice 2b).
+    //   null  → include ALL computed results (back-compatible default).
+    //   set   → include only results whose SavedComputedResult.Id is in the set.
+    //   empty → include NO computed results (the report still renders and says so).
+    // A result with a blank Id cannot be reliably targeted, so it is always kept.
+    // This never mutates the project or its persisted results — it only filters
+    // which results the composer reads.
+    public IReadOnlySet<string>? IncludedComputedResultIds { get; set; }
 }
 
 public sealed class ResearchLabReportBuilderResult
@@ -111,9 +120,15 @@ public static class ResearchLabReportBuilder
 
         // ---- Report-level stale banner (kept near the top for visibility) -----
         bool descStale = project.DescriptiveStatistics is { } dr && IsStale(dr.SourceFingerprint, curFp);
-        var computed = options.IncludeComputedResults
+        var allComputed = options.IncludeComputedResults
             ? (project.ComputedResults ?? new List<SavedComputedResult>())
             : new List<SavedComputedResult>();
+        int totalComputedInProject = allComputed.Count;
+        // Include/exclude selection: null = include all; otherwise keep only selected
+        // ids. A blank-Id result cannot be reliably deselected, so it is always kept.
+        var computed = options.IncludedComputedResultIds is { } sel
+            ? allComputed.Where(r => string.IsNullOrEmpty(r.Id) || sel.Contains(r.Id)).ToList()
+            : allComputed.ToList();
         int staleResults = computed.Count(r => IsStale(r.AnalysisFingerprint, curFp));
         result.StaleResultCount = staleResults;
         bool anyStale = descStale || staleResults > 0;
@@ -291,7 +306,9 @@ public static class ResearchLabReportBuilder
         if (!options.IncludeComputedResults)
             w.Para("Computed results were excluded from this report.");
         else if (computed.Count == 0)
-            w.Para("Run analyses to include computed results.");
+            w.Para(totalComputedInProject == 0
+                ? "Run analyses to include computed results."
+                : "No computed results were selected for this report.");
         else if (appendix)
         {
             // Detailed, per-result methods prose (or a Re-run prompt).
@@ -323,7 +340,9 @@ public static class ResearchLabReportBuilder
         if (!options.IncludeComputedResults)
             w.Para("Computed results were excluded from this report.");
         else if (computed.Count == 0)
-            w.Para("Run analyses to include computed results.");
+            w.Para(totalComputedInProject == 0
+                ? "Run analyses to include computed results."
+                : "No computed results were selected for this report.");
         else if (appendix)
         {
             foreach (var r in computed)

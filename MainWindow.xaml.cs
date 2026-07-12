@@ -2490,6 +2490,29 @@ public sealed partial class MainWindow : Window
     // =====================================================================
     private ResearchLabReportBuilderResult? _lastReport;
 
+    // Include/exclude selection state for the computed-results checklist. Session-
+    // and project-scoped: selections persist while the app stays open on the same
+    // project; opening a different project resets to "all included". A new result
+    // is included by default unless the user has explicitly cleared all.
+    private readonly System.Collections.ObjectModel.ObservableCollection<ReportResultChoice> _reportChoices = new();
+    private string? _reportChoicesProjectId;
+    private bool _reportClearedAll;
+
+    // Display/selection model for one computed result in the Manuscript checklist.
+    // No participant data — only the aggregate display fields already on the row.
+    public sealed class ReportResultChoice : System.ComponentModel.INotifyPropertyChanged
+    {
+        public string Id { get; set; } = "";
+        private bool _isIncluded = true;
+        public bool IsIncluded { get => _isIncluded; set { if (_isIncluded != value) { _isIncluded = value; OnPc(nameof(IsIncluded)); } } }
+        private string _title = "";
+        public string Title { get => _title; set { if (_title != value) { _title = value; OnPc(nameof(Title)); } } }
+        private string _detail = "";
+        public string Detail { get => _detail; set { if (_detail != value) { _detail = value; OnPc(nameof(Detail)); } } }
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        private void OnPc(string n) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(n));
+    }
+
     // Builds the report for the open project, supplying manuscript narratives for
     // any current-session computed rows that still carry a live typed result
     // (keyed by row Id, which equals the saved result Id via ToSaved/FromSaved).
@@ -2513,7 +2536,10 @@ public sealed partial class MainWindow : Window
             CurrentFingerprint = CurrentStatisticsFingerprint(p),
             Style = RptAppendixCheck.IsChecked == true
                 ? ReportStyle.FullTechnicalAppendix
-                : ReportStyle.ManuscriptSummary
+                : ReportStyle.ManuscriptSummary,
+            // Only the checked results appear. SyncReportChoices always runs before
+            // this (in RefreshManuscriptTab), so _reportChoices reflects the project.
+            IncludedComputedResultIds = _reportChoices.Where(c => c.IsIncluded).Select(c => c.Id).ToHashSet(StringComparer.Ordinal)
         };
         return ResearchLabReportBuilder.Build(p, narratives, options);
     }
@@ -2525,24 +2551,127 @@ public sealed partial class MainWindow : Window
         RefreshManuscriptTab();
     }
 
+    // Sets the preview text and resets the scroll/caret to the very top so a
+    // rebuilt report never appears mid-scroll. Does not steal focus.
+    private void SetReportPreview(string text)
+    {
+        RptPreview.Text = text;
+        RptPreview.CaretIndex = 0;
+        RptPreview.ScrollToHome();
+        // A later layout pass can restore the previous offset; scroll home again
+        // once layout settles (Background priority — after render, no focus change).
+        Dispatcher.BeginInvoke(new Action(() => RptPreview.ScrollToHome()),
+            System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    // Reconciles the checklist with the project's computed results, preserving the
+    // user's prior include/exclude choices by result Id. New results are included by
+    // default unless the user has cleared all. Never mutates the project.
+    private void SyncReportChoices(ResearchProject p)
+    {
+        var saved = p.ComputedResults ?? new List<SavedComputedResult>();
+        if (_reportChoicesProjectId != p.Id)
+        {
+            _reportChoices.Clear();
+            _reportChoicesProjectId = p.Id;
+            _reportClearedAll = false;
+        }
+
+        string curFp = CurrentStatisticsFingerprint(p);
+        var liveIds = _computedResultsProjectId == p.Id
+            ? _computedRows.Where(r => r.LiveResult is not null).Select(r => r.Id).ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+
+        bool idsChanged = !saved.Select(s => s.Id).SequenceEqual(_reportChoices.Select(c => c.Id));
+        if (idsChanged)
+        {
+            var prior = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var c in _reportChoices) prior[c.Id] = c.IsIncluded;
+            _reportChoices.Clear();
+            foreach (var s in saved)
+            {
+                bool included = prior.TryGetValue(s.Id, out var was) ? was : !_reportClearedAll;
+                _reportChoices.Add(new ReportResultChoice
+                {
+                    Id = s.Id,
+                    Title = ReportChoiceTitle(s),
+                    Detail = ReportChoiceDetail(s, IsResultStale(s, curFp), !liveIds.Contains(s.Id)),
+                    IsIncluded = included
+                });
+            }
+        }
+        else
+        {
+            // Same results — refresh the display detail only (stale/re-run may change).
+            foreach (var c in _reportChoices)
+            {
+                var s = saved.First(x => x.Id == c.Id);
+                c.Title = ReportChoiceTitle(s);
+                c.Detail = ReportChoiceDetail(s, IsResultStale(s, curFp), !liveIds.Contains(s.Id));
+            }
+        }
+
+        if (!ReferenceEquals(RptResultsList.ItemsSource, _reportChoices))
+            RptResultsList.ItemsSource = _reportChoices;
+        bool any = _reportChoices.Count > 0;
+        RptResultsEmpty.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        RptResultsList.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static bool IsResultStale(SavedComputedResult s, string currentFingerprint)
+        => string.IsNullOrEmpty(s.AnalysisFingerprint)
+           || !string.Equals(s.AnalysisFingerprint, currentFingerprint, StringComparison.Ordinal);
+
+    private static string ReportChoiceTitle(SavedComputedResult s)
+        => string.IsNullOrWhiteSpace(s.TestName)
+            ? (string.IsNullOrWhiteSpace(s.Variables) ? "Result" : s.Variables.Trim())
+            : s.TestName.Trim();
+
+    private static string ReportChoiceDetail(SavedComputedResult s, bool stale, bool rerunNeeded)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(s.Variables)) parts.Add(s.Variables.Trim());
+        if (!string.IsNullOrWhiteSpace(s.ValidNDisplay)) parts.Add(s.ValidNDisplay.Trim());
+        if (!string.IsNullOrWhiteSpace(s.EffectDisplay)) parts.Add(s.EffectDisplay.Trim());
+        if (!string.IsNullOrWhiteSpace(s.PValueDisplay)) parts.Add(s.PValueDisplay.Trim());
+        if (!string.IsNullOrWhiteSpace(s.SignificanceText)) parts.Add(s.SignificanceText.Trim());
+        if (stale) parts.Add("stale");
+        if (rerunNeeded) parts.Add("re-run needed for manuscript text");
+        return string.Join("  ·  ", parts);
+    }
+
     private void RefreshManuscriptTab()
     {
-        var report = BuildCurrentReport();
-        _lastReport = report;
-
-        if (report is null)
+        var p = CurrentResearchProject();
+        if (p is null)
         {
-            RptPreview.Text = "Open a research project to build a report.";
-            RptStaleBanner.Visibility = Visibility.Collapsed;
+            _lastReport = null;
+            _reportChoices.Clear();
+            RptResultsEmpty.Visibility = Visibility.Visible;
+            RptResultsList.Visibility = Visibility.Collapsed;
+            RptInclSummary.Text = "";
             RptSummary.Text = "";
+            RptStaleBanner.Visibility = Visibility.Collapsed;
+            SetReportPreview("Open a research project to build a report.");
             return;
         }
 
-        RptPreview.Text = report.TextReport;
+        SyncReportChoices(p);
+        var report = BuildCurrentReport();
+        _lastReport = report;
+        if (report is null) { SetReportPreview("Open a research project to build a report."); return; }
+
+        SetReportPreview(report.TextReport);
         RptSummary.Text =
-            $"{report.IncludedResultCount} computed result(s) included · "
+            $"{report.IncludedResultCount} result(s) in report · "
             + $"{report.RerunNeededCount} need a Re-run for manuscript text · "
             + $"{report.StaleResultCount} stale.";
+
+        int total = _reportChoices.Count;
+        int incl = _reportChoices.Count(c => c.IsIncluded);
+        RptInclSummary.Text = total == 0
+            ? "No computed results yet."
+            : $"{total} computed result(s) · {incl} included";
 
         bool stale = report.StaleResultCount > 0;
         RptStaleBanner.Visibility = stale ? Visibility.Visible : Visibility.Collapsed;
@@ -2550,6 +2679,31 @@ public sealed partial class MainWindow : Window
             RptStaleText.Text =
                 "Some included content may be stale because the dataset or extraction sheet "
                 + "changed after it was computed. Re-run the affected analyses before using this draft.";
+    }
+
+    private void ReportChoice_Toggled(object sender, RoutedEventArgs e)
+    {
+        // The TwoWay binding already updated the model; a manual selection means new
+        // results should again default to included. Rebuild the preview to match.
+        if (CurrentResearchProject() is null) return;
+        _reportClearedAll = false;
+        RefreshManuscriptTab();
+    }
+
+    private void RptIncludeAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentResearchProject() is null) return;
+        _reportClearedAll = false;
+        foreach (var c in _reportChoices) c.IsIncluded = true;
+        RefreshManuscriptTab();
+    }
+
+    private void RptClearAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentResearchProject() is null) return;
+        _reportClearedAll = true;
+        foreach (var c in _reportChoices) c.IsIncluded = false;
+        RefreshManuscriptTab();
     }
 
     private void RptRebuild_Click(object sender, RoutedEventArgs e)

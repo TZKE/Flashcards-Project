@@ -3653,6 +3653,42 @@
 
                                         <TextBlock x:Name="RptSummary" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
+                                        <!-- Included results selection -->
+                                        <Grid Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="Included results" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" FontSize="13"/>
+                                                <TextBlock x:Name="RptInclSummary" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button x:Name="RptIncludeAllBtn" Style="{StaticResource SoftButton}" Content="Include all" MinWidth="100" Margin="0,0,8,0" Click="RptIncludeAll_Click"/>
+                                                <Button x:Name="RptClearAllBtn" Style="{StaticResource SoftButton}" Content="Clear all" MinWidth="90" Click="RptClearAll_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <TextBlock x:Name="RptResultsEmpty" Visibility="Collapsed" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"
+                                                   Text="No computed results yet. Run analyses to include results in the report."/>
+
+                                        <Border x:Name="RptResultsBox" Background="{StaticResource SoftCardBrush}" CornerRadius="10" Padding="6" Margin="0,8,0,0" MaxHeight="200">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                <ItemsControl x:Name="RptResultsList">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsIncluded, Mode=TwoWay}" Click="ReportChoice_Toggled" Margin="4,3" VerticalContentAlignment="Center">
+                                                                <StackPanel Margin="6,0,0,0">
+                                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                                    <TextBlock Text="{Binding Detail}" Foreground="{StaticResource MutedBrush}" FontSize="11.5" TextWrapping="Wrap"/>
+                                                                </StackPanel>
+                                                            </CheckBox>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Border>
+
                                         <!-- Report preview -->
                                         <Border Background="{StaticResource SoftCardBrush}" CornerRadius="12" Padding="4" Margin="0,14,0,0">
                                             <TextBox x:Name="RptPreview" IsReadOnly="True" TextWrapping="NoWrap"
