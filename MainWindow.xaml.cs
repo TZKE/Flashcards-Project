@@ -2732,6 +2732,45 @@ public sealed partial class MainWindow : Window
         SaveStatExport("research_report.md", "Markdown files (*.md)|*.md|Text files (*.txt)|*.txt", _lastReport.MarkdownReport, "Report exported");
     }
 
+    private void RptExportDocx_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.TextReport)) { ShowToast("Build a report first."); return; }
+        SaveReportFile("research_report.docx", "Word document (*.docx)|*.docx",
+            path => ResearchLabDocxExporter.Export(_lastReport.TextReport, path), "Report exported");
+    }
+
+    private void RptExportPdf_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastReport is null || string.IsNullOrWhiteSpace(_lastReport.TextReport)) { ShowToast("Build a report first."); return; }
+        SaveReportFile("research_report.pdf", "PDF document (*.pdf)|*.pdf",
+            path => ResearchLabPdfExporter.Export(_lastReport.TextReport, path), "Report exported");
+    }
+
+    // Binary-safe variant of SaveStatExport for DOCX/PDF: the writer owns the file,
+    // so we only supply the path and let the exporter produce the bytes.
+    private void SaveReportFile(string defaultName, string filter, Action<string> write, string successVerb)
+    {
+        try
+        {
+            var sfd = new SaveFileDialog { FileName = defaultName, Filter = filter, AddExtension = true };
+            if (sfd.ShowDialog() != true) return;
+            write(sfd.FileName);
+            ShowToast($"{successVerb} to {Path.GetFileName(sfd.FileName)}.");
+        }
+        catch (IOException)
+        {
+            ShowToast("The file could not be saved. It may be open in another program — close it and try again.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ShowToast("The file could not be saved to that location. Choose a different folder and try again.");
+        }
+        catch
+        {
+            ShowToast("The export could not be completed. Please try a different location.");
+        }
+    }
+
     private void SaveDashNotes_Click(object sender, RoutedEventArgs e)
     {
         var project = _researchData.Projects.FirstOrDefault(p => p.Id == _openResearchId);
@@ -7724,6 +7763,12 @@ public sealed partial class MainWindow : Window
         [System.Text.Json.Serialization.JsonIgnore]
         public IInferenceExportable? LiveResult { get; set; }
 
+        // Persisted deterministic manuscript narrative (Phase: narrative
+        // persistence). Generated at compute time from LiveResult and carried
+        // through ToSaved/FromSaved so Report Builder can show Methods/Results
+        // after a restart without a Re-run. Null for older saved results.
+        public SavedNarrative? Narrative { get; set; }
+
         // Phase 4C Slice 3 — set once per Computed Results render by comparing
         // AnalysisFingerprint against the CURRENT project fingerprint (computed
         // once per render, not per card). Never recomputed by a getter, so
@@ -8237,6 +8282,34 @@ public sealed partial class MainWindow : Window
             row.SignificanceText = "Needs review";
             row.SignificanceKind = "Muted";
         }
+
+        // Narrative persistence: capture the deterministic manuscript narrative now,
+        // from the live typed result, so it survives a restart. Never fails the
+        // statistic — on any error we simply store no narrative and the report keeps
+        // its Re-run fallback. Aggregate-only, no AI (generator invariant).
+        try
+        {
+            var nar = ResearchLabNarrativeGenerator.Generate(result, isStale: false);
+            if (nar is not null && !(string.IsNullOrWhiteSpace(nar.MethodsText)
+                                     && string.IsNullOrWhiteSpace(nar.ResultsText)
+                                     && string.IsNullOrWhiteSpace(nar.NotesText)))
+            {
+                row.Narrative = new SavedNarrative
+                {
+                    Title = nar.Title,
+                    MethodsText = nar.MethodsText,
+                    ResultsText = nar.ResultsText,
+                    NotesText = nar.NotesText,
+                    GeneratedAt = DateTime.UtcNow,
+                    SourceFingerprint = row.AnalysisFingerprint,
+                    IsDeterministic = nar.IsDeterministic,
+                    AiUsed = nar.AiUsed
+                };
+            }
+            else row.Narrative = null;
+        }
+        catch { row.Narrative = null; }
+
         return row;
     }
 
@@ -8308,7 +8381,8 @@ public sealed partial class MainWindow : Window
         FullPlainText = row.FullPlainText,
         CsvText = row.CsvText,
         ComputedAt = row.ComputedAt,
-        AnalysisFingerprint = row.AnalysisFingerprint
+        AnalysisFingerprint = row.AnalysisFingerprint,
+        Narrative = row.Narrative
     };
 
     private static ComputedResultRow FromSavedComputedResult(SavedComputedResult s) => new()
@@ -8329,7 +8403,8 @@ public sealed partial class MainWindow : Window
         CsvText = s.CsvText,
         ComputedAt = s.ComputedAt,
         ComputedTimeDisplay = s.ComputedTimeDisplay,
-        AnalysisFingerprint = s.AnalysisFingerprint
+        AnalysisFingerprint = s.AnalysisFingerprint,
+        Narrative = s.Narrative
     };
 
     private void RenderComputedResults()

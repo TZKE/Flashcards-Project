@@ -140,7 +140,7 @@ public static class ResearchLabReportBuilder
         // Re-run count is independent of the render style, so compute it once.
         int rerunNeeded = computed.Count(r =>
         {
-            var n = Lookup(narratives, r.Id);
+            var n = EffectiveNarrative(r, narratives);
             return n is null || string.IsNullOrWhiteSpace(n.ResultsText);
         });
         result.IncludedResultCount = computed.Count;
@@ -315,7 +315,7 @@ public static class ResearchLabReportBuilder
             foreach (var r in computed)
             {
                 w.H3(ResultHeading(r));
-                var nar = Lookup(narratives, r.Id);
+                var nar = EffectiveNarrative(r, narratives);
                 if (nar is not null && !string.IsNullOrWhiteSpace(nar.MethodsText))
                     w.Para(nar.MethodsText.Trim());
                 else
@@ -359,7 +359,7 @@ public static class ResearchLabReportBuilder
                 if (!string.IsNullOrWhiteSpace(r.SignificanceText)) w.KeyVal("Significance", r.SignificanceText);
                 w.Blank();
 
-                var nar = Lookup(narratives, r.Id);
+                var nar = EffectiveNarrative(r, narratives);
                 if (nar is not null && !string.IsNullOrWhiteSpace(nar.ResultsText))
                     w.Para(nar.ResultsText.Trim());
                 else
@@ -386,7 +386,7 @@ public static class ResearchLabReportBuilder
                 string line = CompactStatLine(r);
                 if (line.Length > 0) w.Para(line);
 
-                var nar = Lookup(narratives, r.Id);
+                var nar = EffectiveNarrative(r, narratives);
                 if (nar is not null && !string.IsNullOrWhiteSpace(nar.ResultsText))
                     w.Para(nar.ResultsText.Trim());
                 else
@@ -408,7 +408,7 @@ public static class ResearchLabReportBuilder
         // aggregate-only) so manuscript-specific caveats are not lost.
         foreach (var r in computed)
         {
-            var nar = Lookup(narratives, r.Id);
+            var nar = EffectiveNarrative(r, narratives);
             var nt = nar?.NotesText?.Trim();
             if (!string.IsNullOrWhiteSpace(nt) && !noteLines.Contains(nt))
                 noteLines.Add(nt);
@@ -447,6 +447,28 @@ public static class ResearchLabReportBuilder
     private static ResearchLabNarrativeResult? Lookup(
         IReadOnlyDictionary<string, ResearchLabNarrativeResult> map, string id)
         => !string.IsNullOrEmpty(id) && map.TryGetValue(id, out var n) ? n : null;
+
+    // Narrative priority for a saved result: (1) the current-session narrative from
+    // the live typed result, then (2) the persisted narrative captured at compute
+    // time, then (3) none (the caller shows the Re-run prompt). Never fabricates.
+    private static ResearchLabNarrativeResult? EffectiveNarrative(
+        SavedComputedResult r, IReadOnlyDictionary<string, ResearchLabNarrativeResult> session)
+    {
+        var s = Lookup(session, r.Id);
+        if (s is not null) return s;
+        if (r.Narrative is { } pn && !pn.IsEmpty)
+            return new ResearchLabNarrativeResult
+            {
+                Title = pn.Title,
+                MethodsText = pn.MethodsText,
+                ResultsText = pn.ResultsText,
+                NotesText = pn.NotesText,
+                GeneratedAt = pn.GeneratedAt ?? DateTime.UtcNow,
+                IsDeterministic = pn.IsDeterministic,
+                AiUsed = pn.AiUsed
+            };
+        return null;
+    }
 
     private static string ResultHeading(SavedComputedResult r)
     {

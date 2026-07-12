@@ -3645,6 +3645,8 @@
                                             <Button x:Name="RptCopyBtn" Style="{StaticResource SoftButton}" Content="Copy report" MinWidth="130" Margin="0,0,10,6" Click="RptCopy_Click"/>
                                             <Button x:Name="RptExportTxtBtn" Style="{StaticResource SoftButton}" Content="Export TXT" MinWidth="120" Margin="0,0,10,6" Click="RptExportTxt_Click"/>
                                             <Button x:Name="RptExportMdBtn" Style="{StaticResource SoftButton}" Content="Export Markdown" MinWidth="140" Margin="0,0,10,6" Click="RptExportMd_Click"/>
+                                            <Button x:Name="RptExportDocxBtn" Style="{StaticResource SoftButton}" Content="Export DOCX" MinWidth="120" Margin="0,0,10,6" Click="RptExportDocx_Click"/>
+                                            <Button x:Name="RptExportPdfBtn" Style="{StaticResource SoftButton}" Content="Export PDF" MinWidth="110" Margin="0,0,10,6" Click="RptExportPdf_Click"/>
                                         </WrapPanel>
 
                                         <CheckBox x:Name="RptAppendixCheck" Content="Include full statistical appendix (longer, technical)" Margin="0,2,0,0"

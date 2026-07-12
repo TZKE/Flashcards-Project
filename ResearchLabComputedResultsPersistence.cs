@@ -62,4 +62,38 @@ public sealed class SavedComputedResult
     [JsonIgnore]
     public string ComputedTimeDisplay =>
         ComputedAt.ToLocalTime().ToString("MMM d, yyyy · h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
+
+    // ---- Narrative persistence -------------------------------------------
+    // Deterministic manuscript narrative captured at compute time from the live
+    // typed result, so Report Builder can show Methods/Results/Notes after a
+    // restart (when the live result is gone) without a Re-run. Optional/nullable:
+    // old research_projects.json files that predate this field deserialize it to
+    // null and continue to work. Never contains participant rows or AI output.
+    public SavedNarrative? Narrative { get; set; }
+}
+
+// Persisted, deterministic manuscript narrative for one computed result. Mirrors
+// ResearchLabNarrativeResult's text fields (aggregate-only, no AI). All fields are
+// optional/defaulted so partial or older JSON loads safely.
+public sealed class SavedNarrative
+{
+    public string Title { get; set; } = "";
+    public string MethodsText { get; set; } = "";
+    public string ResultsText { get; set; } = "";
+    public string NotesText { get; set; } = "";
+
+    // When the narrative was generated, and the Statistics fingerprint in force at
+    // that moment — lets the report explain (and stale-check) persisted narrative.
+    public DateTime? GeneratedAt { get; set; }
+    public string SourceFingerprint { get; set; } = "";
+
+    // Invariants of the deterministic generator, stored explicitly for auditability.
+    public bool IsDeterministic { get; set; } = true;
+    public bool AiUsed { get; set; }
+
+    [JsonIgnore]
+    public bool IsEmpty =>
+        string.IsNullOrWhiteSpace(MethodsText)
+        && string.IsNullOrWhiteSpace(ResultsText)
+        && string.IsNullOrWhiteSpace(NotesText);
 }
