@@ -109,10 +109,16 @@ public static class ResearchLabPdfExporter
         public void Title(string text)
         {
             string t = Transliterate(text);
-            VSpace(2); Ensure(24);
-            double by = _y - 18;
-            Text(ML, by, t, HelvB, 18, Blue);
-            _y = by - 6;
+            VSpace(2);
+            // Wrap the title inside the page width — never let it clip horizontally.
+            foreach (var line in WordWrap(t, CharsFor(CW, 18)))
+            {
+                Ensure(22);
+                double by = _y - 18;
+                Text(ML, by, line, HelvB, 18, Blue);
+                _y = by - 3;
+            }
+            _y -= 3;
             // thin rule under the title
             Rule(_y + 2);
             _y -= 6;
@@ -121,10 +127,16 @@ public static class ResearchLabPdfExporter
         public void Heading(string text, double size)
         {
             string t = Transliterate(text);
-            VSpace(6); Ensure(size + 6);
-            double by = _y - size;
-            Text(ML, by, t, HelvB, size, Blue);
-            _y = by - 4;
+            VSpace(6);
+            // Wrap headings/result titles inside the page width — never clip.
+            foreach (var line in WordWrap(t, CharsFor(CW, size)))
+            {
+                Ensure(size + 4);
+                double by = _y - size;
+                Text(ML, by, line, HelvB, size, Blue);
+                _y = by - 3;
+            }
+            _y -= 2;
         }
 
         public void Paragraph(string text, int font, double size, string color)
@@ -218,7 +230,9 @@ public static class ResearchLabPdfExporter
             int maxLines = 1;
             for (int c = 0; c < n; c++)
             {
-                string cell = c < cells.Length ? cells[c] : "";
+                // Transliterate every cell (key/value tables pass raw strings) so no
+                // unsupported glyph (em dash, middle dot, …) renders as "?".
+                string cell = Transliterate(c < cells.Length ? cells[c] : "");
                 wrapped[c] = WordWrap(cell, CharsFor(colW[c] - 2 * Pad, size));
                 maxLines = Math.Max(maxLines, wrapped[c].Count);
             }
