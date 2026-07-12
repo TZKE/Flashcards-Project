@@ -282,10 +282,10 @@ public static class TwoByTwoMeasuresEngine
         {
             result.Status = TwoByTwoStatus.NeedsLevelReview;
             result.StatusReason =
-                "2×2 measures need a clear event level and exposed level. "
-                + (!eventOk ? $"The outcome “{result.OutcomeDisplay}” levels ({oLevels.Preview()}) are ambiguous. " : "")
-                + (!exposedOk ? $"The exposure “{result.ExposureDisplay}” levels ({pLevels.Preview()}) are ambiguous. " : "")
-                + "Define coding/value labels, e.g. 1=Yes and 0=No, then re-run.";
+                "2×2 measures need to know which outcome level is the event (the positive outcome you are counting) and which exposure level is the exposed group (versus the reference/unexposed group). "
+                + (!eventOk ? $"The outcome “{result.OutcomeDisplay}” has two levels ({oLevels.Preview()}) and neither is clearly the event level. " : "")
+                + (!exposedOk ? $"The exposure “{result.ExposureDisplay}” has two levels ({pLevels.Preview()}) and neither is clearly the exposed level. " : "")
+                + "The analysis is paused here on purpose so the direction is not guessed — guessing which level is positive could invert the odds ratio. Set the coding or value labels (for example 1=Yes as the event/exposed level and 0=No as the reference), then re-run.";
             AddMethodNotes(result);
             return result;
         }

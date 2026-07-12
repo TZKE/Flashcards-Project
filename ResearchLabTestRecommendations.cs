@@ -486,16 +486,26 @@ public static class TestRecommendationEngine
         {
             var catKind = oKind == RecoVarKind.Continuous ? pKind : oKind;
             int groups = oKind == RecoVarKind.Continuous ? pGroups : oGroups;
+            // When the continuous variable is the PREDICTOR (the outcome is
+            // categorical), the parametric test cannot run — Welch/ANOVA require a
+            // continuous OUTCOME — so Run computes the robust rank equivalent
+            // (Mann-Whitney U / Kruskal-Wallis) on the same comparison. The wording
+            // below makes that explicit so the recommendation and the computed
+            // result don't look like they contradict each other. Routing is
+            // unchanged (see the CanComputeWelch / CanComputeAnova gates).
+            bool continuousIsOutcome = oKind == RecoVarKind.Continuous;
             if (catKind == RecoVarKind.Binary || groups == 2)
             {
                 r.RecommendedTest = "Independent-samples t-test";
                 r.AlternativeTest = "Mann-Whitney U test (if not approximately normal)";
                 r.Rationale = "A continuous measure is compared between 2 independent groups. Use a t-test when its assumptions hold, or the Mann-Whitney U test when the data are skewed or the assumptions are not met.";
                 r.Checklist.Add("Independent groups: assumed");
-                r.Checklist.Add("Continuous outcome: yes");
+                r.Checklist.Add(continuousIsOutcome ? "Continuous outcome: yes" : "Continuous measure is the predictor (outcome is categorical): yes");
                 r.Checklist.Add("Exactly 2 groups: yes");
                 r.Checklist.Add("Approximately normal within groups: needs review");
                 r.Checklist.Add("Similar variance across groups: needs review");
+                if (!continuousIsOutcome)
+                    r.Notes.Add("Here the continuous variable is the predictor and the outcome is categorical. The parametric t-test needs a continuous outcome, so clicking Run computes the equivalent Mann-Whitney U rank test — it compares the continuous measure between the two outcome groups. That is the same comparison run with the robust rank method, not a contradiction of the recommendation above.");
             }
             else
             {
@@ -503,10 +513,12 @@ public static class TestRecommendationEngine
                 r.AlternativeTest = "Kruskal-Wallis test (if not approximately normal)";
                 r.Rationale = $"A continuous measure is compared across {groups} independent groups. Use one-way ANOVA when its assumptions hold, or the Kruskal-Wallis test when they are not met.";
                 r.Checklist.Add("Independent observations: assumed");
-                r.Checklist.Add("Continuous outcome: yes");
+                r.Checklist.Add(continuousIsOutcome ? "Continuous outcome: yes" : "Continuous measure is the predictor (outcome is categorical): yes");
                 r.Checklist.Add($"3+ groups: yes ({groups})");
                 r.Checklist.Add("Approximately normal within groups: needs review");
                 r.Checklist.Add("Similar variance across groups: needs review");
+                if (!continuousIsOutcome)
+                    r.Notes.Add($"Here the continuous variable is the predictor and the outcome is categorical. One-way ANOVA needs a continuous outcome, so clicking Run computes the equivalent Kruskal-Wallis rank test across the {groups} outcome groups. That is the same comparison run with the robust rank method, not a contradiction of the recommendation above.");
             }
             r.AssumptionDependent = true;
             Finalize(r, roleClass, oPrep, pPrep);

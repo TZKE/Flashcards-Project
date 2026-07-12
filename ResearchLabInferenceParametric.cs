@@ -798,7 +798,7 @@ public static class ParametricInferenceEngine
     private static void AddMethodNotesPearson(PearsonCorrelationResult r)
     {
         r.Notes.Add("Pearson r = covariance ÷ (SD_x × SD_y), using sample SDs (n − 1). r ranges from −1 to +1; r² is the share of variance the two variables share.");
-        r.Notes.Add("Significance: t = r × √((n − 2) ÷ (1 − r²)), df = n − 2, two-sided p from the Student-t distribution. A perfect ±1 correlation is handled with a floored denominator so the p-value is shown as \"< .001\" rather than as a NaN.");
+        r.Notes.Add("Significance: t = r × √((n − 2) ÷ (1 − r²)), df = n − 2, two-sided p from the Student-t distribution. A perfect ±1 correlation is handled with a floored denominator so the p-value is shown as \"< .001\" rather than as an undefined value.");
         r.Notes.Add("Strength labels (negligible/small/moderate/strong/very strong) are a rough heuristic, not a definitive judgement.");
         r.Notes.Add("Rows missing either variable, or with a non-numeric value in either variable, are excluded pairwise. p-values are never shown as 0; values below .001 are shown as \"< .001\". Full precision is kept internally.");
         r.Notes.Add("Pearson correlation only. No regression, partial/multiple correlation, Kendall's tau, odds ratio, confidence interval, or causal claim is calculated in this version.");
