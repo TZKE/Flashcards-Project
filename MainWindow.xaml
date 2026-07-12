@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AIFlashcardMaker"
-        Title="AI Flashcard Maker"
+        Title="{x:Static local:Branding.ProductName}"
         Icon="Assets/appicon.ico"
         Width="1280"
         Height="820"
@@ -34,8 +34,8 @@
                     </Border>
 
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="AI Flashcard Maker" FontSize="26" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                        <TextBlock Text="Premium medical study workspace" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
+                        <TextBlock Text="{x:Static local:Branding.ProductName}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                        <TextBlock Text="Research analysis &amp; reporting workspace" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -305,8 +305,8 @@
                         </Border>
 
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="AI Flashcard Maker" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="v7.4.1" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,1,0,0"/>
+                            <TextBlock Text="{x:Static local:Branding.ProductName}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="Beta" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,1,0,0"/>
                         </StackPanel>
                     </StackPanel>
 

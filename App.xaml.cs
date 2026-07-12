@@ -28,7 +28,7 @@ public partial class App : Application
         {
             MessageBox.Show(
                 "Something went wrong with that action, but your work is safe and the app is still open. Please try again.",
-                "AI Flashcard Maker", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Branding.ProductName, MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch { /* ignore */ }
 
