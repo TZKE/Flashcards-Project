@@ -571,6 +571,13 @@
                             </Grid>
                         </Border>
 
+                        <!-- Phase 4: local autosave status (subtle) -->
+                        <TextBlock x:Name="SaveStatusText" Grid.Column="0"
+                                   HorizontalAlignment="Right" VerticalAlignment="Center"
+                                   FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Visibility="Collapsed" Margin="12,0,4,0"/>
+
                         <Border Grid.Column="1" Style="{StaticResource Badge}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="16,0,0,0">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="{StaticResource IconAccount}" Fill="{StaticResource PrimaryBrush}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,8,0"/>

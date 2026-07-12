@@ -127,6 +127,9 @@ public sealed partial class MainWindow : Window
     private string SettingsPath => Path.Combine(dataDir, "settings.json");
     private string DecksPath => Path.Combine(dataDir, "decks.json");
     private string ResearchPath => Path.Combine(dataDir, "research_projects.json");
+    // Phase 4: additive local autosave/backup files (existing paths above are unchanged).
+    private string ResearchAutosavePath => Path.Combine(dataDir, "research_projects.autosave.json");
+    private string ResearchLastGoodPath => Path.Combine(dataDir, "research_projects.lastgood.json");
 
     // Research Lab (Phase 1) — kept separate from deck/card storage.
     private const int ResearchProjectLimit = 2;
@@ -209,6 +212,11 @@ public sealed partial class MainWindow : Window
     // Pre-run delay for Data Extraction AI actions (prevents accidental API usage).
     private Action? _aiDelayAction;
     private DispatcherTimer? _aiDelayTimer;
+
+    // Phase 4: local autosave (debounced) + crash recovery (local-first; no backend/cloud/network).
+    private DispatcherTimer? _autosaveTimer;
+    private bool _autosaveRecoveryChecked;
+    private enum SaveState { Idle, Saving, Saved, Failed }
     private int _aiDelaySecondsLeft;
 
     // ---- Long-running Research AI work tracking (elapsed/stage/cancel/background) ----
@@ -249,6 +257,10 @@ public sealed partial class MainWindow : Window
 
         // Phase 3: load the real OrbitLab brand PNGs if present (safe neutral fallback otherwise).
         LoadBrandAssets();
+
+        // Phase 4: debounced local autosave timer for Research Lab data.
+        _autosaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        _autosaveTimer.Tick += AutosaveTick;
 
         // Never open larger than the usable screen area (keeps the window on
         // small laptops and clear of the taskbar).
@@ -370,6 +382,9 @@ public sealed partial class MainWindow : Window
         FadeIn(AppGrid, 240);
 
         UserSummaryText.Text = GetAccountSummary();
+
+        // Phase 4: offer crash recovery of local research data once, right after login.
+        CheckAutosaveRecovery();
 
         RefreshAll();
         ShowPage(PageOverview);   // Phase 3A: research-only shell lands on the OrbitLab dashboard (Research Lab is one click away)
@@ -2376,15 +2391,159 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            File.WriteAllText(ResearchPath, JsonSerializer.Serialize(_researchData, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            }));
+            string json = JsonSerializer.Serialize(_researchData, new JsonSerializerOptions { WriteIndented = true });
+            // Phase 4: atomic write (temp -> replace) + last-good backup so a crash mid-write
+            // never corrupts the main store. Local-first only; no rows logged, no network.
+            WriteJsonAtomic(ResearchPath, json, ResearchLastGoodPath);
+            ScheduleAutosave();
         }
         catch (Exception ex)
         {
+            SetSaveStatus(SaveState.Failed);
             ShowToast("Could not save research projects: " + ex.Message);
         }
+    }
+
+    // ===== Phase 4: local autosave + crash recovery (local-first; no backend/cloud/network) =====
+
+    // Write JSON without risking the existing file: write a temp, keep a last-good copy of the
+    // current file, then atomically swap temp -> destination. If the swap throws, the original
+    // file is left intact (no corruption).
+    private static void WriteJsonAtomic(string path, string json, string? lastGoodPath)
+    {
+        string dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+        string tmp = path + ".tmp";
+
+        File.WriteAllText(tmp, json, new System.Text.UTF8Encoding(false));   // 1) write to temp
+
+        if (File.Exists(path))
+        {
+            if (lastGoodPath is not null)
+            {
+                try { File.Copy(path, lastGoodPath, overwrite: true); } catch { /* backup is best-effort */ }
+            }
+            File.Replace(tmp, path, null);                                   // 2) atomic swap temp -> main
+        }
+        else
+        {
+            File.Move(tmp, path);
+        }
+    }
+
+    // Debounced: coalesce rapid changes into one autosave write ~1.2s after activity settles.
+    private void ScheduleAutosave()
+    {
+        SetSaveStatus(SaveState.Saving);
+        _autosaveTimer?.Stop();
+        _autosaveTimer?.Start();
+    }
+
+    private void AutosaveTick(object? sender, EventArgs e)
+    {
+        _autosaveTimer?.Stop();
+        try
+        {
+            string json = JsonSerializer.Serialize(_researchData, new JsonSerializerOptions { WriteIndented = true });
+            WriteJsonAtomic(ResearchAutosavePath, json, null);
+            SetSaveStatus(SaveState.Saved);
+        }
+        catch
+        {
+            SetSaveStatus(SaveState.Failed);
+        }
+    }
+
+    private void SetSaveStatus(SaveState state)
+    {
+        if (SaveStatusText is null) return;   // shell not built yet
+        switch (state)
+        {
+            case SaveState.Saving:
+                SaveStatusText.Text = "Saving…";
+                SaveStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+                SaveStatusText.Visibility = Visibility.Visible;
+                break;
+            case SaveState.Saved:
+                SaveStatusText.Text = "Saved locally";
+                SaveStatusText.Foreground = (System.Windows.Media.Brush)FindResource("SuccessBrush");
+                SaveStatusText.Visibility = Visibility.Visible;
+                break;
+            case SaveState.Failed:
+                SaveStatusText.Text = "Save failed";
+                SaveStatusText.Foreground = (System.Windows.Media.Brush)FindResource("DangerBrush");
+                SaveStatusText.Visibility = Visibility.Visible;
+                break;
+            default:
+                SaveStatusText.Visibility = Visibility.Collapsed;
+                break;
+        }
+    }
+
+    // On launch (post-login): an autosave file left behind means the previous session did not
+    // close cleanly. If it is newer than the main store, offer to restore it. Never auto-overwrites.
+    private void CheckAutosaveRecovery()
+    {
+        if (_autosaveRecoveryChecked) return;
+        _autosaveRecoveryChecked = true;
+
+        try
+        {
+            if (!File.Exists(ResearchAutosavePath))
+                return;   // clean previous shutdown — nothing to recover
+
+            DateTime autosaveTime = File.GetLastWriteTimeUtc(ResearchAutosavePath);
+            DateTime mainTime = File.Exists(ResearchPath) ? File.GetLastWriteTimeUtc(ResearchPath) : DateTime.MinValue;
+
+            string autoJson = File.ReadAllText(ResearchAutosavePath);
+            string mainJson = File.Exists(ResearchPath) ? File.ReadAllText(ResearchPath) : "";
+
+            // Only offer recovery when the autosave is genuinely newer AND different from the main
+            // store — avoids spurious prompts when the two are identical.
+            if (autosaveTime > mainTime && !string.Equals(autoJson, mainJson, StringComparison.Ordinal))
+            {
+                var choice = MessageBox.Show(
+                    "We found a newer autosaved version of your local research data. Restore it?\n\n" +
+                    "Yes — Restore the autosaved version.\n" +
+                    "No — Keep your current saved version.",
+                    Branding.ProductName, MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                if (choice == MessageBoxResult.Yes)
+                {
+                    WriteJsonAtomic(ResearchPath, autoJson, ResearchLastGoodPath);   // keeps a last-good of the old main
+                    LoadResearch();
+                    SetStatus("Restored autosaved research data.");
+                }
+            }
+
+            // Either choice clears the marker so we do not prompt again.
+            try { File.Delete(ResearchAutosavePath); } catch { }
+        }
+        catch
+        {
+            // Recovery must never block startup.
+        }
+    }
+
+    // Clean shutdown: flush the main store atomically and clear the autosave marker so the next
+    // launch does not offer a stale recovery. Never blocks close.
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        try
+        {
+            _autosaveTimer?.Stop();
+            try
+            {
+                string json = JsonSerializer.Serialize(_researchData, new JsonSerializerOptions { WriteIndented = true });
+                WriteJsonAtomic(ResearchPath, json, ResearchLastGoodPath);
+            }
+            catch { /* best-effort final save */ }
+
+            try { if (File.Exists(ResearchAutosavePath)) File.Delete(ResearchAutosavePath); } catch { }
+        }
+        catch { /* never block close */ }
+
+        base.OnClosing(e);
     }
 
     private void ResearchPage_Click(object sender, RoutedEventArgs e)
