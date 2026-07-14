@@ -5,21 +5,28 @@ using System.Text.Json;
 namespace AIFlashcardMaker;
 
 /// <summary>
-/// Phase 6A: central app configuration for the OrbitLab Commercial Beta.
+/// Phase 6A/7: central app configuration for the OrbitLab Commercial Beta.
 ///
-/// IMPORTANT: there is deliberately NO hardcoded production backend/API/update URL
-/// here — no domain or HTTPS exists yet. The backend base URL is optional and comes
-/// from (in order): the ORBITLAB_BACKEND_URL environment variable, an
-/// <c>orbitlab.settings.json</c> file next to the exe, or the same file in the
-/// app's AppData folder. When it is missing or invalid the app runs fully offline
-/// exactly as before — nothing crashes, nothing is blocked.
+/// Phase 7 (domain + HTTPS live): the PRODUCTION defaults below point at the
+/// public https endpoints. Overrides still win, in order: the
+/// ORBITLAB_BACKEND_URL / ORBITLAB_UPDATE_FEED environment variables, an
+/// <c>orbitlab.settings.json</c> file next to the exe, then the same file in the
+/// app's AppData folder. The special value <c>disabled</c> turns an endpoint off
+/// entirely (dev/offline mode — the app then behaves exactly like the pre-backend
+/// builds: nothing crashes, nothing is blocked, local fallback flows are used).
 ///
 /// The settings file contains NO secrets, only e.g.:
-///   { "backendBaseUrl": "http://127.0.0.1:5000", "updateFeedUrl": "" }
+///   { "backendBaseUrl": "http://127.0.0.1:5000", "updateFeedUrl": "disabled" }
 /// (http is accepted for localhost/127.0.0.1 staging only; anything else must be https).
 /// </summary>
 public static class AppConfig
 {
+    /// <summary>Production license/update-policy API (Caddy → 127.0.0.1 backend on the VPS).</summary>
+    public const string DefaultBackendBaseUrl = "https://api.starshipai.online";
+
+    /// <summary>Production Velopack update feed directory.</summary>
+    public const string DefaultUpdateFeedUrl = "https://downloads.starshipai.online/orbitlab/windows/beta";
+
     public const string ProductName = Branding.ProductName;
     public const string CompanyName = Branding.CompanyName;
 
@@ -72,24 +79,36 @@ public static class AppConfig
         _loaded = true;
         try
         {
-            _backendBaseUrl = NormalizeServiceUrl(Environment.GetEnvironmentVariable("ORBITLAB_BACKEND_URL"));
-            _updateFeedUrl = NormalizeServiceUrl(Environment.GetEnvironmentVariable("ORBITLAB_UPDATE_FEED"));
+            // Overrides win over the production defaults; the literal value
+            // "disabled" explicitly turns an endpoint off (dev/offline mode).
+            string? backendRaw = Environment.GetEnvironmentVariable("ORBITLAB_BACKEND_URL");
+            string? feedRaw = Environment.GetEnvironmentVariable("ORBITLAB_UPDATE_FEED");
 
             foreach (var dir in new[] { AppContext.BaseDirectory, AppDataDir })
             {
-                if (_backendBaseUrl is not null && _updateFeedUrl is not null) break;
+                if (backendRaw is not null && feedRaw is not null) break;
                 var file = ReadSettingsFile(Path.Combine(dir, SettingsFileName));
                 if (file is null) continue;
-                _backendBaseUrl ??= NormalizeServiceUrl(file.BackendBaseUrl);
-                _updateFeedUrl ??= NormalizeServiceUrl(file.UpdateFeedUrl);
+                backendRaw ??= file.BackendBaseUrl;
+                feedRaw ??= file.UpdateFeedUrl;
             }
+
+            _backendBaseUrl = ResolveWithDefault(backendRaw, DefaultBackendBaseUrl);
+            _updateFeedUrl = ResolveWithDefault(feedRaw, DefaultUpdateFeedUrl);
         }
         catch
         {
-            // Config loading must never break app startup; run as not-configured.
-            _backendBaseUrl = null;
-            _updateFeedUrl = null;
+            // Config loading must never break app startup; fall back to production defaults.
+            _backendBaseUrl = DefaultBackendBaseUrl;
+            _updateFeedUrl = DefaultUpdateFeedUrl;
         }
+    }
+
+    private static string? ResolveWithDefault(string? raw, string productionDefault)
+    {
+        if (raw is not null && raw.Trim().Equals("disabled", StringComparison.OrdinalIgnoreCase))
+            return null;                                    // explicit dev/offline opt-out
+        return NormalizeServiceUrl(raw) ?? productionDefault;
     }
 
     private static SettingsFile? ReadSettingsFile(string path)

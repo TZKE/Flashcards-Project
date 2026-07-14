@@ -307,7 +307,13 @@ public sealed partial class MainWindow : Window
             UpdateVersionText.Text = $"{Branding.ProductName} v{AppConfig.CurrentVersionLabel} · {AppConfig.ReleaseChannel} channel";
         }
         catch { /* label is cosmetic */ }
-        Loaded += async (_, _) => await StartupUpdateAndBootstrapAsync();
+        Loaded += async (_, _) =>
+        {
+            // Phase 7: silent sign-in from the encrypted license cache first, then
+            // the bootstrap/update check. Both are fail-open and never block startup.
+            await TryRestoreSessionAsync();
+            await StartupUpdateAndBootstrapAsync();
+        };
     }
 
     private void SetupCombos()
@@ -400,6 +406,9 @@ public sealed partial class MainWindow : Window
         ShowPage(PageOverview);   // Phase 3A: research-only shell lands on the OrbitLab dashboard (Research Lab is one click away)
         LicenseStubCombo.SelectedIndex = (int)_licenseStub;   // design-review stub only; no server
         SetStatus("Logged in successfully.");
+
+        // Phase 7: heartbeat on app entry (throttled, fail-open; offline grace applies).
+        _ = RefreshLicenseAsync();
     }
 
     private void ShowPage(UIElement page)
@@ -444,7 +453,7 @@ public sealed partial class MainWindow : Window
             activeButton.Style = active;
     }
 
-    private void Login_Click(object sender, RoutedEventArgs e)
+    private async void Login_Click(object sender, RoutedEventArgs e)
     {
         string email = NormalizeEmail(LoginEmailBox.Text);
         string password = LoginPasswordBox.Password;
@@ -452,6 +461,15 @@ public sealed partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
         {
             ShowToast("Enter email and password.");
+            return;
+        }
+
+        // Phase 7: real backend login when a license server is configured (the
+        // production default). The legacy local store below remains only for
+        // explicit dev/offline builds (backendBaseUrl = "disabled").
+        if (AppConfig.IsBackendConfigured)
+        {
+            await BackendLoginAsync(email, password);
             return;
         }
 
@@ -480,7 +498,7 @@ public sealed partial class MainWindow : Window
         ShowApp();
     }
 
-    private void Signup_Click(object sender, RoutedEventArgs e)
+    private async void Signup_Click(object sender, RoutedEventArgs e)
     {
         string email = NormalizeEmail(SignupEmailBox.Text);
         string password = SignupPasswordBox.Password;
@@ -489,6 +507,15 @@ public sealed partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
         {
             ShowToast("Enter a valid email.");
+            return;
+        }
+
+        // Phase 7: real backend registration when a license server is configured
+        // (the production default). The legacy local stub below remains only for
+        // explicit dev/offline builds (backendBaseUrl = "disabled").
+        if (AppConfig.IsBackendConfigured)
+        {
+            await BackendSignupAsync(email, password, code);
             return;
         }
 
@@ -576,6 +603,9 @@ public sealed partial class MainWindow : Window
 
     private void Logout_Click(object sender, RoutedEventArgs e)
     {
+        // Phase 7: explicit logout also clears the encrypted license session cache.
+        _license = null;
+        LicenseStore.Clear();
         _currentUser = null;
         ShowAuth();
     }
@@ -835,6 +865,233 @@ public sealed partial class MainWindow : Window
             catch { /* feed check is best-effort; never disturbs the app */ }
         }
     }
+
+    // ---------------------------------------------------------------------
+    // Phase 7 (Checkpoint D) — backend account/license integration (MVP).
+    // Everything here exchanges ACCOUNT/LICENSE METADATA ONLY — no research
+    // projects, datasets, results, reports, or exports are ever transmitted.
+    // All flows fail safe: an unreachable server never crashes the app, and a
+    // valid cached license keeps working within its offline-grace window.
+    // The staging session token is honestly NOT a signed offline license;
+    // Phase 5B (Ed25519 tokens) will replace validation without changing callers.
+    // ---------------------------------------------------------------------
+
+    private LicenseCache? _license;                 // decrypted in-memory license session
+    private bool _authBusy;                         // prevents double-submit of auth forms
+    private DateTime _lastHeartbeatAttemptUtc = DateTime.MinValue;
+
+    /// <summary>Register → login → bind device → heartbeat → enter the app.</summary>
+    private async Task BackendSignupAsync(string email, string password, string code)
+    {
+        if (_authBusy) return;
+
+        // Local validation mirrors the backend's rules so users get instant feedback.
+        if (password.Length < 8) { ShowToast("Password must be at least 8 characters."); return; }
+        if (string.IsNullOrWhiteSpace(SignupFullNameBox.Text)) { ShowToast("Enter your full name."); return; }
+        if (string.IsNullOrWhiteSpace(SignupTelegramBox.Text)) { ShowToast("Enter your Telegram username."); return; }
+        if (SignupTelegramAckCheck.IsChecked != true) { ShowToast("Please acknowledge the official Telegram channel notice to continue."); return; }
+        if (string.IsNullOrWhiteSpace(code)) { ShowToast("Enter your activation code."); return; }
+
+        _authBusy = true;
+        try
+        {
+            ShowToast("Creating your OrbitLab account…");
+            var reg = await LicenseApiClient.RegisterAsync(
+                SignupFullNameBox.Text.Trim(), email, password,
+                SignupInstitutionBox.Text.Trim(), SignupRoleBox.Text.Trim(),
+                SignupTelegramBox.Text.Trim(), telegramChannelAcknowledged: true,
+                activationCode: code);
+            if (!reg.Ok) { ShowToast(reg.Error!.Message); return; }
+
+            // The activation code is now redeemed server-side; it is never stored locally.
+            bool entered = await BackendEstablishSessionAsync(email, password);
+            if (entered && !_activationWelcomeShownThisSession)
+            {
+                _activationWelcomeShownThisSession = true;
+                ShowActivationWelcome();
+            }
+        }
+        finally { _authBusy = false; }
+    }
+
+    private async Task BackendLoginAsync(string email, string password)
+    {
+        if (_authBusy) return;
+        _authBusy = true;
+        try
+        {
+            ShowToast("Signing in…");
+            await BackendEstablishSessionAsync(email, password);
+        }
+        finally { _authBusy = false; }
+    }
+
+    /// <summary>Login + device activation + first heartbeat; saves the encrypted session cache.</summary>
+    private async Task<bool> BackendEstablishSessionAsync(string email, string password)
+    {
+        var login = await LicenseApiClient.LoginAsync(email, password);
+        if (!login.Ok) { ShowToast(login.Error!.Message); return false; }
+
+        var data = login.Data!;
+        if (string.IsNullOrEmpty(data.Token) || data.User is null)
+        { ShowToast("The server returned an unexpected login response."); return false; }
+        if (data.Subscription is null)
+        { ShowToast("This account has no subscription. Please contact support."); return false; }
+
+        string deviceHash = DeviceIdentity.ComputeDeviceHash();
+        var device = await LicenseApiClient.ActivateDeviceAsync(
+            data.Token, deviceHash, DeviceIdentity.DeviceName, DeviceIdentity.OsInfo);
+        if (!device.Ok)
+        {
+            ShowToast(device.Error!.Code == "device_limit"
+                ? "This subscription is already linked to another device. Please contact support to reset your device activation."
+                : device.Error.Message);
+            return false;
+        }
+
+        _license = new LicenseCache
+        {
+            UserId = data.User.Id,
+            Email = data.User.Email ?? email,
+            FullName = data.User.FullName ?? "",
+            Token = data.Token!,
+            SubscriptionId = data.Subscription.Id,
+            PlanCode = data.Subscription.PlanCode ?? "",
+            PlanName = data.Subscription.PlanName ?? "Commercial Beta",
+            Status = data.Subscription.Status ?? "Active",
+            EntitlementsJson = data.Subscription.Entitlements.ValueKind == System.Text.Json.JsonValueKind.Undefined
+                ? "" : data.Subscription.Entitlements.GetRawText(),
+            GraceDays = data.Subscription.GraceDays,
+            EndsAtUtc = data.Subscription.EndsAtUtc,
+            DeviceActivationId = device.Data!.DeviceActivationId,
+            DeviceHash = deviceHash,
+            LastHeartbeatUtc = DateTime.UtcNow,     // provisional until the heartbeat below
+        };
+        await RefreshLicenseAsync(force: true);
+        LicenseStore.Save(_license);
+
+        _currentUser = new LocalAccount
+        {
+            Email = _license.Email,
+            Plan = _license.PlanName,
+            CreatedAt = DateTime.UtcNow,
+            SubscriptionExpiresAt = DateTime.MaxValue,   // real gating uses _license, not this legacy field
+        };
+        ShowApp();
+        return true;
+    }
+
+    /// <summary>
+    /// Heartbeat: refreshes subscription status/entitlements. Throttled to one
+    /// attempt per 5 minutes unless forced. Network failures keep the cached
+    /// license (offline grace); an invalid token marks the session expired.
+    /// </summary>
+    private async Task RefreshLicenseAsync(bool force = false)
+    {
+        if (_license is null || !AppConfig.IsBackendConfigured) return;
+        if (!force && DateTime.UtcNow - _lastHeartbeatAttemptUtc < TimeSpan.FromMinutes(5)) return;
+        _lastHeartbeatAttemptUtc = DateTime.UtcNow;
+
+        var hb = await LicenseApiClient.HeartbeatAsync(_license.Token, _license.SubscriptionId, _license.DeviceHash);
+        if (hb.Ok)
+        {
+            var d = hb.Data!;
+            _license.Status = d.Status ?? _license.Status;
+            _license.GraceDays = d.GraceDays;
+            _license.EndsAtUtc = d.EndsAtUtc;
+            if (d.Entitlements.ValueKind is not System.Text.Json.JsonValueKind.Undefined
+                and not System.Text.Json.JsonValueKind.Null)
+                _license.EntitlementsJson = d.Entitlements.GetRawText();
+            _license.LastHeartbeatUtc = DateTime.UtcNow;
+            LicenseStore.Save(_license);
+        }
+        else if (hb.Error!.Code == "unauthorized")
+        {
+            _license.Status = "SessionExpired";     // token no longer valid server-side
+            LicenseStore.Save(_license);
+        }
+        // "network" and other transient errors: keep the cache — offline grace applies.
+    }
+
+    /// <summary>Silent sign-in from the encrypted cache at startup (installed/returning users).</summary>
+    private async Task TryRestoreSessionAsync()
+    {
+        try
+        {
+            if (!AppConfig.IsBackendConfigured || _currentUser is not null) return;
+            var cached = LicenseStore.Load();
+            if (cached is null || string.IsNullOrEmpty(cached.Token)) return;
+
+            _license = cached;
+            await RefreshLicenseAsync(force: true);
+
+            if (_license.Status == "SessionExpired")
+            {
+                _license = null;
+                LicenseStore.Clear();
+                ShowToast("Your session has expired. Please log in again.");
+                return;
+            }
+
+            // Enter the app even when the subscription is suspended/expired: the
+            // user keeps read/export access to their local data; protected actions
+            // are gated separately below.
+            _currentUser = new LocalAccount
+            {
+                Email = _license.Email,
+                Plan = _license.PlanName,
+                CreatedAt = DateTime.UtcNow,
+                SubscriptionExpiresAt = DateTime.MaxValue,
+            };
+            ShowApp();
+        }
+        catch { /* session restore must never break startup */ }
+    }
+
+    /// <summary>
+    /// Gate for protected actions (new project, running analyses). Read/export of
+    /// existing local data is deliberately NOT gated — user data stays accessible.
+    /// </summary>
+    private bool LicenseAllowsProtectedAction(out string message)
+    {
+        message = "";
+        if (!AppConfig.IsBackendConfigured) return true;   // explicit dev/offline build
+
+        _ = RefreshLicenseAsync();                         // background refresh, throttled
+
+        if (_license is null)
+        {
+            message = "Please log in to your OrbitLab account to use this feature.";
+            return false;
+        }
+        if (_license.Status == "SessionExpired")
+        {
+            message = "Your session has expired. Please log out and log in again.";
+            return false;
+        }
+        if (!_license.IsActive)
+        {
+            message = "Your OrbitLab subscription is not active. Please contact support or renew your Commercial Beta access to continue creating projects and running analyses.";
+            return false;
+        }
+        if (!_license.WithinOfflineGrace)
+        {
+            message = "OrbitLab could not verify your subscription recently. Please connect to the internet once so your license can refresh.";
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Commercial Beta: 1 active project (from entitlements); legacy dev builds keep the old limit.</summary>
+    private int EffectiveProjectLimit() =>
+        AppConfig.IsBackendConfigured && _license is not null
+            ? Math.Max(1, _license.MaxProjects)
+            : ResearchProjectLimit;
+
+    private string ProjectLimitMessage(int limit) =>
+        limit == 1
+            ? "Your Commercial Beta plan includes 1 active project."
+            : $"You reached the current limit of {limit} research projects. Additional research projects will be available with an upgrade later.";
 
     // Left/Right arrow keys flip between cards on Preview/Edit — unless the user
     // is actively typing in a text field, where arrows should move the caret.
@@ -2704,9 +2961,17 @@ public sealed partial class MainWindow : Window
 
     private void OpenCreateProject_Click(object sender, RoutedEventArgs e)
     {
-        if (_researchData.Projects.Count >= ResearchProjectLimit)
+        // Phase 7: creating a project is a protected action (license + plan limit).
+        if (!LicenseAllowsProtectedAction(out string gateMessage))
         {
-            ShowToast("You reached the current limit of 2 research projects. Additional research projects will be available with an upgrade later.");
+            ShowToast(gateMessage);
+            return;
+        }
+
+        int limit = EffectiveProjectLimit();
+        if (_researchData.Projects.Count >= limit)
+        {
+            ShowToast(ProjectLimitMessage(limit));
             return;
         }
 
@@ -2766,11 +3031,19 @@ public sealed partial class MainWindow : Window
 
     private void CreateProject_Click(object sender, RoutedEventArgs e)
     {
-        // Safety re-check of the limit before committing.
-        if (_researchData.Projects.Count >= ResearchProjectLimit)
+        // Safety re-check of license + limit before committing (Phase 7).
+        if (!LicenseAllowsProtectedAction(out string gateMessage))
         {
             CreateProjectOverlay.Visibility = Visibility.Collapsed;
-            ShowToast("You reached the current limit of 2 research projects. Additional research projects will be available with an upgrade later.");
+            ShowToast(gateMessage);
+            return;
+        }
+
+        int limit = EffectiveProjectLimit();
+        if (_researchData.Projects.Count >= limit)
+        {
+            CreateProjectOverlay.Visibility = Visibility.Collapsed;
+            ShowToast(ProjectLimitMessage(limit));
             return;
         }
 
@@ -8572,6 +8845,8 @@ public sealed partial class MainWindow : Window
     // each engine re-checks eligibility, so no arbitrary test can be run here.
     private async void StRecoRunInference_Click(object sender, RoutedEventArgs e)
     {
+        // Phase 7: running an analysis is a protected action (active license required).
+        if (!LicenseAllowsProtectedAction(out string gateMessage)) { ShowToast(gateMessage); return; }
         if (_recoRunning) return;
         if (!RecoUnlockedGuard()) return;
         if ((sender as FrameworkElement)?.DataContext is not TestRecommendation rec) return;
@@ -9141,6 +9416,8 @@ public sealed partial class MainWindow : Window
     // card) and counted — one bad pairing never aborts the batch.
     private async void StRecoRunAll_Click(object sender, RoutedEventArgs e)
     {
+        // Phase 7: running analyses is a protected action (active license required).
+        if (!LicenseAllowsProtectedAction(out string gateMessage)) { ShowToast(gateMessage); return; }
         if (_recoRunning) return;
         if (!RecoUnlockedGuard()) return;
         var p = CurrentResearchProject();
@@ -9473,6 +9750,8 @@ public sealed partial class MainWindow : Window
 
     private void RunDescriptiveStatistics_Click(object sender, RoutedEventArgs e)
     {
+        // Phase 7: running an analysis is a protected action (active license required).
+        if (!LicenseAllowsProtectedAction(out string gateMessage)) { ShowToast(gateMessage); return; }
         try
         {
             var p = CurrentResearchProject();

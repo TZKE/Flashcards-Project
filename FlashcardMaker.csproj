@@ -29,6 +29,8 @@
     <!-- Phase 6A: installer/updater foundation. Safe no-op for normal dev builds;
          only active for Velopack-packaged installs with a configured feed URL. -->
     <PackageReference Include="Velopack" Version="1.2.0" />
+    <!-- Phase 7: DPAPI (Windows per-user encryption) for the local license cache. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
