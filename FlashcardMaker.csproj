@@ -18,6 +18,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Phase 6A: installer/updater foundation. Safe no-op for normal dev builds;
+         only active for Velopack-packaged installs with a configured feed URL. -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="Assets\Brand\*.png" />
   </ItemGroup>
 

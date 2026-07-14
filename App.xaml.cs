@@ -8,6 +8,13 @@ public partial class App : Application
 {
     public App()
     {
+        // Phase 6A: Velopack updater hooks must run as early as possible. For a
+        // normal (non-Velopack-installed) build this is a documented safe no-op —
+        // startup behavior is unchanged. Wrapped defensively anyway: the updater
+        // must never be able to stop OrbitLab from opening.
+        try { Velopack.VelopackApp.Build().Run(); }
+        catch { /* updater bootstrap is best-effort */ }
+
         // Global safety net: a bug in one action (e.g. a Data Extraction button)
         // must never hard-close the whole app. Log the details for diagnosis and
         // keep the window open. No sensitive data (keys) is ever written here.

@@ -298,6 +298,16 @@ public sealed partial class MainWindow : Window
 
         ShowAuth();
         RefreshAll();
+
+        // Phase 6A: version label + async bootstrap/update check once the window is
+        // up. Fail-open by design — without a configured backend, or with the backend
+        // unreachable, the app behaves exactly as before (5s network budget, no locks).
+        try
+        {
+            UpdateVersionText.Text = $"{Branding.ProductName} v{AppConfig.CurrentVersionDisplay} · {AppConfig.ReleaseChannel} channel";
+        }
+        catch { /* label is cosmetic */ }
+        Loaded += async (_, _) => await StartupUpdateAndBootstrapAsync();
     }
 
     private void SetupCombos()
@@ -685,21 +695,124 @@ public sealed partial class MainWindow : Window
     private void JoinTelegram_Click(object sender, RoutedEventArgs e)
     {
         // The app never ships a hardcoded seller list; users are pointed to the official channel.
-        // The real URL replaces the placeholder before beta launch.
-        if (Branding.TelegramChannelUrl.StartsWith("{{"))
+        // Phase 6A: the URL is admin-configured on the backend (public bootstrap) with the
+        // Branding constant as fallback; until one is configured this stays a safe no-op.
+        var url = EffectiveTelegramUrl();
+        if (url is null)
         {
-            ShowToast("The official Telegram channel link will be provided at beta launch.");
+            ShowToast("The official Telegram channel link is not configured yet.");
             return;
         }
 
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Branding.TelegramChannelUrl) { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
         catch
         {
             ShowToast("Could not open the Telegram channel link.");
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase 6A — public bootstrap (Telegram link etc.) + startup update check.
+    // Everything here is fail-open: no backend configured, unreachable backend,
+    // or bad data must never crash the app or lock the user out. The forced
+    // gate appears ONLY when the backend was reachable and explicitly returned
+    // forced=true with this version below the minimum supported version.
+    // ---------------------------------------------------------------------
+
+    private BootstrapInfo? _bootstrap;          // last known public bootstrap (cache or live)
+    private UpdatePolicyResult? _updatePolicy;  // last update policy from the backend
+    private bool _updateGateShown;
+
+    /// <summary>Best available official Telegram URL (backend-configured first). Https only.</summary>
+    private string? EffectiveTelegramUrl()
+    {
+        var url = _bootstrap?.TelegramChannelUrl;
+        if (string.IsNullOrWhiteSpace(url) && !Branding.TelegramChannelUrl.StartsWith("{{", StringComparison.Ordinal))
+            url = Branding.TelegramChannelUrl;
+        return Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps ? url : null;
+    }
+
+    private void SetUpdateStatus(string text)
+    {
+        try { UpdateStatusText.Text = text; } catch { /* settings page not built yet */ }
+    }
+
+    private async Task StartupUpdateAndBootstrapAsync()
+    {
+        try
+        {
+            _bootstrap = UpdatePolicyClient.LoadCachedBootstrap();
+            if (!AppConfig.IsBackendConfigured)
+            {
+                // Normal state until domain+HTTPS exist: quiet note in Settings only.
+                SetUpdateStatus("Update check unavailable (no update server is configured in this beta build).");
+                return;
+            }
+
+            var boot = await UpdatePolicyClient.TryGetBootstrapAsync();
+            if (boot is not null) _bootstrap = boot;
+
+            await CheckForUpdatesAsync(interactive: false);
+        }
+        catch
+        {
+            SetUpdateStatus("Update check unavailable.");
+        }
+    }
+
+    private async Task CheckForUpdatesAsync(bool interactive)
+    {
+        var policy = await UpdatePolicyClient.TryGetVersionPolicyAsync();
+        if (policy is null)
+        {
+            // Unreachable server must never lock the user out — subtle note only.
+            SetUpdateStatus("Update check unavailable (could not reach the update server).");
+            if (interactive) ShowToast("Update check unavailable — could not reach the update server.");
+            return;
+        }
+
+        _updatePolicy = policy;
+
+        if (policy.Forced && VersionUtil.IsBelow(AppConfig.CurrentVersion, policy.MinimumSupportedVersion))
+        {
+            SetUpdateStatus($"Required update: v{policy.LatestVersion} (minimum supported is v{policy.MinimumSupportedVersion}).");
+            if (_updateGateShown) return;
+            _updateGateShown = true;
+            var gate = new UpdateRequiredWindow(policy, EffectiveTelegramUrl());
+            if (IsLoaded && IsVisible) gate.Owner = this;
+            gate.ShowDialog();   // closing the gate closes the app
+            return;
+        }
+
+        if (VersionUtil.TryParse(policy.LatestVersion) is not null &&
+            VersionUtil.IsBelow(AppConfig.CurrentVersion, policy.LatestVersion))
+        {
+            SetUpdateStatus($"Update v{policy.LatestVersion} is available (optional). Downloads are announced in the official Telegram channel.");
+            ShowToast($"{Branding.ProductName} v{policy.LatestVersion} is available — see Settings → Updates & Telegram.");
+        }
+        else
+        {
+            SetUpdateStatus($"You're up to date (v{AppConfig.CurrentVersionDisplay}, {AppConfig.ReleaseChannel} channel).");
+            if (interactive) ShowToast("You're up to date.");
+        }
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        if (!AppConfig.IsBackendConfigured)
+        {
+            SetUpdateStatus("Update check unavailable (no update server is configured in this beta build).");
+            ShowToast("Update checks are not available yet in this beta build.");
+            return;
+        }
+
+        ShowToast("Checking for updates…");
+        var boot = await UpdatePolicyClient.TryGetBootstrapAsync();
+        if (boot is not null) _bootstrap = boot;
+        await CheckForUpdatesAsync(interactive: true);
     }
 
     // Left/Right arrow keys flip between cards on Preview/Edit — unless the user

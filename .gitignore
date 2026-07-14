@@ -10,3 +10,6 @@ publish/
 API keys.txt
 *key*
 *secret*
+# Phase 6A: packaging output + local-only runtime config (no secrets, but machine-specific)
+artifacts/
+orbitlab.settings.json
