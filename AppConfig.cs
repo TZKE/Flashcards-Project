@@ -31,13 +31,22 @@ public static class AppConfig
     private static readonly string AppDataDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AIFlashcardMaker");
 
-    /// <summary>Current app version from the assembly (csproj &lt;Version&gt;).</summary>
+    /// <summary>Current numeric app version from the assembly (csproj &lt;AssemblyVersion&gt;). Used for update-gate comparisons.</summary>
     public static Version CurrentVersion { get; } =
         Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
 
-    /// <summary>Three-part display form, e.g. "7.4.0".</summary>
+    /// <summary>Three-part numeric display form, e.g. "0.1.0".</summary>
     public static string CurrentVersionDisplay { get; } =
         $"{CurrentVersion.Major}.{CurrentVersion.Minor}.{Math.Max(CurrentVersion.Build, 0)}";
+
+    /// <summary>
+    /// User-visible version label from InformationalVersion, e.g. "0.1.0-beta.1".
+    /// Falls back to the numeric form if the attribute is missing.
+    /// </summary>
+    public static string CurrentVersionLabel { get; } =
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            is string s && !string.IsNullOrWhiteSpace(s) ? s : CurrentVersionDisplay;
 
     private static bool _loaded;
     private static string? _backendBaseUrl;

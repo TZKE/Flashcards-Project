@@ -30,7 +30,7 @@ public partial class UpdateRequiredWindow : Window
 
         Title = $"{Branding.ProductName} — required update";
         VersionText.Text =
-            $"You have v{AppConfig.CurrentVersionDisplay} · minimum supported v{policy.MinimumSupportedVersion} · latest v{policy.LatestVersion} ({AppConfig.ReleaseChannel} channel)";
+            $"You have v{AppConfig.CurrentVersionLabel} · minimum supported v{policy.MinimumSupportedVersion} · latest v{policy.LatestVersion} ({AppConfig.ReleaseChannel} channel)";
         ReleaseNotesText.Text = string.IsNullOrWhiteSpace(policy.ReleaseNotes)
             ? "No release notes were provided for this update."
             : policy.ReleaseNotes;

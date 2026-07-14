@@ -304,7 +304,7 @@ public sealed partial class MainWindow : Window
         // unreachable, the app behaves exactly as before (5s network budget, no locks).
         try
         {
-            UpdateVersionText.Text = $"{Branding.ProductName} v{AppConfig.CurrentVersionDisplay} · {AppConfig.ReleaseChannel} channel";
+            UpdateVersionText.Text = $"{Branding.ProductName} v{AppConfig.CurrentVersionLabel} · {AppConfig.ReleaseChannel} channel";
         }
         catch { /* label is cosmetic */ }
         Loaded += async (_, _) => await StartupUpdateAndBootstrapAsync();
@@ -813,6 +813,27 @@ public sealed partial class MainWindow : Window
         var boot = await UpdatePolicyClient.TryGetBootstrapAsync();
         if (boot is not null) _bootstrap = boot;
         await CheckForUpdatesAsync(interactive: true);
+
+        // Phase 6A.1: when a Velopack update feed is configured (localhost staging
+        // only until domain+HTTPS exist), also ask the installed updater. Detection
+        // only — nothing is downloaded or applied from here.
+        if (!string.IsNullOrEmpty(AppConfig.UpdateFeedUrl))
+        {
+            try
+            {
+                var feedResult = await UpdateServiceFactory.Create().CheckAsync();
+                string note = feedResult.Status switch
+                {
+                    UpdateCheckStatus.UpdateAvailable => $"Installer feed: package v{feedResult.AvailableVersion} is available.",
+                    UpdateCheckStatus.UpToDate => "Installer feed: package is up to date.",
+                    UpdateCheckStatus.NotInstalled => "Installer feed: this is a dev build (not an installed copy), so package updates do not apply.",
+                    UpdateCheckStatus.Failed => "Installer feed: check failed.",
+                    _ => "",
+                };
+                if (note.Length > 0) UpdateStatusText.Text += $"  {note}";
+            }
+            catch { /* feed check is best-effort; never disturbs the app */ }
+        }
     }
 
     // Left/Right arrow keys flip between cards on Preview/Edit — unless the user
