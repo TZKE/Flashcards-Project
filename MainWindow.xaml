@@ -502,7 +502,7 @@
                             <Button x:Name="NavSettings" Style="{StaticResource NavButton}" Click="SettingsPage_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Data="{StaticResource IconSettings}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"/>
-                                    <TextBlock Text="AI Settings" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Settings" Margin="14,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
                             <Button x:Name="NavAccount" Style="{StaticResource NavButton}" Click="AccountPage_Click">
@@ -930,7 +930,7 @@
 
                                             <StackPanel Grid.Column="1">
                                                 <TextBlock Text="Recommended next step" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                                                <TextBlock Text="Create a topic deck, paste your notes, then generate cards with Z.ai."
+                                                <TextBlock Text="Create a topic deck, paste your notes, then generate cards with AI."
                                                            Foreground="{StaticResource MutedBrush}"
                                                            TextWrapping="Wrap"
                                                            Margin="0,8,0,14"/>
@@ -953,7 +953,7 @@
 
                         <StackPanel>
                             <TextBlock Text="Generate Flashcards" Style="{StaticResource PageTitle}"/>
-                            <TextBlock Text="Choose a deck, paste notes, and generate high-yield flashcards with Z.ai."
+                            <TextBlock Text="Choose a deck, paste notes, and generate high-yield flashcards with AI."
                                        Foreground="{StaticResource MutedBrush}"/>
                         </StackPanel>
 
@@ -1016,7 +1016,7 @@
 
                                     <StackPanel Margin="0,0,0,12">
                                         <TextBlock Text="Source Material" Style="{StaticResource SectionHeader}"/>
-                                        <TextBlock Text="Paste your notes below and Z.ai will turn them into high-yield flashcards." Style="{StaticResource Caption}" Margin="0,4,0,0"/>
+                                        <TextBlock Text="Paste your notes below and AI will turn them into high-yield flashcards." Style="{StaticResource Caption}" Margin="0,4,0,0"/>
                                     </StackPanel>
 
                                     <TextBox x:Name="SourceBox"
@@ -1614,7 +1614,7 @@
 
                         <StackPanel>
                             <TextBlock Text="Settings" Style="{StaticResource PageTitle}"/>
-                            <TextBlock Text="Manage OrbitLab preferences, your research data, license, and AI connections."
+                            <TextBlock Text="Manage OrbitLab preferences, your research data, and license."
                                        Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
                         </StackPanel>
 
@@ -1697,133 +1697,16 @@
                                     </Border>
                                 </Grid>
 
-                                <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,4,0,16">
+                                <!-- Phase 8: informational AI privacy notice only — no settings, no controls.
+                                     AI runs entirely on OrbitLab's server; users configure nothing. -->
+                                <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,4,0,16">
                                     <StackPanel MaxWidth="920" HorizontalAlignment="Left">
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
-                                            <Border Width="50" Height="50" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
-                                                <Path Data="{StaticResource IconSettings}" Fill="{StaticResource PrimaryBrush}" Width="24" Height="24" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Z.ai provider" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Credentials are stored locally on this device." Style="{StaticResource Caption}"/>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <TextBlock Text="API key" Style="{StaticResource FieldLabel}"/>
-                                        <PasswordBox x:Name="ApiKeyBox" Height="48"/>
-                                        <TextBlock Text="Kept on this computer only and sent solely to Z.ai when generating cards. Never displayed after saving."
-                                                   Style="{StaticResource Caption}" Margin="2,6,0,18"/>
-
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                                <TextBlock Text="Model" Style="{StaticResource FieldLabel}"/>
-                                                <TextBox x:Name="ModelBox" Height="48"/>
-                                                <TextBlock Text="e.g. GLM-4.7-FlashX" Style="{StaticResource Caption}" Margin="2,6,0,18"/>
-                                            </StackPanel>
-
-                                            <StackPanel Grid.Column="1" Margin="12,0,0,0">
-                                                <TextBlock Text="Base URL" Style="{StaticResource FieldLabel}"/>
-                                                <TextBox x:Name="BaseUrlBox" Height="48"/>
-                                                <TextBlock Text="The Z.ai API endpoint used for requests." Style="{StaticResource Caption}" Margin="2,6,0,18"/>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button Content="Save Settings" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="SaveSettings_Click" Width="150"/>
-                                            <Button Content="Clear Key" Style="{StaticResource DangerSoftButton}" Click="ClearKey_Click" Width="120"/>
-                                        </StackPanel>
+                                        <TextBlock Text="AI drafting &amp; privacy" Style="{StaticResource SectionHeader}"/>
+                                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextBrush}" FontSize="12.5" Margin="0,10,0,0"
+                                                   Text="AI drafting in the Research Lab is included in your OrbitLab subscription and runs on OrbitLab's secure server — there is nothing to set up. When you use AI to draft a proposal, methods, or recommendations, your project's design text (title, aim, study type, population, and any proposal text you provide) is sent to our AI provider to generate the draft. Your datasets, participant rows, and computed results stay on this device and are never uploaded. During the beta, please do not include real patient-identifiable data in AI drafting."/>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="18">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Path Data="{StaticResource IconSettings}" Fill="{StaticResource WarningBrush}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Top" Margin="0,1,12,0"/>
-                                        <TextBlock Grid.Column="1"
-                                                   Text="This local API key setup is intended for testing. A production release should route generation through a backend so the key is never exposed to users."
-                                                   Foreground="{StaticResource WarningBrush}"
-                                                   TextWrapping="Wrap"
-                                                   FontWeight="SemiBold"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Research AI (separate from flashcard AI; no provider keys here) -->
-                                <Border Style="{StaticResource CardBorder}" Padding="26" Margin="0,16,0,0">
-                                    <StackPanel MaxWidth="920" HorizontalAlignment="Left">
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                            <Border Width="50" Height="50" Background="{StaticResource PrimarySoftBrush}" CornerRadius="12" Margin="0,0,14,0">
-                                                <Path Data="{StaticResource IconResearch}" Fill="{StaticResource PrimaryBrush}" Width="24" Height="24" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Research AI" Style="{StaticResource SectionHeader}"/>
-                                                <TextBlock Text="Used by the Research Lab. Connects to your own backend endpoint — no provider keys are stored in this app." Style="{StaticResource Caption}"/>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <TextBlock Text="Research AI endpoint URL" Style="{StaticResource FieldLabel}"/>
-                                        <TextBox x:Name="RaiEndpointBox" Height="48" local:Watermark.Text="https://your-backend.example.com"/>
-                                        <TextBlock Text="Your backend/proxy base URL. The app calls /api/research-ai/recommendations and /api/research-ai/proposal. Leave blank if you don't have one yet."
-                                                   Style="{StaticResource Caption}" Margin="2,6,0,18"/>
-
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="220"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                                <TextBlock Text="Timeout (seconds)" Style="{StaticResource FieldLabel}"/>
-                                                <TextBox x:Name="RaiTimeoutBox" Height="48" Text="900"/>
-                                                <TextBlock Text="Default 900s (15 min). Complex tasks may take longer — raise up to 2700s (45 min) if needed."
-                                                           Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="2,6,0,0"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Bottom">
-                                                <CheckBox x:Name="RaiMockToggle" Content="Use development mock (generate sample drafts offline, no backend)"
-                                                          VerticalAlignment="Center" Margin="0,0,0,12"/>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <!-- Development-only. Provider-neutral by design: no provider name is shown.
-                                             When enabled, in-app generation reuses the API key already saved in the
-                                             flashcard AI Settings; no key is stored in this card. Production uses the
-                                             backend endpoint above instead. -->
-                                        <StackPanel Margin="0,4,0,0">
-                                            <CheckBox x:Name="RaiDevProviderToggle"
-                                                      Content="Use connected AI provider for development testing (uses your saved AI provider key)"/>
-                                            <TextBlock Text="For local development and testing only. Reuses the API key you already saved in AI Settings — no key is stored here. In production, Research AI uses the backend endpoint above."
-                                                       Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="26,4,0,0"/>
-                                        </StackPanel>
-
-                                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-                                            <Button Content="Save Research AI Settings" Style="{StaticResource PremiumButton}" Background="{StaticResource SuccessBrush}" Click="SaveResearchAiConfig_Click" Width="230"/>
-                                            <Button x:Name="RaiTestBtn" Content="Test Research AI" Style="{StaticResource SoftButton}" Click="TestResearchAi_Click" Width="170" Margin="12,0,0,0"/>
-                                        </StackPanel>
-
-                                        <Border x:Name="RaiTestResult" CornerRadius="10" Padding="14,11" Margin="0,12,0,0" Visibility="Collapsed" Background="{StaticResource SoftCardBrush}">
-                                            <TextBlock x:Name="RaiTestResultText" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                                        </Border>
-
-                                        <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="12" Padding="16" Margin="0,18,0,0">
-                                            <TextBlock Text="Do not enter any AI provider API keys here. Provider secrets belong only on your backend. This app only sends structured project data to the endpoint above."
-                                                       Foreground="{StaticResource WarningBrush}" TextWrapping="Wrap" FontWeight="SemiBold"/>
-                                        </Border>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Advanced / developer preview (Phase 3A) -->
-                                <Border Style="{StaticResource CardBorder}" Padding="22" Margin="0,16,0,0">
-                                    <StackPanel MaxWidth="920" HorizontalAlignment="Left">
-                                        <TextBlock Text="Advanced · developer preview" Style="{StaticResource SectionHeader}"/>
-                                        <TextBlock Text="This build is a design-review preview. Some controls — such as the license-state preview and the Activation Welcome preview — live on the Dashboard under Design preview (dev only) and are not customer features." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                    </StackPanel>
-                                </Border>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
@@ -2635,7 +2518,6 @@
                                                     <TextBlock Text="Research AI service is not configured yet" Foreground="{StaticResource WarningBrush}" FontWeight="Bold" FontSize="13.5"/>
                                                     <TextBlock Text="Connect a Research AI backend endpoint in Settings to generate proposal drafts inside the app."
                                                                Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,10"/>
-                                                    <Button Content="Open Research AI settings" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Click="OpenResearchAiSettings_Click"/>
                                                 </StackPanel>
                                             </Border>
 
@@ -2645,7 +2527,6 @@
                                                     <TextBlock x:Name="ProposalErrorText" Foreground="{StaticResource DangerBrush}" FontSize="13" TextWrapping="Wrap"/>
                                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                                         <Button Content="Retry" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="GenerateProposalDraft_Click"/>
-                                                        <Button Content="Open Research AI Settings" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
                                                         <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -2814,7 +2695,6 @@
                                                     <TextBlock Text="Research AI service is not configured yet" Foreground="{StaticResource WarningBrush}" FontWeight="Bold" FontSize="13.5"/>
                                                     <TextBlock Text="Connect a Research AI backend endpoint in Settings to generate recommendations inside the app."
                                                                Foreground="{StaticResource WarningBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,10"/>
-                                                    <Button Content="Open Research AI settings" Style="{StaticResource SoftButton}" HorizontalAlignment="Left" Click="OpenResearchAiSettings_Click"/>
                                                 </StackPanel>
                                             </Border>
 
@@ -2824,7 +2704,6 @@
                                                     <TextBlock x:Name="AiRecErrorText" Foreground="{StaticResource DangerBrush}" FontSize="13" TextWrapping="Wrap"/>
                                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                                         <Button Content="Retry" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="GenerateRecommendations_Click"/>
-                                                        <Button Content="Open Research AI Settings" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
                                                         <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -2836,7 +2715,6 @@
                                                     <TextBlock x:Name="AiRecRegenFailedText" Foreground="{StaticResource WarningBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                                         <Button Content="Retry" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="RetryRegenerateRecommendations_Click"/>
-                                                        <Button Content="Open Research AI Settings" Style="{StaticResource SoftButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
                                                         <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
                                                     </StackPanel>
                                                 </StackPanel>
@@ -4377,7 +4255,6 @@
                                                 <TextBlock x:Name="ImportValidationText" Foreground="{StaticResource DangerBrush}"
                                                            FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" Visibility="Collapsed"/>
                                                 <WrapPanel x:Name="ImportValidationAiActions" Visibility="Collapsed" Margin="0,8,0,0">
-                                                    <Button Content="Open Research AI Settings" Style="{StaticResource GhostButton}" Margin="0,0,10,0" Click="OpenResearchAiSettings_Click"/>
                                                     <Button Content="Open details" Style="{StaticResource GhostButton}" Click="ShowAiDiagnostics_Click"/>
                                                 </WrapPanel>
                                             </StackPanel>
@@ -5090,7 +4967,6 @@
                                                     <WrapPanel Margin="0,10,0,0">
                                                         <Button Style="{StaticResource ConflictBtn}" Content="Retry AI Fix" Click="ConflictAiRetry_Click"/>
                                                         <Button Style="{StaticResource ConflictBtn}" Content="Continue Manually" Click="ConflictAiContinueManually_Click"/>
-                                                        <Button Style="{StaticResource ConflictBtn}" Content="Open Research AI Settings" Click="OpenResearchAiSettings_Click"/>
                                                         <Button Style="{StaticResource ConflictGhostBtn}" Content="Open details" Click="ShowAiDiagnostics_Click"/>
                                                         <Button Style="{StaticResource ConflictGhostBtn}" Content="Close" Click="ConflictCloseAfterTimeout_Click"/>
                                                     </WrapPanel>
@@ -5366,7 +5242,6 @@
                     <WrapPanel Margin="0,18,0,0">
                         <Button Style="{StaticResource PremiumButton}" Content="Retry" MinWidth="100" Margin="0,0,10,6" Click="AiFailureRetry_Click"/>
                         <Button Style="{StaticResource SoftButton}" Content="Continue Manually" MinWidth="150" Margin="0,0,10,6" Click="AiFailureContinueManually_Click"/>
-                        <Button Style="{StaticResource SoftButton}" Content="Open Research AI Settings" MinWidth="180" Margin="0,0,10,6" Click="AiFailureOpenSettings_Click"/>
                         <Button Style="{StaticResource GhostButton}" Content="Open details" MinWidth="100" Margin="0,0,10,6" Click="ShowAiDiagnostics_Click"/>
                         <Button Style="{StaticResource GhostButton}" Content="Close" MinWidth="90" Margin="0,0,0,6" Click="AiFailureContinueManually_Click"/>
                     </WrapPanel>

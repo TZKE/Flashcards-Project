@@ -110,12 +110,16 @@ public sealed class LocalStore
     public List<UsedActivationCode> UsedCodes { get; set; } = new();
 }
 
+// Legacy local settings container. Phase 8: the provider fields below are always
+// purged on load (see PurgeLegacyProviderCredentials) and are never used to make a
+// request — all AI now goes through the OrbitLab backend. Kept only so old config
+// files still deserialize; no provider key, model, or URL is defaulted in source.
 public sealed class AppSettings
 {
-    public string ApiProvider { get; set; } = "Z.ai";
+    public string ApiProvider { get; set; } = "";
     public string ApiKey { get; set; } = "";
-    public string Model { get; set; } = "GLM-4.7-FlashX";
-    public string BaseUrl { get; set; } = "https://api.z.ai/api/paas/v4";
+    public string Model { get; set; } = "";
+    public string BaseUrl { get; set; } = "";
 }
 
 public sealed partial class MainWindow : Window
@@ -147,6 +151,10 @@ public sealed partial class MainWindow : Window
     // before a real backend exists.
     private ResearchAiOptions _researchAiOptions = new();
     private IResearchAiService _researchAi = null!;   // built in the constructor
+
+    // Phase 8: the single AI transport for the whole app. Sends the current license
+    // session token as the bearer; the backend injects the provider key + model.
+    private readonly OrbitLabAiProxyClient _aiProxy;
     private string ResearchAiConfigPath => Path.Combine(dataDir, "research_ai_config.json");
 
     // Last developer-safe diagnostic line from a failed Research AI call (action,
@@ -255,6 +263,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // Phase 8: single AI transport, authenticated with the live license session.
+        _aiProxy = new OrbitLabAiProxyClient(() => _license?.Token);
+
         // Phase 3: load the real OrbitLab brand PNGs if present (safe neutral fallback otherwise).
         LoadBrandAssets();
 
@@ -281,18 +292,10 @@ public sealed partial class MainWindow : Window
         LoadDecks();
         LoadResearch();
         LoadResearchAiConfig();
-        // The development provider (dev-only) reuses the API key the user already
-        // saved for flashcards. It is read live and never modified, logged, or
-        // shown. In production the app uses the backend endpoint instead.
-        _researchAi = new ResearchAiService(
-            () => _researchAiOptions,
-            () => new ZaiDevCredentials
-            {
-                ApiKey = _settings.ApiKey,
-                BaseUrl = _settings.BaseUrl,
-                Model = _settings.Model
-            });
-        PopulateResearchAiSettings();
+        // Phase 8 hardening: ALL AI features (Research Lab + flashcards) go through
+        // the single OrbitLab backend proxy, authenticated with the current license
+        // session token. No provider key ever lives in the desktop client.
+        _researchAi = new ResearchAiService(() => _researchAiOptions, _aiProxy);
         EnsureDefaultDeck();
         SetupCombos();
 
@@ -1141,9 +1144,7 @@ public sealed partial class MainWindow : Window
 
     private void SettingsPage_Click(object sender, RoutedEventArgs e)
     {
-        ApiKeyBox.Password = _settings.ApiKey;
-        ModelBox.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "GLM-4.7-FlashX" : _settings.Model;
-        BaseUrlBox.Text = string.IsNullOrWhiteSpace(_settings.BaseUrl) ? "https://api.z.ai/api/paas/v4" : _settings.BaseUrl;
+        // Phase 8: Settings no longer holds any AI/provider configuration.
         ShowPage(PageSettings);
     }
 
@@ -1172,27 +1173,26 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_settings.ApiKey))
+        if (!_aiProxy.IsAvailable)
         {
-            ShowToast("Add your Z.ai API key in AI Settings first.");
-            SettingsPage_Click(sender, e);
+            ShowToast("Please sign in to your OrbitLab account to use AI features.");
             return;
         }
 
         try
         {
-            ShowLoading("Generating with Z.ai...");
-            SetStatus("Generating flashcards with Z.ai...");
+            ShowLoading("Generating flashcards…");
+            SetStatus("Generating flashcards…");
             IsEnabled = false;
 
             string prompt = BuildPrompt(source);
-            string aiText = await CallZaiAsync(prompt);
+            string aiText = await CallAiAsync(prompt);
             var parsed = ParseFlashcards(aiText);
 
             if (parsed.Count == 0)
             {
                 ImportBox.Text = aiText;
-                ShowToast("Z.ai replied, but no cards were parsed. Response placed in Import JSON.");
+                ShowToast("AI replied, but no cards were parsed. Response placed in Import JSON.");
                 ShowPage(PageImport);
                 return;
             }
@@ -1912,27 +1912,6 @@ public sealed partial class MainWindow : Window
         _deckStore.Stats.StudiedToday++;
     }
 
-    private void SaveSettings_Click(object sender, RoutedEventArgs e)
-    {
-        _settings.ApiKey = ApiKeyBox.Password.Trim();
-        _settings.Model = string.IsNullOrWhiteSpace(ModelBox.Text) ? "GLM-4.7-FlashX" : ModelBox.Text.Trim();
-        _settings.BaseUrl = string.IsNullOrWhiteSpace(BaseUrlBox.Text)
-            ? "https://api.z.ai/api/paas/v4"
-            : BaseUrlBox.Text.Trim().TrimEnd('/');
-
-        SaveSettings();
-        ShowToast("AI settings saved locally.");
-        SetStatus("AI settings saved.");
-    }
-
-    private void ClearKey_Click(object sender, RoutedEventArgs e)
-    {
-        ApiKeyBox.Clear();
-        _settings.ApiKey = "";
-        SaveSettings();
-        SetStatus("API key cleared.");
-    }
-
     private void ApplyCode_Click(object sender, RoutedEventArgs e)
     {
         if (_currentUser is null) return;
@@ -2025,71 +2004,42 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private async Task<string> CallZaiAsync(string prompt)
+    // Phase 8: flashcard generation goes through the OrbitLab backend proxy — the
+    // desktop app holds no provider key and never contacts a provider directly.
+    // User-facing errors never mention keys, tokens, endpoints, or providers.
+    private async Task<string> CallAiAsync(string prompt)
     {
-        string baseUrl = string.IsNullOrWhiteSpace(_settings.BaseUrl)
-            ? "https://api.z.ai/api/paas/v4"
-            : _settings.BaseUrl.Trim().TrimEnd('/');
+        string body = OrbitLabAiProxyClient.BuildChatBody(
+            "You create JSON flashcards only. Return valid JSON only.",
+            prompt, temperature: 0.2, maxTokens: 6000);
 
-        string model = string.IsNullOrWhiteSpace(_settings.Model)
-            ? "GLM-4.7-FlashX"
-            : _settings.Model.Trim();
+        var r = await _aiProxy.SendChatAsync(body, timeoutSeconds: 180, CancellationToken.None);
 
-        var body = new JsonObject
+        switch (r.Outcome)
         {
-            ["model"] = model,
-            ["messages"] = new JsonArray
+            case AiProxyOutcome.NoSession:
+                throw new Exception("Please sign in to your OrbitLab account to use AI features.");
+            case AiProxyOutcome.Timeout:
+                throw new Exception("AI took too long to respond. Please try again.");
+            case AiProxyOutcome.Network:
+                throw new Exception("Could not reach OrbitLab. Check your internet connection and try again.");
+        }
+
+        if (!r.IsSuccess)
+            throw new Exception(r.Status switch
             {
-                new JsonObject
-                {
-                    ["role"] = "system",
-                    ["content"] = "You create JSON flashcards only. Return valid JSON only."
-                },
-                new JsonObject
-                {
-                    ["role"] = "user",
-                    ["content"] = prompt
-                }
-            },
-            ["temperature"] = 0.2,
-            ["max_tokens"] = 6000,
-            ["stream"] = false
-        };
+                401 => "Your session has expired. Please log out and log in again.",
+                403 => "Your OrbitLab subscription is not active for AI features.",
+                429 => "You have reached today's AI limit. Please try again tomorrow.",
+                >= 500 => "AI is temporarily unavailable. Please try again shortly.",
+                _ => "AI could not complete the request. Please try again.",
+            });
 
-        using var client = new HttpClient
-        {
-            Timeout = TimeSpan.FromMinutes(3)
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey.Trim());
-        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
-
-        using var response = await client.SendAsync(request);
-        string json = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
-            throw new Exception("Z.ai API error:\n\n" + TrimForMessage(json));
-
-        string text = ExtractChatCompletionText(json);
-
+        string text = OrbitLabAiProxyClient.ExtractContent(r.Body);
         if (string.IsNullOrWhiteSpace(text))
-            throw new Exception("Z.ai returned no usable text:\n\n" + TrimForMessage(json));
+            throw new Exception("AI returned no usable text. Please try again.");
 
         return text;
-    }
-
-    private static string ExtractChatCompletionText(string json)
-    {
-        var root = JsonNode.Parse(json);
-        var choices = root?["choices"]?.AsArray();
-
-        if (choices is null || choices.Count == 0)
-            return "";
-
-        string? content = choices[0]?["message"]?["content"]?.GetValue<string>();
-
-        return content?.Trim() ?? "";
     }
 
     private static List<Flashcard> ParseFlashcards(string aiText)
@@ -2684,18 +2634,33 @@ public sealed partial class MainWindow : Window
             string json = File.ReadAllText(SettingsPath);
             _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
 
-            if (string.Equals(_settings.Model, "gpt-4o-mini", StringComparison.OrdinalIgnoreCase))
-                _settings.Model = "GLM-4.7-FlashX";
-
-            if (string.IsNullOrWhiteSpace(_settings.Model))
-                _settings.Model = "GLM-4.7-FlashX";
-
-            if (string.IsNullOrWhiteSpace(_settings.BaseUrl))
-                _settings.BaseUrl = "https://api.z.ai/api/paas/v4";
+            // Phase 8 migration: purge any legacy locally-saved provider credentials.
+            // AI now runs entirely through the OrbitLab backend; the desktop client
+            // must never hold a provider key, model, or base URL. Only these
+            // provider fields are cleared — unrelated preferences are untouched.
+            PurgeLegacyProviderCredentials();
         }
         catch
         {
             _settings = new AppSettings();
+        }
+    }
+
+    // Deletes any leftover Z.ai/provider credentials from the on-disk settings.
+    // Never logs, displays, or returns the old value. Safe to call repeatedly.
+    private void PurgeLegacyProviderCredentials()
+    {
+        bool changed = !string.IsNullOrEmpty(_settings.ApiKey)
+                       || !string.IsNullOrEmpty(_settings.BaseUrl)
+                       || !string.IsNullOrEmpty(_settings.Model)
+                       || !string.IsNullOrEmpty(_settings.ApiProvider);
+        _settings.ApiKey = "";
+        _settings.BaseUrl = "";
+        _settings.Model = "";
+        _settings.ApiProvider = "";
+        if (changed)
+        {
+            try { SaveSettings(); } catch { /* purge is best-effort; never blocks startup */ }
         }
     }
 
@@ -4344,6 +4309,12 @@ public sealed partial class MainWindow : Window
 
             string json = File.ReadAllText(ResearchAiConfigPath);
             _researchAiOptions = JsonSerializer.Deserialize<ResearchAiOptions>(json) ?? new ResearchAiOptions();
+
+            // Phase 8 migration: drop any obsolete provider keys (endpoint base URL,
+            // direct/dev-provider flags) from the on-disk research config by
+            // re-writing it with only the current fields. Extra JSON props are
+            // ignored on read, so re-saving cleans the file.
+            try { SaveResearchAiConfig(); } catch { /* best-effort */ }
         }
         catch
         {
@@ -4367,44 +4338,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void PopulateResearchAiSettings()
-    {
-        RaiEndpointBox.Text = _researchAiOptions.EndpointBaseUrl;
-        RaiTimeoutBox.Text = _researchAiOptions.TimeoutSeconds.ToString();
-        RaiMockToggle.IsChecked = _researchAiOptions.UseDevelopmentMock;
-        RaiDevProviderToggle.IsChecked = _researchAiOptions.UseDevelopmentZaiProvider;
-    }
-
-    private void SaveResearchAiConfig_Click(object sender, RoutedEventArgs e)
-    {
-        _researchAiOptions.EndpointBaseUrl = RaiEndpointBox.Text.Trim();
-
-        if (int.TryParse(RaiTimeoutBox.Text.Trim(), out int seconds))
-            _researchAiOptions.TimeoutSeconds = Math.Clamp(seconds, 30, ResearchAiTimeouts.MaxLongRunningSeconds);
-        else
-            _researchAiOptions.TimeoutSeconds = ResearchAiTimeouts.DefaultLongRunningSeconds;
-
-        _researchAiOptions.UseDevelopmentMock = RaiMockToggle.IsChecked == true;
-        _researchAiOptions.UseDevelopmentZaiProvider = RaiDevProviderToggle.IsChecked == true;
-
-        SaveResearchAiConfig();
-        PopulateResearchAiSettings();
-
-        // Reflect the new configuration if a project is currently open.
-        if (CurrentResearchProject() is not null)
-            UpdateResearchAiAvailability();
-
-        ShowToast(_researchAiOptions.IsConfigured
-            ? "Research AI settings saved."
-            : "Research AI settings saved. Add an endpoint or enable development mock to generate inside the app.");
-    }
-
-    private void OpenResearchAiSettings_Click(object sender, RoutedEventArgs e)
-    {
-        PopulateResearchAiSettings();
-        ShowPage(PageSettings);
-    }
-
     // Shows the last failure's developer-safe diagnostics (never any secrets).
     private void ShowAiDiagnostics_Click(object sender, RoutedEventArgs e)
     {
@@ -4413,41 +4346,6 @@ public sealed partial class MainWindow : Window
             : _lastAiDiagnostics!;
         MessageBox.Show(this, details + "\n\nA full log is saved to research_ai.log in the app data folder. No API keys or request content are ever logged.",
             "Research AI — details", MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
-    // Health check (Part G): sends a tiny request and reports a clear status.
-    private async void TestResearchAi_Click(object sender, RoutedEventArgs e)
-    {
-        // Persist current form values first so the test uses what the user sees.
-        _researchAiOptions.EndpointBaseUrl = RaiEndpointBox.Text.Trim();
-        if (int.TryParse(RaiTimeoutBox.Text.Trim(), out int secs))
-            _researchAiOptions.TimeoutSeconds = Math.Clamp(secs, 30, ResearchAiTimeouts.MaxLongRunningSeconds);
-        _researchAiOptions.UseDevelopmentMock = RaiMockToggle.IsChecked == true;
-        _researchAiOptions.UseDevelopmentZaiProvider = RaiDevProviderToggle.IsChecked == true;
-
-        RaiTestBtn.IsEnabled = false;
-        RaiTestResult.Visibility = Visibility.Visible;
-        RaiTestResultText.Text = "Testing Research AI…";
-        RaiTestResult.Background = (Brush)FindResource("SoftCardBrush");
-        RaiTestResultText.Foreground = (Brush)FindResource("MutedBrush");
-        try
-        {
-            var result = await _researchAi.TestConnectionAsync(CancellationToken.None);
-            string elapsed = result.ElapsedSeconds > 0 ? $" ({result.ElapsedSeconds:F1}s)" : "";
-            RaiTestResultText.Text = $"{result.Status}: {result.Message}{elapsed}";
-            RaiTestResult.Background = (Brush)FindResource(result.Success ? "SuccessSoftBrush" : "DangerSoftBrush");
-            RaiTestResultText.Foreground = (Brush)FindResource(result.Success ? "SuccessBrush" : "DangerBrush");
-        }
-        catch (Exception)
-        {
-            RaiTestResultText.Text = "Provider unavailable: the test could not be completed.";
-            RaiTestResult.Background = (Brush)FindResource("DangerSoftBrush");
-            RaiTestResultText.Foreground = (Brush)FindResource("DangerBrush");
-        }
-        finally
-        {
-            RaiTestBtn.IsEnabled = true;
-        }
     }
 
     // Shows/hides the "not configured" panels for the open project's AI tabs.
@@ -7411,13 +7309,6 @@ public sealed partial class MainWindow : Window
     {
         AiFailureOverlay.Visibility = Visibility.Collapsed;
         _aiFailureRetryAction = null;
-    }
-
-    private void AiFailureOpenSettings_Click(object sender, RoutedEventArgs e)
-    {
-        AiFailureOverlay.Visibility = Visibility.Collapsed;
-        _aiFailureRetryAction = null;
-        OpenResearchAiSettings_Click(sender, e);
     }
 
     // =====================================================================
@@ -10449,14 +10340,6 @@ public sealed partial class MainWindow : Window
     private static string SafeComboText(ComboBox combo)
     {
         return combo.SelectedItem?.ToString() ?? "";
-    }
-
-    private static string TrimForMessage(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return "";
-
-        return text.Length <= 1600 ? text : text[..1600] + "...";
     }
 
     private static string CleanFileName(string value)

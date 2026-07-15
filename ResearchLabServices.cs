@@ -113,44 +113,19 @@ public enum ResearchAiTaskType
 // settings, which are never touched by the Research Lab).
 public sealed class ResearchAiOptions
 {
-    public string EndpointBaseUrl { get; set; } = "";
     public int TimeoutSeconds { get; set; } = ResearchAiTimeouts.DefaultLongRunningSeconds;
+
+    // Dev-only offline mock (sample drafts, no network). Honored ONLY when the
+    // trusted ORBITLAB_ENABLE_AI_DEV_TOOLS environment flag is set — never exposed
+    // to production users, never enableable via a saved preference. Persisted so a
+    // local engineer's choice survives restarts, but ignored unless dev tools are on.
     public bool UseDevelopmentMock { get; set; }
-
-    // DEVELOPMENT-ONLY switch. When enabled, the in-app Research AI workflow is
-    // routed to a direct chat-completions provider (see
-    // DevelopmentZaiResearchAiService) using the API key the user already saved
-    // for flashcard generation. This is for local testing before the backend
-    // proxy exists; production must use EndpointBaseUrl. The provider name is
-    // never shown in the UI — the corresponding checkbox is provider-neutral.
-    public bool UseDevelopmentZaiProvider { get; set; }
-
-    [JsonIgnore]
-    public bool IsConfigured =>
-        UseDevelopmentMock || UseDevelopmentZaiProvider || !string.IsNullOrWhiteSpace(EndpointBaseUrl);
 
     public ResearchAiOptions Clone() => new()
     {
-        EndpointBaseUrl = EndpointBaseUrl,
         TimeoutSeconds = TimeoutSeconds,
         UseDevelopmentMock = UseDevelopmentMock,
-        UseDevelopmentZaiProvider = UseDevelopmentZaiProvider
     };
-}
-
-// Read-only credentials supplied by the host so the development provider can
-// reuse the API key the user already configured for flashcards. This object is
-// only ever read — the development service never writes it back, never logs it,
-// and never surfaces the key in any message or in the UI. No key is stored in
-// this file or hardcoded anywhere.
-public sealed class ZaiDevCredentials
-{
-    public string ApiKey { get; set; } = "";
-    public string BaseUrl { get; set; } = "https://api.z.ai/api/paas/v4";
-    public string Model { get; set; } = "GLM-4.7-FlashX";
-
-    [JsonIgnore]
-    public bool HasKey => !string.IsNullOrWhiteSpace(ApiKey);
 }
 
 // ---- Provider-neutral request/response DTOs -------------------------------
@@ -294,28 +269,26 @@ public sealed class ResearchAiService : IResearchAiService
 {
     private readonly Func<ResearchAiOptions> _options;
     private readonly MockResearchAiService _mock = new();
-    private readonly ResearchAiHttpClient _http;
-    private readonly DevelopmentZaiResearchAiService? _devProvider;
+    private readonly ProxiedResearchAiService _proxy;
 
-    public ResearchAiService(Func<ResearchAiOptions> optionsProvider, Func<ZaiDevCredentials>? devCredentials = null)
+    public ResearchAiService(Func<ResearchAiOptions> optionsProvider, OrbitLabAiProxyClient proxy)
     {
         _options = optionsProvider;
-        _http = new ResearchAiHttpClient(optionsProvider);
-        if (devCredentials is not null)
-            _devProvider = new DevelopmentZaiResearchAiService(optionsProvider, devCredentials);
+        _proxy = new ProxiedResearchAiService(optionsProvider, proxy);
     }
 
-    public bool IsConfigured => _options().IsConfigured;
+    // "Configured" means a live licensed session is available (backend proxy), or —
+    // for local engineers only — the offline mock is explicitly enabled.
+    public bool IsConfigured => _proxy.IsConfigured || (AiDevTools.Enabled && _options().UseDevelopmentMock);
 
-    // Chooses the active implementation for the current options. The development
-    // provider takes precedence when explicitly enabled (real provider testing),
-    // then the offline mock, then the production backend endpoint.
+    // Production ALWAYS routes through the OrbitLab backend proxy. The offline mock
+    // is reachable only when the trusted ORBITLAB_ENABLE_AI_DEV_TOOLS flag is set;
+    // there is no direct-provider path anymore.
     private IResearchAiService Route(ResearchAiOptions o)
     {
-        if (!o.IsConfigured) throw new ResearchAiNotConfiguredException();
-        if (o.UseDevelopmentZaiProvider && _devProvider is not null) return _devProvider;
-        if (o.UseDevelopmentMock) return _mock;
-        return _http;
+        if (AiDevTools.Enabled && o.UseDevelopmentMock) return _mock;
+        if (!_proxy.IsConfigured) throw new ResearchAiNotConfiguredException();
+        return _proxy;
     }
 
     public Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
@@ -344,442 +317,10 @@ public sealed class ResearchAiService : IResearchAiService
     public async Task<ResearchAiHealthResult> TestConnectionAsync(CancellationToken cancellationToken)
     {
         var o = _options();
-        if (!o.IsConfigured)
-            return new ResearchAiHealthResult { Status = "Not configured", Message = "Add a backend endpoint, or enable the development mock/provider, then try again." };
+        if (!IsConfigured)
+            return new ResearchAiHealthResult { Status = "Not configured", Message = "Sign in to your OrbitLab account to use AI features." };
         try { return await Route(o).TestConnectionAsync(cancellationToken); }
         catch (Exception ex) { return new ResearchAiHealthResult { Status = "Provider unavailable", Message = ex.Message }; }
-    }
-}
-
-// ---- Backend/proxy HTTP client --------------------------------------------
-// Calls a configurable endpoint. Assumes future routes:
-//   POST {base}/api/research-ai/recommendations
-//   POST {base}/api/research-ai/proposal
-// No API keys are sent from the app; the backend owns provider secrets.
-public sealed class ResearchAiHttpClient : IResearchAiService
-{
-    // Disable the HttpClient-level timeout (its default is 100s). The real
-    // per-request timeout is enforced by the linked CancellationTokenSource
-    // below via ResearchAiTimeouts, mirroring the development provider.
-    private static readonly HttpClient Http = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
-    private readonly Func<ResearchAiOptions> _options;
-    private readonly ResearchRecommendationParser _parser = new();
-
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
-    public ResearchAiHttpClient(Func<ResearchAiOptions> optionsProvider)
-    {
-        _options = optionsProvider;
-    }
-
-    public bool IsConfigured => _options().IsConfigured;
-
-    public async Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
-    {
-        var resp = await PostAsync("recommendations", ResearchAiTaskType.Recommendations, project, null, cancellationToken);
-        if (resp.Recommendations is null || !resp.Recommendations.HasStructuredContent)
-            throw new ResearchAiException("The Research AI service did not return any recommendations.");
-
-        resp.Recommendations.SourceMode = ResearchSourceMode.AiGenerated;
-        return resp.Recommendations;
-    }
-
-    public async Task<ResearchProposalDraft> GenerateProposalDraftAsync(ResearchProject project, ResearchRecommendations? recommendations, CancellationToken cancellationToken)
-    {
-        var resp = await PostAsync("proposal", ResearchAiTaskType.ProposalDraft, project, recommendations, cancellationToken);
-        if (resp.ProposalDraft is null)
-            throw new ResearchAiException("The Research AI service did not return a proposal draft.");
-
-        resp.ProposalDraft.SourceMode = ResearchSourceMode.AiGenerated;
-        resp.ProposalDraft.IsTemplateGenerated = true;
-        return resp.ProposalDraft;
-    }
-
-    public async Task<ProposalExtractionResult> ExtractProposalAsync(string proposalText, ResearchProject existingProject, CancellationToken cancellationToken)
-    {
-        var o = _options();
-        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
-            throw new ResearchAiNotConfiguredException();
-
-        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/extract-proposal";
-
-        var request = new
-        {
-            projectId = existingProject.Id,
-            taskType = "extract-proposal",
-            project = ResearchAiProjectPayload.From(existingProject),
-            proposalText,
-            desiredOutputFormat = "json"
-        };
-
-        int timeoutSeconds = ResearchAiTimeouts.Resolve(o.TimeoutSeconds);
-        var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-        try
-        {
-            using var content = new StringContent(JsonSerializer.Serialize(request, Json), Encoding.UTF8, "application/json");
-            using var httpResp = await Http.PostAsync(url, content, cts.Token);
-            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
-            sw.Stop();
-
-            if (!httpResp.IsSuccessStatusCode)
-            {
-                string diag = ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException((int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
-                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
-                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
-                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
-                }, diag,
-                isTimeout: (int)httpResp.StatusCode is 504 or 408,
-                category: (int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "timeout",
-                    502 or 503 => "overload",
-                    429 => "rate_limit",
-                    401 or 403 => "auth",
-                    >= 500 => "provider_error",
-                    _ => "provider_error"
-                });
-            }
-
-            if (!_parser.TryParseExtraction(body, out var extraction) || !extraction.HasAnyContent)
-            {
-                string diag = ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body), "could not parse extraction JSON");
-                throw new ResearchAiException("The Research AI response could not be read as extracted proposal details.", diag);
-            }
-
-            ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, outcome: "success");
-            extraction.SourceMode = ResearchSourceMode.AiGenerated;
-            return extraction;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true);
-        }
-        catch (HttpRequestException)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log("ExtractProposal", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "network error");
-            throw new ResearchAiException("Could not reach the Research AI service. Check the endpoint in Settings and your connection.", diag);
-        }
-    }
-
-    // Phase 3 — Data Extraction Sheet endpoints. These follow the same
-    // extraction pattern (POST a safe JSON payload, parse a strict-JSON reply).
-    // The full CSV is never sent — only the privacy-safe CsvSampleSummary.
-    public Task<ExtractionSheetResult> GenerateExtractionSheetAsync(ResearchProject project, string extraQuestionsContext, CancellationToken cancellationToken)
-        => PostExtractionSheetAsync("extraction-sheet", project, new { extraQuestionsContext }, cancellationToken);
-
-    public Task<ExtractionSheetResult> ExtractVariablesFromQuestionsAsync(ResearchProject project, string questionsText, CancellationToken cancellationToken)
-        => PostExtractionSheetAsync("extraction-questions", project, new { questionsText }, cancellationToken);
-
-    public Task<ExtractionSheetResult> SuggestExtractionFixesAsync(ResearchProject project, ExtractionValidationReport report, CancellationToken cancellationToken)
-        => PostExtractionSheetAsync("extraction-fixes", project, new { report }, cancellationToken);
-
-    // Structured per-conflict fixes. COMPACT payload only: the active conflicts,
-    // the sheet variables (name/label/type/role/coding/aliases), CSV column
-    // HEADERS, and short project context — never raw CSV rows or proposal text.
-    public async Task<ConflictFixResult> SuggestConflictFixesAsync(ResearchProject project, List<ConflictFixInput> conflicts, CancellationToken cancellationToken)
-    {
-        var o = _options();
-        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
-            throw new ResearchAiNotConfiguredException();
-
-        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/conflict-fixes";
-        var request = new
-        {
-            projectId = project.Id,
-            taskType = "conflict-fixes",
-            title = project.Title,
-            specialty = project.Specialty,
-            studyType = project.StudyType,
-            variables = (project.Variables ?? new List<ResearchVariable>()).Select(v => new
-            {
-                v.VariableName, v.QuestionLabel, type = v.VariableType, role = v.Role, v.Coding, aliases = v.SourceColumnAliases
-            }),
-            csvHeaders = project.CsvSampleSummary?.Columns.Select(c => c.Name) ?? Enumerable.Empty<string>(),
-            conflicts,
-            desiredOutputFormat = "json"
-        };
-
-        int timeoutSeconds = ResearchAiTimeouts.Resolve(o.TimeoutSeconds);
-        var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-        try
-        {
-            using var content = new StringContent(JsonSerializer.Serialize(request, Json), Encoding.UTF8, "application/json");
-            using var httpResp = await Http.PostAsync(url, content, cts.Token);
-            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
-            sw.Stop();
-
-            if (!httpResp.IsSuccessStatusCode)
-            {
-                string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException((int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
-                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
-                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
-                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
-                }, diag,
-                isTimeout: (int)httpResp.StatusCode is 504 or 408,
-                category: (int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "timeout",
-                    502 or 503 => "overload",
-                    429 => "rate_limit",
-                    401 or 403 => "auth",
-                    >= 500 => "provider_error",
-                    _ => "provider_error"
-                });
-            }
-
-            if (!_parser.TryParseConflictFixes(body, out var result) || result.Fixes.Count == 0)
-            {
-                string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body), "could not parse conflict fixes JSON", category: "parse_failure");
-                throw new ResearchAiException("The Research AI response could not be read as conflict fixes. Please try again.", diag, category: "parse_failure");
-            }
-
-            ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, outcome: "success");
-            return result;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout", category: "timeout");
-            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true, category: "timeout");
-        }
-        catch (HttpRequestException)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log("ConflictFixes", "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "network error", category: "network");
-            throw new ResearchAiException("Could not reach the Research AI service. Check the endpoint in Settings and your connection.", diag, category: "network");
-        }
-    }
-
-    private async Task<ExtractionSheetResult> PostExtractionSheetAsync(string path, ResearchProject project, object extra, CancellationToken cancellationToken)
-    {
-        var o = _options();
-        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
-            throw new ResearchAiNotConfiguredException();
-
-        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/" + path;
-
-        var request = new
-        {
-            projectId = project.Id,
-            taskType = path,
-            project = ResearchAiProjectPayload.From(project),
-            csvSampleSummary = project.CsvSampleSummary,   // safe summary only, never full data
-            existingVariables = project.Variables,
-            googleFormUrl = project.GoogleFormUrl,
-            extra,
-            desiredOutputFormat = "json"
-        };
-
-        int timeoutSeconds = ResearchAiTimeouts.Resolve(o.TimeoutSeconds);
-        var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-        try
-        {
-            using var content = new StringContent(JsonSerializer.Serialize(request, Json), Encoding.UTF8, "application/json");
-            using var httpResp = await Http.PostAsync(url, content, cts.Token);
-            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
-            sw.Stop();
-
-            if (!httpResp.IsSuccessStatusCode)
-            {
-                string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException((int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
-                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
-                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
-                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
-                }, diag,
-                isTimeout: (int)httpResp.StatusCode is 504 or 408,
-                category: (int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "timeout",
-                    502 or 503 => "overload",
-                    429 => "rate_limit",
-                    401 or 403 => "auth",
-                    >= 500 => "provider_error",
-                    _ => "provider_error"
-                });
-            }
-
-            if (!_parser.TryParseExtractionSheet(body, out var result) || !result.HasAnyContent)
-            {
-                string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body), "could not parse extraction sheet JSON");
-                throw new ResearchAiException("The Research AI response could not be read as an extraction sheet.", diag);
-            }
-
-            ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, outcome: "success");
-            result.SourceMode = ResearchSourceMode.AiGenerated;
-            return result;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true);
-        }
-        catch (HttpRequestException)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "network error");
-            throw new ResearchAiException("Could not reach the Research AI service. Check the endpoint in Settings and your connection.", diag);
-        }
-    }
-
-    private async Task<ResearchAiResponse> PostAsync(
-        string path,
-        ResearchAiTaskType task,
-        ResearchProject project,
-        ResearchRecommendations? recommendations,
-        CancellationToken cancellationToken)
-    {
-        var o = _options();
-        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
-            throw new ResearchAiNotConfiguredException();
-
-        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/" + path;
-
-        var request = new ResearchAiRequest
-        {
-            ProjectId = project.Id,
-            TaskType = task == ResearchAiTaskType.Recommendations ? "recommendations" : "proposal",
-            Project = ResearchAiProjectPayload.From(project),
-            AcceptedRecommendations = recommendations,
-            DesiredOutputFormat = "json"
-        };
-
-        int timeoutSeconds = ResearchAiTimeouts.Resolve(o.TimeoutSeconds);
-        var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-        try
-        {
-            using var content = new StringContent(JsonSerializer.Serialize(request, Json), Encoding.UTF8, "application/json");
-            using var httpResp = await Http.PostAsync(url, content, cts.Token);
-            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
-            sw.Stop();
-
-            if (!httpResp.IsSuccessStatusCode)
-            {
-                string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body));
-                throw new ResearchAiException((int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.",
-                    500 => $"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.",
-                    502 or 503 => "The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.",
-                    _ => $"The Research AI service returned an error ({(int)httpResp.StatusCode})."
-                }, diag,
-                isTimeout: (int)httpResp.StatusCode is 504 or 408,
-                category: (int)httpResp.StatusCode switch
-                {
-                    504 or 408 => "timeout",
-                    502 or 503 => "overload",
-                    429 => "rate_limit",
-                    401 or 403 => "auth",
-                    >= 500 => "provider_error",
-                    _ => "provider_error"
-                });
-            }
-
-            ResearchAiResponse? parsed = null;
-            string? parseErr = null;
-            try { parsed = JsonSerializer.Deserialize<ResearchAiResponse>(body, Json); }
-            catch (Exception pex) { parseErr = pex.GetType().Name; /* fall through to tolerant parsing */ }
-
-            // If the body wasn't our envelope, try to recover structured models
-            // directly from whatever JSON the backend returned.
-            if (parsed is null || (parsed.Recommendations is null && parsed.ProposalDraft is null && string.IsNullOrWhiteSpace(parsed.ErrorMessage)))
-            {
-                var recovered = new ResearchAiResponse { Success = true, RawText = body };
-                if (task == ResearchAiTaskType.Recommendations && _parser.TryParseRecommendations(body, out var r))
-                    recovered.Recommendations = r;
-                if (task == ResearchAiTaskType.ProposalDraft && _parser.TryParseProposal(body, out var d))
-                    recovered.ProposalDraft = d;
-                parsed = recovered;
-            }
-
-            if (!parsed.Success && !string.IsNullOrWhiteSpace(parsed.ErrorMessage))
-            {
-                string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body), parseErr);
-                throw new ResearchAiException(parsed.ErrorMessage, diag);
-            }
-
-            ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, (int)httpResp.StatusCode, string.IsNullOrEmpty(body), parseErr, "success");
-            return parsed;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "timeout");
-            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.", diag, isTimeout: true);
-        }
-        catch (HttpRequestException)
-        {
-            sw.Stop();
-            string diag = ResearchAiDiagnostics.Log(path, "Http", timeoutSeconds, sw.Elapsed.TotalSeconds, outcome: "network error");
-            throw new ResearchAiException("Could not reach the Research AI service. Check the endpoint in Settings and your connection.", diag);
-        }
-    }
-
-    // ---- Health check (Part G) ---------------------------------------------
-    // Sends a minimal request and maps the outcome to a small, user-facing
-    // status. Never throws — always returns a result so Settings can show it.
-    public async Task<ResearchAiHealthResult> TestConnectionAsync(CancellationToken cancellationToken)
-    {
-        var o = _options();
-        if (string.IsNullOrWhiteSpace(o.EndpointBaseUrl))
-            return new ResearchAiHealthResult { Status = "Not configured", Message = "Add a backend endpoint URL first." };
-
-        string url = o.EndpointBaseUrl.TrimEnd('/') + "/api/research-ai/health";
-        var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(20));   // a ping should be fast; not the full generation floor
-
-        try
-        {
-            using var httpResp = await Http.GetAsync(url, cts.Token);
-            string body = await httpResp.Content.ReadAsStringAsync(cts.Token);
-            sw.Stop();
-
-            if (httpResp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-                return new ResearchAiHealthResult { Status = "Unauthorized", Message = "The endpoint rejected the request.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-            if (!httpResp.IsSuccessStatusCode)
-                return new ResearchAiHealthResult { Status = "Provider unavailable", Message = $"The endpoint returned an error ({(int)httpResp.StatusCode}).", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-            if (string.IsNullOrWhiteSpace(body))
-                return new ResearchAiHealthResult { Status = "Empty response", Message = "The endpoint responded with no content.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-
-            return new ResearchAiHealthResult { Success = true, Status = "Connected", Message = "The Research AI endpoint responded successfully.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return new ResearchAiHealthResult { Status = "Timed out", Message = "The endpoint did not respond in time.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
-        catch (HttpRequestException)
-        {
-            return new ResearchAiHealthResult { Status = "Provider unavailable", Message = "Could not reach the endpoint. Check the URL and your connection.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
     }
 }
 
@@ -1228,24 +769,24 @@ public sealed class MockResearchAiService : IResearchAiService
 //     rate limit, non-JSON, empty response) are mapped to friendly, key-free
 //     ResearchAiException messages — the service never crashes the app.
 // ---------------------------------------------------------------------------
-public sealed class DevelopmentZaiResearchAiService : IResearchAiService
+// Production Research AI service. Keeps ALL prompt-building and response parsing
+// in the app; the transport is the shared OrbitLab backend proxy, so the desktop
+// client never holds a provider key, never picks the model, and never talks to a
+// provider directly. Every AI feature (recommendations, proposal, extraction,
+// extraction sheets, questions→variables, conflict fixes) flows through it.
+public sealed class ProxiedResearchAiService : IResearchAiService
 {
-    // Disable the HttpClient-level timeout (its default is 100s, which was
-    // cutting off the ~90-100s structured-JSON generations). The real per-request
-    // timeout is enforced by the linked CancellationTokenSource below, mirroring
-    // the generous allowance the working flashcard request uses.
-    private static readonly HttpClient Http = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     private readonly Func<ResearchAiOptions> _options;
-    private readonly Func<ZaiDevCredentials> _credentials;
+    private readonly OrbitLabAiProxyClient _proxy;
     private readonly ResearchRecommendationParser _parser = new();
 
-    public DevelopmentZaiResearchAiService(Func<ResearchAiOptions> options, Func<ZaiDevCredentials> credentials)
+    public ProxiedResearchAiService(Func<ResearchAiOptions> options, OrbitLabAiProxyClient proxy)
     {
         _options = options;
-        _credentials = credentials;
+        _proxy = proxy;
     }
 
-    public bool IsConfigured => _credentials().HasKey;
+    public bool IsConfigured => _proxy.IsAvailable;
 
     public async Task<ResearchRecommendations> GenerateRecommendationsAsync(ResearchProject project, CancellationToken cancellationToken)
     {
@@ -1426,59 +967,38 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
     // max_tokens — never consumes meaningful quota. Never throws.
     public async Task<ResearchAiHealthResult> TestConnectionAsync(CancellationToken cancellationToken)
     {
-        var creds = _credentials();
-        if (!creds.HasKey)
-            return new ResearchAiHealthResult { Status = "Not configured", Message = "No AI provider key is available. Add your API key in AI Settings." };
+        if (!_proxy.IsAvailable)
+            return new ResearchAiHealthResult { Status = "Not configured", Message = "Sign in to your OrbitLab account to use AI features." };
 
-        string baseUrl = string.IsNullOrWhiteSpace(creds.BaseUrl) ? "https://api.z.ai/api/paas/v4" : creds.BaseUrl.Trim().TrimEnd('/');
-        string model = string.IsNullOrWhiteSpace(creds.Model) ? "GLM-4.7-FlashX" : creds.Model.Trim();
-
-        var body = new
-        {
-            model,
-            messages = new[] { new { role = "user", content = "Reply with the single word: OK" } },
-            temperature = 0,
-            max_tokens = 8,
-            stream = false
-        };
-
+        string body = OrbitLabAiProxyClient.BuildChatBody("", "Reply with the single word: OK", temperature: 0, maxTokens: 8);
         var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(20));   // a ping should be fast; not the full generation floor
+        var r = await _proxy.SendChatAsync(body, timeoutSeconds: 20, cancellationToken);
+        sw.Stop();
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", creds.ApiKey.Trim());
-        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-
-        try
+        switch (r.Outcome)
         {
-            var response = await Http.SendAsync(request, cts.Token);
-            string json = await response.Content.ReadAsStringAsync(cts.Token);
-            sw.Stop();
+            case AiProxyOutcome.NoSession:
+                return new ResearchAiHealthResult { Status = "Not configured", Message = "Sign in to your OrbitLab account to use AI features.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+            case AiProxyOutcome.Timeout:
+                return new ResearchAiHealthResult { Status = "Timed out", Message = "AI did not respond in time.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+            case AiProxyOutcome.Network:
+                return new ResearchAiHealthResult { Status = "Provider unavailable", Message = "Could not reach OrbitLab. Check your connection.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+        }
 
-            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-                return new ResearchAiHealthResult { Status = "Unauthorized", Message = "The provider rejected the request. Check your API key in AI Settings.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-            if (!response.IsSuccessStatusCode)
-                return new ResearchAiHealthResult { Status = "Provider unavailable", Message = $"The provider returned an error ({(int)response.StatusCode}).", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+        if (r.Status is 401)
+            return new ResearchAiHealthResult { Status = "Unauthorized", Message = "Your session has expired. Please log in again.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+        if (r.Status is 403)
+            return new ResearchAiHealthResult { Status = "Unauthorized", Message = "Your subscription is not active for AI features.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+        if (r.Status is 429)
+            return new ResearchAiHealthResult { Status = "Provider unavailable", Message = "You have reached today's AI limit. Please try again tomorrow.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+        if (!r.IsSuccess)
+            return new ResearchAiHealthResult { Status = "Provider unavailable", Message = "AI is temporarily unavailable. Please try again shortly.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
 
-            string content = ExtractContent(json);
-            if (string.IsNullOrWhiteSpace(content))
-                return new ResearchAiHealthResult { Status = "Empty response", Message = "The provider responded with no content.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
+        string content = OrbitLabAiProxyClient.ExtractContent(r.Body);
+        if (string.IsNullOrWhiteSpace(content))
+            return new ResearchAiHealthResult { Status = "Empty response", Message = "AI responded with no content.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
 
-            return new ResearchAiHealthResult { Success = true, Status = "Connected", Message = "The Research AI provider responded successfully.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return new ResearchAiHealthResult { Status = "Timed out", Message = "The provider did not respond in time.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
-        catch (HttpRequestException)
-        {
-            return new ResearchAiHealthResult { Status = "Provider unavailable", Message = "Could not reach the provider. Check your connection.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
-        catch (Exception)
-        {
-            return new ResearchAiHealthResult { Status = "Parse error", Message = "The response could not be read.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
-        }
+        return new ResearchAiHealthResult { Success = true, Status = "Connected", Message = "Research AI responded successfully.", ElapsedSeconds = sw.Elapsed.TotalSeconds };
     }
 
     // maxOutputTokens is per-action: variable lists and conflict fixes need far
@@ -1498,138 +1018,78 @@ public sealed class DevelopmentZaiResearchAiService : IResearchAiService
     private async Task<(string Content, ResearchAiCallInfo Info)> CompleteWithInfoAsync(string action, string systemPrompt, string userPrompt, CancellationToken cancellationToken,
         int minTimeoutSeconds = ResearchAiTimeouts.DefaultLongRunningSeconds, int maxOutputTokens = 8000)
     {
-        var creds = _credentials();
-        if (!creds.HasKey)
-            throw new ResearchAiException("No AI provider key is available. Add your API key in AI Settings, then try again.", category: "auth");
+        if (!_proxy.IsAvailable)
+            throw new ResearchAiException("Please sign in to your OrbitLab account to use AI features.", category: "auth");
 
         var opts = _options();
-        string baseUrl = string.IsNullOrWhiteSpace(creds.BaseUrl)
-            ? "https://api.z.ai/api/paas/v4"
-            : creds.BaseUrl.Trim().TrimEnd('/');
-        string model = string.IsNullOrWhiteSpace(creds.Model) ? "GLM-4.7-FlashX" : creds.Model.Trim();
-
-        var body = new
-        {
-            model,
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            temperature = 0.2,
-            max_tokens = maxOutputTokens,
-            stream = false
-        };
+        const string model = "server-managed";   // the backend forces the real model; the client cannot choose it
+        string body = OrbitLabAiProxyClient.BuildChatBody(systemPrompt, userPrompt, temperature: 0.2, maxTokens: maxOutputTokens);
 
         // Complex research tasks can legitimately take many minutes — never let a
         // small configured timeout cut off a genuine long-running request. Floors
         // at minTimeoutSeconds (15 minutes by default); the student may raise the
-        // configured value up to the 45-minute maximum. Centralized via
-        // ResearchAiTimeouts so every call path (dev provider + backend HTTP
-        // client) applies the exact same floor/ceiling.
+        // configured value up to the 45-minute maximum.
         int timeoutSeconds = ResearchAiTimeouts.Resolve(opts.TimeoutSeconds, minTimeoutSeconds);
         int inputChars = systemPrompt.Length + userPrompt.Length;
         var sw = Stopwatch.StartNew();
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
         // Safe diagnostics helper for this call — sizes/status only, never content.
         string LogCall(string? outcome = null, int? status = null, bool empty = false, string? parseErr = null, string? category = null)
-            => ResearchAiDiagnostics.Log(action, "DevZai", timeoutSeconds, sw.Elapsed.TotalSeconds, status, empty, parseErr, outcome,
+            => ResearchAiDiagnostics.Log(action, "Proxy", timeoutSeconds, sw.Elapsed.TotalSeconds, status, empty, parseErr, outcome,
                 model, inputChars, maxOutputTokens, category);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/chat/completions");
-        // The key is attached only to the outgoing request header — never logged.
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", creds.ApiKey.Trim());
-        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-
-        HttpResponseMessage response;
-        string json;
-        try
-        {
-            response = await Http.SendAsync(request, cts.Token);
-            json = await response.Content.ReadAsStringAsync(cts.Token);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            sw.Stop();
-            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.",
-                LogCall(outcome: "timeout", category: "timeout"), isTimeout: true, category: "timeout");
-        }
-        catch (HttpRequestException)
-        {
-            sw.Stop();
-            throw new ResearchAiException("Could not reach the Research AI service. Check your connection and try again.",
-                LogCall(outcome: "network error", category: "network"), category: "network");
-        }
+        var r = await _proxy.SendChatAsync(body, timeoutSeconds, cancellationToken);
         sw.Stop();
 
-        if (!response.IsSuccessStatusCode)
+        if (r.Outcome == AiProxyOutcome.NoSession)
+            throw new ResearchAiException("Please sign in to your OrbitLab account to use AI features.",
+                LogCall(outcome: "no session", category: "auth"), category: "auth");
+        if (r.Outcome == AiProxyOutcome.Timeout)
+            throw new ResearchAiException("Research AI did not finish within the allowed time. Your content was kept. You can retry or continue manually.",
+                LogCall(outcome: "timeout", category: "timeout"), isTimeout: true, category: "timeout");
+        if (r.Outcome == AiProxyOutcome.Network)
+            throw new ResearchAiException("Could not reach OrbitLab. Check your connection and try again.",
+                LogCall(outcome: "network error", category: "network"), category: "network");
+
+        if (!r.IsSuccess)
         {
-            int code = (int)response.StatusCode;
-            // Map statuses to friendly, key-free messages AND a machine-readable
-            // category so the UI never treats a provider failure as "timeout".
-            // The raw provider body is intentionally NOT included (it can echo
-            // request details).
+            int code = r.Status;
+            // Map statuses to friendly messages + a machine-readable category. The
+            // upstream body is intentionally NOT surfaced (it can echo request/header
+            // details); user-facing text never mentions keys, tokens, or endpoints.
             (string msg, string category, bool isTimeout) = code switch
             {
-                504 or 408 => ("The provider stopped the request before completion. Your content was kept. Try again with the compact input or split the task.", "timeout", true),
-                500 => ($"Research AI provider returned an internal error after {sw.Elapsed.TotalSeconds:F0} seconds. Your content was kept. You can retry with compact input or continue manually.", "provider_error", false),
-                502 or 503 => ("The Research AI provider is overloaded or temporarily unavailable. Your content was kept. Try again in a moment.", "overload", false),
-                429 => ("The Research AI provider is busy (rate limited). Wait a moment and try again.", "rate_limit", false),
-                413 => ("The request was too large for the provider. Your content was kept. Retry sends compact input; if it persists, split the task.", "prompt_too_long", false),
-                401 or 403 => ("The Research AI provider rejected the request. Check your API key in AI Settings.", "auth", false),
-                >= 500 => ("The Research AI provider had a server error. Your content was kept. Please try again shortly.", "provider_error", false),
-                _ => ("The Research AI provider returned an error. Your content was kept. Please try again.", "provider_error", false)
+                401 => ("Your session has expired. Please log out and log in again, then retry.", "auth", false),
+                403 => ("Your OrbitLab subscription is not active for AI features. Please contact support.", "auth", false),
+                429 => ("You have reached today's AI limit. Your content was kept. Please try again tomorrow.", "rate_limit", false),
+                413 => ("The request was too large. Your content was kept. Retry sends compact input; if it persists, split the task.", "prompt_too_long", false),
+                504 or 408 => ("AI stopped the request before completion. Your content was kept. Try again with the compact input or split the task.", "timeout", true),
+                502 or 503 => ("AI is temporarily unavailable. Your content was kept. Try again in a moment.", "overload", false),
+                >= 500 => ("AI had a server error. Your content was kept. Please try again shortly.", "provider_error", false),
+                _ => ("AI returned an error. Your content was kept. Please try again.", "provider_error", false)
             };
             throw new ResearchAiException(msg, LogCall(status: code, category: category), isTimeout, category);
         }
 
-        string content = ExtractContent(json);
+        string content = OrbitLabAiProxyClient.ExtractContent(r.Body);
         if (string.IsNullOrWhiteSpace(content))
         {
-            throw new ResearchAiException("The Research AI service returned an empty response. Your content was kept. Please try again.",
-                LogCall(status: (int)response.StatusCode, empty: true, category: "empty_response"), category: "empty_response");
+            throw new ResearchAiException("AI returned an empty response. Your content was kept. Please try again.",
+                LogCall(status: r.Status, empty: true, category: "empty_response"), category: "empty_response");
         }
 
-        LogCall(outcome: "success", status: (int)response.StatusCode);
+        LogCall(outcome: "success", status: r.Status);
         var info = new ResearchAiCallInfo
         {
-            Provider = "DevZai",
+            Provider = "Proxy",
             Model = model,
             InputChars = inputChars,
             MaxTokens = maxOutputTokens,
             TimeoutSeconds = timeoutSeconds,
             ElapsedSeconds = sw.Elapsed.TotalSeconds,
-            StatusCode = (int)response.StatusCode
+            StatusCode = r.Status
         };
         return (content, info);
-    }
-
-    // Reads choices[0].message.content from a standard chat-completions body.
-    private static string ExtractContent(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("choices", out var choices)
-                && choices.ValueKind == JsonValueKind.Array
-                && choices.GetArrayLength() > 0)
-            {
-                var first = choices[0];
-                if (first.TryGetProperty("message", out var message)
-                    && message.TryGetProperty("content", out var contentEl)
-                    && contentEl.ValueKind == JsonValueKind.String)
-                {
-                    return contentEl.GetString()?.Trim() ?? "";
-                }
-            }
-        }
-        catch
-        {
-            // Non-JSON / unexpected envelope — nothing usable.
-        }
-        return "";
     }
 
     // ---- Prompts: strict JSON only, no fabricated data/results/references ----
