@@ -8,13 +8,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AI-Flashcard-Maker</AssemblyName>
     <!-- Phase 6A.1 versioning scheme — OrbitLab Commercial Beta.
-         User-visible label: 0.1.0-beta.1 (InformationalVersion, shown in the UI).
-         Assembly/File: numeric 0.1.0.0 (update-gate comparisons + Windows metadata).
+         User-visible label: 0.1.1-beta (InformationalVersion, shown in the UI).
+         Assembly/File: numeric 0.1.1.0 (update-gate comparisons + Windows metadata).
          AssemblyName/namespace stay unchanged on purpose (see Branding.cs). -->
-    <Version>0.1.0-beta.1</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>0.1.0-beta.1</InformationalVersion>
+    <Version>0.1.1-beta</Version>
+    <AssemblyVersion>0.1.1.0</AssemblyVersion>
+    <FileVersion>0.1.1.0</FileVersion>
+    <InformationalVersion>0.1.1-beta</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
   </PropertyGroup>
