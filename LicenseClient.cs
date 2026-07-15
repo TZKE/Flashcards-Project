@@ -85,6 +85,59 @@ public sealed class HeartbeatResponse
     public DateTime ServerTimeUtc { get; set; }
 }
 
+// Phase 9 DTOs — project-usage accounting + Telegram-prompt state. Metadata only.
+public sealed class ProjectUsageDto
+{
+    public string? CycleId { get; set; }
+    public string? PlanName { get; set; }
+    public string? Status { get; set; }
+    public DateTime? EndsAtUtc { get; set; }
+    public int Limit { get; set; }
+    public int Used { get; set; }
+    public int Remaining { get; set; }
+    public bool Active { get; set; }
+}
+
+public sealed class AccountOverviewDto
+{
+    public bool Ok { get; set; }
+    public bool TelegramPromptAcknowledged { get; set; }
+    public ProjectUsageDto? Usage { get; set; }
+}
+
+public sealed class ProjectStatusDto
+{
+    public bool Ok { get; set; }
+    public string? State { get; set; }   // never_counted | counted_in_current_cycle | counted_in_previous_cycle
+    public bool CanRunFirstAnalysis { get; set; }
+    public int Limit { get; set; }
+    public int Used { get; set; }
+    public int Remaining { get; set; }
+}
+
+public sealed class ReserveResultDto
+{
+    public bool Ok { get; set; }
+    public bool AlreadyCounted { get; set; }
+    public string? ReservationId { get; set; }
+    public DateTime? ExpiresAtUtc { get; set; }
+    public int Limit { get; set; }
+    public int Used { get; set; }
+    public int Remaining { get; set; }
+}
+
+public sealed class FinalizeResultDto
+{
+    public bool Ok { get; set; }
+    public bool Finalized { get; set; }
+    public bool AlreadyCounted { get; set; }
+    public int Limit { get; set; }
+    public int Used { get; set; }
+    public int Remaining { get; set; }
+}
+
+public sealed class SimpleOkDto { public bool Ok { get; set; } }
+
 public static class LicenseApiClient
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -119,6 +172,59 @@ public static class LicenseApiClient
         string token, int? subscriptionId, string deviceHash) =>
         PostAsync<HeartbeatResponse>("/api/license/heartbeat",
             new { subscriptionId, deviceHash, appVersion = AppConfig.CurrentVersionLabel }, token);
+
+    // ---- Phase 9: project-usage accounting + Telegram-prompt state ----
+
+    public static Task<ApiResult<AccountOverviewDto>> GetAccountOverviewAsync(string token) =>
+        GetAsync<AccountOverviewDto>("/api/account/overview", token);
+
+    public static Task<ApiResult<ProjectStatusDto>> GetProjectStatusAsync(string token, string projectPublicId) =>
+        GetAsync<ProjectStatusDto>($"/api/projects/{Uri.EscapeDataString(projectPublicId)}/status", token);
+
+    // Phase 9 reservation lifecycle.
+    public static Task<ApiResult<ReserveResultDto>> ReserveProjectAsync(string token, string projectPublicId) =>
+        PostAsync<ReserveResultDto>($"/api/projects/{Uri.EscapeDataString(projectPublicId)}/reserve", new { }, token);
+
+    public static Task<ApiResult<FinalizeResultDto>> FinalizeProjectAsync(string token, string projectPublicId, string reservationId) =>
+        PostAsync<FinalizeResultDto>($"/api/projects/{Uri.EscapeDataString(projectPublicId)}/reservations/{Uri.EscapeDataString(reservationId)}/finalize", new { }, token);
+
+    public static Task<ApiResult<SimpleOkDto>> ReleaseProjectAsync(string token, string projectPublicId, string reservationId) =>
+        SendAsync<SimpleOkDto>(HttpMethod.Delete, $"/api/projects/{Uri.EscapeDataString(projectPublicId)}/reservations/{Uri.EscapeDataString(reservationId)}", token);
+
+    public static Task<ApiResult<SimpleOkDto>> MarkProjectDeletedAsync(string token, string projectPublicId) =>
+        PostAsync<SimpleOkDto>($"/api/projects/{Uri.EscapeDataString(projectPublicId)}/deleted", new { }, token);
+
+    public static Task<ApiResult<SimpleOkDto>> AckTelegramPromptAsync(string token) =>
+        PostAsync<SimpleOkDto>("/api/account/telegram-prompt/ack", new { }, token);
+
+    private static Task<ApiResult<T>> GetAsync<T>(string path, string bearer) where T : class =>
+        SendAsync<T>(HttpMethod.Get, path, bearer);
+
+    private static async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, string bearer) where T : class
+    {
+        if (!AppConfig.IsBackendConfigured)
+            return ApiResult<T>.Fail("not_configured", "No license server is configured in this build.");
+        try
+        {
+            using var req = new HttpRequestMessage(method, $"{AppConfig.BackendBaseUrl}{path}");
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
+            using var resp = await Http.SendAsync(req);
+            string json = await resp.Content.ReadAsStringAsync();
+            if (resp.IsSuccessStatusCode)
+            {
+                var data = JsonSerializer.Deserialize<T>(json, JsonOpts);
+                return data is null ? ApiResult<T>.Fail("bad_response", "Unexpected server response.") : ApiResult<T>.Success(data);
+            }
+            try
+            {
+                var err = JsonSerializer.Deserialize<ErrorBody>(json, JsonOpts);
+                if (!string.IsNullOrWhiteSpace(err?.Message)) return ApiResult<T>.Fail(err!.Error ?? "server_error", err.Message!);
+            }
+            catch { }
+            return ApiResult<T>.Fail("server_error", $"The server rejected the request (HTTP {(int)resp.StatusCode}).");
+        }
+        catch { return ApiResult<T>.Fail("network", "Could not reach the OrbitLab server."); }
+    }
 
     private static async Task<ApiResult<T>> PostAsync<T>(string path, object body, string? bearer = null)
         where T : class

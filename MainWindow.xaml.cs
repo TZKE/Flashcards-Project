@@ -291,6 +291,7 @@ public sealed partial class MainWindow : Window
         LoadSettings();
         LoadDecks();
         LoadResearch();
+        LoadPendingFinalizations();   // Phase 9: resume any unfinished first-run recordings
         LoadResearchAiConfig();
         // Phase 8 hardening: ALL AI features (Research Lab + flashcards) go through
         // the single OrbitLab backend proxy, authenticated with the current license
@@ -407,11 +408,15 @@ public sealed partial class MainWindow : Window
 
         RefreshAll();
         ShowPage(PageOverview);   // Phase 3A: research-only shell lands on the OrbitLab dashboard (Research Lab is one click away)
-        LicenseStubCombo.SelectedIndex = (int)_licenseStub;   // design-review stub only; no server
+        UpdatePlanCard();         // Phase 9: real, read-only plan card (backend entitlement)
         SetStatus("Logged in successfully.");
 
         // Phase 7: heartbeat on app entry (throttled, fail-open; offline grace applies).
         _ = RefreshLicenseAsync();
+        // Phase 9: load current-cycle usage for the plan card (fresh from the backend).
+        _ = RefreshAccountOverviewAsync();
+        // Phase 9: resolve any pending first-run finalizations now that we're signed in.
+        if (_pendingFinalizations.Count > 0) { EnsurePendingRetryTimer(); _ = RetryPendingFinalizationsAsync(); }
     }
 
     private void ShowPage(UIElement page)
@@ -647,50 +652,16 @@ public sealed partial class MainWindow : Window
 
     private void ChartsStudio_Click(object sender, RoutedEventArgs e) => ShowPage(PageChartsStudio);
 
-    private void Research_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => ShowPage(PageResearch);
+    private async void Research_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => await EnterResearchLabAsync();
 
     private void ChartsStudio_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => ShowPage(PageChartsStudio);
 
-    // Local, in-memory license state for DESIGN REVIEW ONLY. Real (signed-token) licensing is Phase 5-7.
-    private enum LicenseStubState { Unlicensed, ActiveCommercialBeta, GraceOffline, Expired }
-    private LicenseStubState _licenseStub = LicenseStubState.ActiveCommercialBeta;
+    // Phase 9: the Dashboard license/plan state is now real, read-only, and backed by
+    // backend entitlement data (see UpdatePlanCard). The design-review license-state
+    // stub (simulated Active/Expired/Unlicensed) has been removed entirely.
     private bool _activationWelcomeShownThisSession;
 
-    private void LicenseStubCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (LicenseStubCombo is null) return;
-        int i = LicenseStubCombo.SelectedIndex;
-        if (i < 0) return;
-        _licenseStub = (LicenseStubState)i;
-        ApplyLicenseStub();
-    }
-
-    private void ApplyLicenseStub()
-    {
-        if (PlanStateChip is null || PlanStateNote is null) return;   // dashboard not built yet
-
-        switch (_licenseStub)
-        {
-            case LicenseStubState.ActiveCommercialBeta:
-                PlanStateChip.Text = "Active";
-                PlanStateNote.Text = "Your Commercial Beta plan is active on this device.";
-                break;
-            case LicenseStubState.GraceOffline:
-                PlanStateChip.Text = "Offline grace";
-                PlanStateNote.Text = "Working offline — reconnect within your grace period to keep OrbitLab active.";
-                break;
-            case LicenseStubState.Expired:
-                PlanStateChip.Text = "Expired";
-                PlanStateNote.Text = "Your access expired. Existing local projects stay readable; renew to run new analyses.";
-                break;
-            default:
-                PlanStateChip.Text = "Unlicensed";
-                PlanStateNote.Text = "No active plan on this device. Enter an activation code to unlock OrbitLab.";
-                break;
-        }
-    }
-
-    // ----- Activation Welcome (visual / stub only) -----
+    // ----- Activation Welcome (shown once after a real successful registration) -----
 
     private void ShowActivationWelcome()
     {
@@ -710,8 +681,6 @@ public sealed partial class MainWindow : Window
     }
 
     private void HideActivationWelcome() => ActivationWelcomeOverlay.Visibility = Visibility.Collapsed;
-
-    private void WelcomePreview_Click(object sender, RoutedEventArgs e) => ShowActivationWelcome();
 
     private void WelcomeGoDashboard_Click(object sender, RoutedEventArgs e)
     {
@@ -882,6 +851,21 @@ public sealed partial class MainWindow : Window
     private LicenseCache? _license;                 // decrypted in-memory license session
     private bool _authBusy;                         // prevents double-submit of auth forms
     private DateTime _lastHeartbeatAttemptUtc = DateTime.MinValue;
+
+    // Phase 9: server-authoritative account overview (current-cycle project usage +
+    // Telegram-prompt state). Refreshed from the backend; never trusted from local state.
+    private AccountOverviewDto? _overview;
+    private bool _telegramPromptShownThisRun;       // guards against duplicate modal within a run
+
+    // Phase 9: projects whose first-run reservation succeeded + analysis completed, but
+    // whose finalize call has not yet landed (transient network / crash). Persisted locally
+    // (opaque ids + the on-hold result, LOCAL ONLY — never uploaded) and retried/recovered
+    // automatically. Such projects are blocked from further first-run actions and deletion
+    // until resolved. See PendingFinalization / PendingFinalizationRecovery.
+    private List<PendingFinalization> _pendingFinalizations = new();
+    private DispatcherTimer? _pendingRetryTimer;
+    private string _pendingResultOverlayProjectId = "";
+    private string PendingFinalizationsPath => Path.Combine(dataDir, "research_pending_finalizations.json");
 
     /// <summary>Register → login → bind device → heartbeat → enter the app.</summary>
     private async Task BackendSignupAsync(string email, string password, string code)
@@ -1093,8 +1077,299 @@ public sealed partial class MainWindow : Window
 
     private string ProjectLimitMessage(int limit) =>
         limit == 1
-            ? "Your Commercial Beta plan includes 1 active project."
-            : $"You reached the current limit of {limit} research projects. Additional research projects will be available with an upgrade later.";
+            ? "Your Commercial Beta plan includes 1 project for this subscription cycle."
+            : $"Your plan includes {limit} projects for this subscription cycle.";
+
+    // =====================================================================
+    // Phase 9 — server-authoritative project-usage accounting, plan card,
+    // and the once-per-account Telegram prompt. The backend owns the limit,
+    // the cycle, and the usage count; the client only displays and requests.
+    // =====================================================================
+
+    /// <summary>Refreshes the current-cycle usage + Telegram-prompt state from the backend, then repaints the plan card.</summary>
+    private async Task RefreshAccountOverviewAsync()
+    {
+        if (!AppConfig.IsBackendConfigured || _license is null || string.IsNullOrEmpty(_license.Token)) return;
+        var r = await LicenseApiClient.GetAccountOverviewAsync(_license.Token);
+        if (r.Ok) _overview = r.Data;
+        UpdatePlanCard();
+    }
+
+    /// <summary>Fetches a project's server-side usage state (null when the backend is unreachable).</summary>
+    private async Task<ProjectStatusDto?> GetProjectServerStateAsync(string projectId)
+    {
+        if (!AppConfig.IsBackendConfigured || _license is null || string.IsNullOrEmpty(_license.Token)) return null;
+        var r = await LicenseApiClient.GetProjectStatusAsync(_license.Token, projectId);
+        return r.Ok ? r.Data : null;
+    }
+
+    // ----- pending finalization (crash/network-safe first-run recording) -----
+
+    private void LoadPendingFinalizations()
+    {
+        try
+        {
+            var loaded = File.Exists(PendingFinalizationsPath)
+                ? JsonSerializer.Deserialize<List<PendingFinalization>>(File.ReadAllText(PendingFinalizationsPath)) ?? new()
+                : new List<PendingFinalization>();
+            // Drop corrupt/missing entries: a record without an opaque project id can never be
+            // resolved or matched to a project, so it is discarded rather than left to block.
+            _pendingFinalizations = loaded.Where(p => p is not null && !string.IsNullOrWhiteSpace(p.ProjectId)).ToList();
+            if (_pendingFinalizations.Count != loaded.Count) SavePendingFinalizations();
+        }
+        catch { _pendingFinalizations = new(); }
+    }
+
+    private void SavePendingFinalizations()
+    {
+        try { File.WriteAllText(PendingFinalizationsPath, JsonSerializer.Serialize(_pendingFinalizations)); }
+        catch { /* best-effort; retried in memory regardless */ }
+    }
+
+    private PendingFinalization? GetPending(string projectId) =>
+        _pendingFinalizations.FirstOrDefault(p => p.ProjectId == projectId);
+
+    // A recoverable pending record blocks first-run/deletion while it is still being recorded.
+    // An unrecoverable one (allowance full) does NOT block — it is resolved by discarding.
+    private bool HasBlockingPending(string projectId) =>
+        _pendingFinalizations.Any(p => p.ProjectId == projectId && !p.Unrecoverable);
+
+    private bool HasUnrecoverablePending(string projectId) =>
+        _pendingFinalizations.Any(p => p.ProjectId == projectId && p.Unrecoverable);
+
+    private void AddPendingFinalization(string projectId, string reservationId, DescriptiveStatisticsRecord result)
+    {
+        if (GetPending(projectId) is null)
+        {
+            _pendingFinalizations.Add(new PendingFinalization
+            {
+                ProjectId = projectId,
+                ReservationId = reservationId,
+                Result = result,               // stored LOCALLY so recovery can show it after finalize; never uploaded
+                CreatedAtUtc = DateTime.UtcNow,
+            });
+            SavePendingFinalizations();
+        }
+        EnsurePendingRetryTimer();
+    }
+
+    private void EnsurePendingRetryTimer()
+    {
+        // Only run while there is at least one still-recoverable record to retry.
+        if (!_pendingFinalizations.Any(p => !p.Unrecoverable)) return;
+        if (_pendingRetryTimer is not null) return;
+        _pendingRetryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
+        _pendingRetryTimer.Tick += async (_, _) => await RetryPendingFinalizationsAsync();
+        _pendingRetryTimer.Start();
+    }
+
+    /// <summary>
+    /// Recovers outstanding first-run finalizations (see PendingFinalizationRecovery). On success
+    /// the project becomes properly counted AND its on-hold result is committed/shown. If the slot
+    /// can no longer be obtained (allowance full), the record is flagged unrecoverable so the user
+    /// can discard it — the result is never committed and the project is never counted twice.
+    /// </summary>
+    private async Task RetryPendingFinalizationsAsync()
+    {
+        if (_license is null || string.IsNullOrEmpty(_license.Token)) return;
+        string token = _license.Token;   // capture once so a mid-loop session change can't NRE
+        var recovery = new PendingFinalizationRecovery(
+            (pid, rid) => LicenseApiClient.FinalizeProjectAsync(token, pid, rid),
+            pid => LicenseApiClient.ReserveProjectAsync(token, pid));
+
+        foreach (var pending in _pendingFinalizations.Where(p => !p.Unrecoverable).ToList())
+        {
+            var outcome = await recovery.ResolveAsync(pending);
+            switch (outcome)
+            {
+                case PendingRecoveryOutcome.Committed:
+                    CommitPendingResult(pending);                              // show the on-hold result
+                    _pendingFinalizations.RemoveAll(p => p.ProjectId == pending.ProjectId);
+                    SavePendingFinalizations();
+                    break;
+                case PendingRecoveryOutcome.Unrecoverable:
+                    pending.Unrecoverable = true;
+                    pending.UnrecoverableReason = "allowance_full";
+                    SavePendingFinalizations();                               // keep for the user to discard; stop retrying it
+                    ShowToast("A finished analysis couldn't be activated — your current plan's project allowance is now full.");
+                    break;
+                case PendingRecoveryOutcome.StillPending:
+                    SavePendingFinalizations();                               // ReservationId may have been refreshed
+                    break;
+            }
+        }
+        if (!_pendingFinalizations.Any(p => !p.Unrecoverable)) { _pendingRetryTimer?.Stop(); _pendingRetryTimer = null; }
+        await RefreshAccountOverviewAsync();
+    }
+
+    // Activates an on-hold result once its project is definitely counted server-side. Persists the
+    // record into the project and renders it if that project's Statistics tab is open. Local only.
+    private void CommitPendingResult(PendingFinalization pending)
+    {
+        var p = _researchData.Projects.FirstOrDefault(x => x.Id == pending.ProjectId);
+        if (p is null || pending.Result is null) return;      // project gone or legacy record without a result
+        p.DescriptiveStatistics = pending.Result;
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+        if (_openResearchId == p.Id)
+        {
+            StStaleBanner.Visibility = Visibility.Collapsed;
+            RenderStatisticsOutput(pending.Result);
+            var data = LoadStatisticsDataset(p, out _);
+            if (data is not null) RenderDatasetOverview(p, data, BuildStatisticsMatchInput(p, data));
+        }
+        ShowToast("Your earlier analysis has been recorded and is now available.");
+    }
+
+    // Discards a pending result the user chose not to keep (typically an unrecoverable one). The
+    // result is dropped locally; the project was never counted server-side, so nothing is refunded
+    // and nothing is double-counted. Never leaves the project stuck in a pending state.
+    private void DiscardPendingFinalization(string projectId)
+    {
+        _pendingFinalizations.RemoveAll(p => p.ProjectId == projectId);
+        SavePendingFinalizations();
+        if (!_pendingFinalizations.Any(p => !p.Unrecoverable)) { _pendingRetryTimer?.Stop(); _pendingRetryTimer = null; }
+    }
+
+    /// <summary>Renders the read-only Dashboard plan card purely from backend entitlement data.</summary>
+    private void UpdatePlanCard()
+    {
+        if (PlanCardName is null) return;   // dashboard not built yet
+
+        // Not signed in / no backend: neutral state.
+        if (_license is null)
+        {
+            PlanCardName.Text = "Not signed in";
+            PlanCardStatusChip.Visibility = Visibility.Collapsed;
+            PlanCardProjects.Text = "";
+            PlanCardExpiry.Text = "";
+            PlanCardNote.Text = "Sign in to your OrbitLab account to see your plan.";
+            return;
+        }
+
+        var u = _overview?.Usage;
+        PlanCardName.Text = u?.PlanName is { Length: > 0 } pn ? pn : (string.IsNullOrEmpty(_license.PlanName) ? "Commercial Beta" : _license.PlanName);
+
+        string status = u?.Status ?? _license.Status;
+        bool active = (u?.Active ?? _license.IsActive) && !string.Equals(status, "SessionExpired", StringComparison.OrdinalIgnoreCase);
+        string chipText = active ? "Active" : (string.Equals(status, "Expired", StringComparison.OrdinalIgnoreCase) ? "Expired" : "Inactive");
+        PlanCardStatusChip.Visibility = Visibility.Visible;
+        PlanCardStatusText.Text = chipText;
+        var chipBrush = active ? "SuccessSoftBrush" : "DangerSoftBrush";
+        var chipFg = active ? "SuccessBrush" : "DangerBrush";
+        try { PlanCardStatusChip.Background = (Brush)FindResource(chipBrush); PlanCardStatusText.Foreground = (Brush)FindResource(chipFg); } catch { }
+
+        if (u is not null)
+        {
+            PlanCardProjects.Text = $"Projects used: {u.Used} of {u.Limit}";
+            PlanCardExpiry.Text = u.EndsAtUtc is { } end
+                ? $"Renews / ends: {end.ToLocalTime():MMM d, yyyy}"
+                : "No expiry set";
+            PlanCardNote.Text = active
+                ? "A project counts toward your plan the first time you run its descriptive statistics."
+                : "Your subscription is not active. Contact support or start a new subscription cycle to continue.";
+        }
+        else
+        {
+            // Backend temporarily unavailable — be honest, don't show a fake count.
+            PlanCardProjects.Text = "Project usage unavailable";
+            PlanCardExpiry.Text = "";
+            PlanCardNote.Text = "OrbitLab couldn't reach the server to load your plan usage. Check your connection.";
+        }
+    }
+
+    /// <summary>
+    /// Shows the once-per-account Telegram prompt the first time an authenticated,
+    /// actively-subscribed user opens Research Lab. Account-level (server) state, so it
+    /// never reappears after acknowledgement — across logout, reinstall, or renewal.
+    /// </summary>
+    private async Task MaybeShowTelegramPromptAsync()
+    {
+        if (_telegramPromptShownThisRun) return;
+        if (!AppConfig.IsBackendConfigured || _license is null || string.IsNullOrEmpty(_license.Token)) return;
+        if (!_license.IsActive) return;
+
+        // Authoritative check: only skip when the account has definitively acknowledged.
+        var r = await LicenseApiClient.GetAccountOverviewAsync(_license.Token);
+        if (r.Ok) _overview = r.Data;
+        if (_overview is null || _overview.TelegramPromptAcknowledged) return;
+
+        _telegramPromptShownThisRun = true;
+        TelegramPromptOverlay.Visibility = Visibility.Visible;
+        FadeIn(TelegramPromptOverlay, 160);
+    }
+
+    private bool _telegramAckInFlight;
+
+    private async Task<bool> AckTelegramPromptAsync()
+    {
+        if (_license is null || string.IsNullOrEmpty(_license.Token)) return false;
+        var r = await LicenseApiClient.AckTelegramPromptAsync(_license.Token);
+        if (r.Ok && _overview is not null) _overview.TelegramPromptAcknowledged = true;
+        return r.Ok;
+    }
+
+    private async void TelegramPromptJoin_Click(object sender, RoutedEventArgs e)
+    {
+        if (_telegramAckInFlight) return;
+        _telegramAckInFlight = true;
+        try
+        {
+            bool acked = await AckTelegramPromptAsync();
+            if (!acked)
+            {
+                ShowToast("OrbitLab couldn't save your choice. Check your connection and try again.");
+                return;   // keep the modal open so the account is not falsely marked acknowledged
+            }
+            TelegramPromptOverlay.Visibility = Visibility.Collapsed;
+            var url = EffectiveTelegramUrl();
+            if (url is not null)
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+                catch { ShowToast("Could not open the Telegram channel link."); }
+            }
+            else ShowToast("The official Telegram channel link is not configured yet.");
+        }
+        finally { _telegramAckInFlight = false; }
+    }
+
+    private async void TelegramPromptLater_Click(object sender, RoutedEventArgs e)
+    {
+        if (_telegramAckInFlight) return;
+        _telegramAckInFlight = true;
+        try
+        {
+            if (await AckTelegramPromptAsync())
+                TelegramPromptOverlay.Visibility = Visibility.Collapsed;
+            else
+                ShowToast("OrbitLab couldn't save your choice. Check your connection and try again.");
+        }
+        finally { _telegramAckInFlight = false; }
+    }
+
+    // ---- Phase 9: unrecoverable pending-result dialog (allowance full) ----
+
+    private void ShowPendingResultOverlay(string projectId, string message)
+    {
+        _pendingResultOverlayProjectId = projectId;
+        PendingResultText.Text = message;
+        PendingResultOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void PendingResultDiscard_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(_pendingResultOverlayProjectId))
+            DiscardPendingFinalization(_pendingResultOverlayProjectId);
+        _pendingResultOverlayProjectId = "";
+        PendingResultOverlay.Visibility = Visibility.Collapsed;
+        ShowToast("The pending result was discarded.");
+    }
+
+    private void PendingResultKeep_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingResultOverlayProjectId = "";
+        PendingResultOverlay.Visibility = Visibility.Collapsed;
+    }
 
     // Left/Right arrow keys flip between cards on Preview/Edit — unless the user
     // is actively typing in a text field, where arrows should move the caret.
@@ -2733,6 +3008,7 @@ public sealed partial class MainWindow : Window
             string json = File.ReadAllText(ResearchPath);
             _researchData = JsonSerializer.Deserialize<ResearchLabData>(json) ?? new ResearchLabData();
             _researchData.Projects ??= new List<ResearchProject>();
+            EnsureProjectUuids();
         }
         catch
         {
@@ -2741,6 +3017,17 @@ public sealed partial class MainWindow : Window
             _researchData = new ResearchLabData();
             SetStatus("Research projects file could not be read — starting with an empty list.");
         }
+    }
+
+    // Phase 9: every project needs a stable opaque UUID (the server-side project identity
+    // for entitlement accounting — never the title). This runs on EVERY load and repairs
+    // only projects whose Id is empty, malformed, or a duplicate; valid unique ids are left
+    // untouched. It is NOT gated by a marker file, so an old backup imported at any time is
+    // always repaired and repeated launches never disturb valid ids. See ProjectIdNormalizer.
+    private void EnsureProjectUuids()
+    {
+        if (ProjectIdNormalizer.NormalizeProjectIds(_researchData.Projects))
+            SaveResearch();   // atomic (temp→replace) + last-good backup; never corrupts research content
     }
 
     private void SaveResearch()
@@ -2902,12 +3189,17 @@ public sealed partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    private void ResearchPage_Click(object sender, RoutedEventArgs e)
+    private async void ResearchPage_Click(object sender, RoutedEventArgs e) => await EnterResearchLabAsync();
+
+    // Single entry point for opening Research Lab (sidebar + dashboard quick action).
+    private async Task EnterResearchLabAsync()
     {
         CreateProjectOverlay.Visibility = Visibility.Collapsed;
         DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
         RefreshResearchProjects();
         ShowPage(PageResearch);
+        // Phase 9: once-per-account Telegram prompt on first entry for an active subscriber.
+        await MaybeShowTelegramPromptAsync();
     }
 
     private void RefreshResearchProjects()
@@ -2926,17 +3218,12 @@ public sealed partial class MainWindow : Window
 
     private void OpenCreateProject_Click(object sender, RoutedEventArgs e)
     {
-        // Phase 7: creating a project is a protected action (license + plan limit).
+        // Creating a project requires an active license but does NOT consume a plan
+        // allowance (Phase 9). A project is counted only when it first completes
+        // descriptive statistics, so creation and editing are always free.
         if (!LicenseAllowsProtectedAction(out string gateMessage))
         {
             ShowToast(gateMessage);
-            return;
-        }
-
-        int limit = EffectiveProjectLimit();
-        if (_researchData.Projects.Count >= limit)
-        {
-            ShowToast(ProjectLimitMessage(limit));
             return;
         }
 
@@ -2996,19 +3283,11 @@ public sealed partial class MainWindow : Window
 
     private void CreateProject_Click(object sender, RoutedEventArgs e)
     {
-        // Safety re-check of license + limit before committing (Phase 7).
+        // Safety re-check of the active license (Phase 9: creation never consumes a slot).
         if (!LicenseAllowsProtectedAction(out string gateMessage))
         {
             CreateProjectOverlay.Visibility = Visibility.Collapsed;
             ShowToast(gateMessage);
-            return;
-        }
-
-        int limit = EffectiveProjectLimit();
-        if (_researchData.Projects.Count >= limit)
-        {
-            CreateProjectOverlay.Visibility = Visibility.Collapsed;
-            ShowToast(ProjectLimitMessage(limit));
             return;
         }
 
@@ -3114,15 +3393,71 @@ public sealed partial class MainWindow : Window
         AiSnapData.Text = string.IsNullOrWhiteSpace(p.AvailableDataType) ? "—" : p.AvailableDataType;
     }
 
-    private void DeleteProject_Click(object sender, RoutedEventArgs e)
+    private async void DeleteProject_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.Tag is not string id) return;
 
         var project = _researchData.Projects.FirstOrDefault(p => p.Id == id);
         if (project is null) return;
 
+        // Phase 9: a project whose first-run finalization is still being recorded must not be
+        // deleted until that record resolves (deleting it would strand an in-flight reservation).
+        // An UNRECOVERABLE pending result (allowance full) never counted, so deletion proceeds as
+        // a never-counted delete — the on-hold result is discarded when the project is removed.
+        if (HasBlockingPending(project.Id))
+        {
+            await RetryPendingFinalizationsAsync();
+            if (HasBlockingPending(project.Id))
+            {
+                ShowToast("OrbitLab is still finishing recording this project's first analysis. Please wait until you're back online, then try deleting it.");
+                return;
+            }
+        }
+
+        // Phase 9: the deletion warning depends on the project's server-authoritative
+        // usage relationship to the CURRENT subscription cycle.
+        //  * never_counted           → normal irreversible-deletion confirmation
+        //  * counted_in_current_cycle → strong warning: deleting does NOT restore the slot
+        //  * counted_in_previous_cycle→ deleting does not affect the current cycle
+        // A project that never ran descriptive statistics locally could never have been
+        // counted, so it is safe to treat as never_counted even offline.
+        string title = "Delete project?";
+        string message = "This project and its locally stored research data will be permanently deleted. This action cannot be undone.";
+        string button = "Delete project";
+
+        bool locallyNeverRan = project.DescriptiveStatistics is null;
+        if (!locallyNeverRan)
+        {
+            var state = await GetProjectServerStateAsync(project.Id);
+            if (state is null)
+            {
+                // Could not verify impact — do not risk a false message. Ask to retry.
+                ShowToast("OrbitLab couldn't verify how this project affects your plan. Check your connection and try again before deleting it.");
+                return;
+            }
+            switch (state.State)
+            {
+                case "counted_in_current_cycle":
+                    title = "Delete a counted project?";
+                    message = "This project has already been counted toward your current plan's project allowance.\n\n" +
+                              "Deleting it will permanently remove the project and its locally stored research data, but it will not restore the project slot during the current subscription cycle.\n\n" +
+                              "You will regain a fresh allowance only when a new subscription cycle begins.";
+                    button = "Delete anyway";
+                    break;
+                case "counted_in_previous_cycle":
+                    title = "Delete project?";
+                    message = "This project was counted during a previous subscription cycle.\n\n" +
+                              "Deleting it will permanently remove the project and its locally stored research data. It will not affect the project allowance of your current subscription cycle.";
+                    button = "Delete project";
+                    break;
+                    // never_counted → defaults above
+            }
+        }
+
         _pendingDeleteResearchId = id;
-        DeleteConfirmText.Text = $"“{project.Title}” will be permanently removed along with its saved details. This cannot be undone.";
+        DeleteConfirmTitle.Text = title;
+        DeleteConfirmText.Text = message;
+        DeleteConfirmButton.Content = button;
         DeleteConfirmOverlay.Visibility = Visibility.Visible;
         FadeIn(DeleteConfirmOverlay, 150);
     }
@@ -3133,21 +3468,30 @@ public sealed partial class MainWindow : Window
         DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
     }
 
-    private void ConfirmDelete_Click(object sender, RoutedEventArgs e)
+    private async void ConfirmDelete_Click(object sender, RoutedEventArgs e)
     {
         DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
 
         if (string.IsNullOrEmpty(_pendingDeleteResearchId)) return;
 
         var project = _researchData.Projects.FirstOrDefault(p => p.Id == _pendingDeleteResearchId);
+        string deletedId = _pendingDeleteResearchId;
         _pendingDeleteResearchId = "";
         if (project is null) return;
 
         _researchData.Projects.Remove(project);
         DeleteDatasetCopy(project.Id);   // remove the stored statistics dataset copy
+        DiscardPendingFinalization(deletedId);   // drop any on-hold result so a deleted project is never later counted
         SaveResearch();
         RefreshResearchProjects();
         ShowToast("Research project deleted.");
+
+        // Phase 9: record local deletion as metadata (best-effort). The server ledger
+        // row is RETAINED — deletion never restores the consumed allowance.
+        if (_license is not null && AppConfig.IsBackendConfigured)
+        {
+            try { await LicenseApiClient.MarkProjectDeletedAsync(_license.Token, deletedId); } catch { }
+        }
     }
 
     private void ResearchTab_Click(object sender, RoutedEventArgs e)
@@ -9639,20 +9983,84 @@ public sealed partial class MainWindow : Window
 
     // ---- Run + primary actions ----------------------------------------------
 
-    private void RunDescriptiveStatistics_Click(object sender, RoutedEventArgs e)
+    private async void RunDescriptiveStatistics_Click(object sender, RoutedEventArgs e)
     {
         // Phase 7: running an analysis is a protected action (active license required).
         if (!LicenseAllowsProtectedAction(out string gateMessage)) { ShowToast(gateMessage); return; }
+
+        var p = CurrentResearchProject();
+        if (p is null) { ShowToast("Open a project first."); return; }
+
+        // Phase 9: a project has never been counted until a first descriptive-statistics
+        // run is FINALIZED on the server. Because we only persist results after a
+        // successful finalize, a locally-saved DescriptiveStatistics record proves the
+        // project is already counted; a null one means this is a (chargeable) first run.
+        bool isFirstRun = p.DescriptiveStatistics is null;
+
+        // An unrecoverable pending result (its slot can no longer be obtained) is resolved by
+        // discarding — not by running again — so surface that dialog and stop here.
+        if (HasUnrecoverablePending(p.Id))
+        {
+            ShowPendingResultOverlay(p.Id,
+                "Your earlier analysis finished, but it couldn't be activated because your current plan's project allowance is now full. You can safely discard it. A fresh allowance begins with your next subscription cycle.");
+            return;
+        }
+
+        // A prior first-run whose finalize hasn't landed yet blocks new first runs; try to recover it first.
+        if (HasBlockingPending(p.Id))
+        {
+            await RetryPendingFinalizationsAsync();
+            if (HasUnrecoverablePending(p.Id))
+            {
+                ShowPendingResultOverlay(p.Id,
+                    "Your earlier analysis finished, but it couldn't be activated because your current plan's project allowance is now full. You can safely discard it. A fresh allowance begins with your next subscription cycle.");
+                return;
+            }
+            if (HasBlockingPending(p.Id))
+            {
+                ShowToast("OrbitLab is still finishing recording this project's first analysis. It will complete automatically once you're back online.");
+                return;
+            }
+            isFirstRun = p.DescriptiveStatistics is null;
+        }
+
+        // First run requires a successful backend RESERVATION before analysis starts.
+        // There is no offline first run — a never-counted project cannot be started while
+        // the backend is unavailable (that would defeat the project allowance).
+        string? reservationId = null;
+        if (isFirstRun && AppConfig.IsBackendConfigured)
+        {
+            if (_license is null) { ShowToast("Please log in to your OrbitLab account to use this feature."); return; }
+            var res = await LicenseApiClient.ReserveProjectAsync(_license.Token, p.Id);
+            if (!res.Ok)
+            {
+                string code = res.Error?.Code ?? "network";
+                ShowToast(code switch
+                {
+                    "project_limit_reached" => ProjectLimitMessage(res.Error is not null ? EffectiveProjectLimit() : 1),
+                    "not_entitled" => "Your OrbitLab subscription is not active. Please contact support or renew your Commercial Beta access.",
+                    _ => "OrbitLab needs to reach the server to start your first analysis on this project. Check your connection and try again.",
+                });
+                return;
+            }
+            if (res.Data!.AlreadyCounted) isFirstRun = false;   // became counted elsewhere → free re-run
+            else reservationId = res.Data.ReservationId;
+        }
+
+        async Task ReleaseIfHeldAsync()
+        {
+            if (reservationId is not null && _license is not null)
+                try { await LicenseApiClient.ReleaseProjectAsync(_license.Token, p.Id, reservationId); } catch { }
+        }
+
         try
         {
-            var p = CurrentResearchProject();
-            if (p is null) { ShowToast("Open a project first."); return; }
-
             RefreshStatisticsTab();   // re-evaluate readiness on the current state
-            if (_statReadiness is not { } readiness) return;
+            if (_statReadiness is not { } readiness) { await ReleaseIfHeldAsync(); return; }
             if (!readiness.CanRun)
             {
                 ShowToast("Analysis is blocked until required issues are resolved.");
+                await ReleaseIfHeldAsync();
                 return;
             }
 
@@ -9660,6 +10068,7 @@ public sealed partial class MainWindow : Window
             if (data is null)
             {
                 ShowToast(dataError.Length > 0 ? dataError : "The dataset could not be read. Upload your CSV file again.");
+                await ReleaseIfHeldAsync();
                 return;
             }
 
@@ -9676,16 +10085,53 @@ public sealed partial class MainWindow : Window
             record.IncludeIgnoredColumnsNote = StOptIgnored.IsChecked == true;
             record.IncludeTextSummary = StOptText.IsChecked == true;
 
-            p.DescriptiveStatistics = record;
-            p.UpdatedAt = DateTime.UtcNow;
-            SaveResearch();
-
-            StStaleBanner.Visibility = Visibility.Collapsed;
-            RenderStatisticsOutput(record);
-            RenderDatasetOverview(p, data, match);   // adds the analysis timestamp row
-            ShowToast($"Descriptive statistics generated for {record.VariablesAnalyzed} variable{(record.VariablesAnalyzed == 1 ? "" : "s")} across {record.RowsAnalyzed} rows.");
+            // For a chargeable FIRST run we do NOT persist or display the results as
+            // completed until finalization succeeds. A re-run of an already-counted
+            // project commits immediately.
+            if (reservationId is not null)
+            {
+                var fin = await LicenseApiClient.FinalizeProjectAsync(_license!.Token, p.Id, reservationId);
+                if (fin.Ok && (fin.Data!.Finalized || fin.Data.AlreadyCounted))
+                {
+                    CommitDescriptiveResult(p, record, data, match);
+                    await RefreshAccountOverviewAsync();
+                }
+                else if (fin.Error is not null && (fin.Error.Code == "reservation_expired" || fin.Error.Code == "reservation_not_found"))
+                {
+                    ShowToast("Your project reservation expired before the analysis finished recording. Please run the analysis again.");
+                    // Results intentionally not persisted; the slot was freed server-side.
+                }
+                else
+                {
+                    // Transient network/server failure: keep the result ON HOLD locally (never
+                    // uploaded, never shown as completed) and recover it automatically later.
+                    AddPendingFinalization(p.Id, reservationId, record);
+                    ShowToast("Your analysis ran, but OrbitLab couldn't finish recording it yet. It will be completed automatically when you're back online — this project is on hold until then.");
+                }
+            }
+            else
+            {
+                CommitDescriptiveResult(p, record, data, match);   // already counted → free re-run
+            }
         }
-        catch (Exception ex) { HandleDxError("run descriptive statistics", ex); }
+        catch (Exception ex)
+        {
+            HandleDxError("run descriptive statistics", ex);
+            await ReleaseIfHeldAsync();
+        }
+    }
+
+    // Persists + renders a finalized descriptive-statistics result. Only called once the
+    // project's slot is definitely accounted for (finalized) or the run is a free re-run.
+    private void CommitDescriptiveResult(ResearchProject p, DescriptiveStatisticsRecord record, StatisticsDataset data, StatisticsMatchInput match)
+    {
+        p.DescriptiveStatistics = record;
+        p.UpdatedAt = DateTime.UtcNow;
+        SaveResearch();
+        StStaleBanner.Visibility = Visibility.Collapsed;
+        RenderStatisticsOutput(record);
+        RenderDatasetOverview(p, data, match);
+        ShowToast($"Descriptive statistics generated for {record.VariablesAnalyzed} variable{(record.VariablesAnalyzed == 1 ? "" : "s")} across {record.RowsAnalyzed} rows.");
     }
 
     private void StPrimaryAction_Click(object sender, RoutedEventArgs e)

@@ -342,6 +342,40 @@
         </Grid>
 
         <!-- Phase 3A: Activation Welcome overlay (visual / stub only; full-window, painted above the app). -->
+        <!-- Phase 9: once-per-account Telegram prompt (first Research Lab entry). Explicit
+             buttons only — no close/X — so acknowledgement is always recorded. -->
+        <Grid x:Name="TelegramPromptOverlay" Panel.ZIndex="210" Visibility="Collapsed" Background="#B0101018">
+            <Border Style="{StaticResource CardBorder}" MaxWidth="470" Padding="32" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <Border Width="60" Height="60" Background="{StaticResource PrimarySoftBrush}" CornerRadius="18" HorizontalAlignment="Center">
+                        <TextBlock Text="&#9993;" FontSize="30" Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="Join the OrbitLab Community" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="13.5" TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,0"
+                               Text="Join our official Telegram channel for beta updates, important announcements, support information, and trusted seller notices."/>
+                    <Button Content="Join Telegram Channel" Style="{StaticResource PremiumButton}" Click="TelegramPromptJoin_Click" Height="46" Margin="0,20,0,0"/>
+                    <Button Content="I'll do it later" Style="{StaticResource GhostButton}" Click="TelegramPromptLater_Click" Height="42" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Phase 9: shown when a pending first-run result cannot be activated because the
+             current-cycle allowance is now full. Lets the user safely discard it. -->
+        <Grid x:Name="PendingResultOverlay" Panel.ZIndex="215" Visibility="Collapsed" Background="#B0101018">
+            <Border Style="{StaticResource CardBorder}" MaxWidth="470" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <Border Width="58" Height="58" Background="{StaticResource DangerSoftBrush}" CornerRadius="16" HorizontalAlignment="Center">
+                        <TextBlock Text="&#9888;" FontSize="28" Foreground="{StaticResource DangerBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock x:Name="PendingResultTitle" Text="Result couldn't be activated" FontSize="21" FontWeight="Bold" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                    <TextBlock x:Name="PendingResultText" Foreground="{StaticResource MutedBrush}" FontSize="13.5" TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,0"
+                               Text="Your analysis finished, but it couldn't be activated because your current plan's project allowance is now full. You can safely discard this result. A fresh allowance begins with your next subscription cycle."/>
+                    <Button x:Name="PendingResultDiscardButton" Content="Discard result" Style="{StaticResource DangerButton}" Click="PendingResultDiscard_Click" Height="46" Margin="0,20,0,0"/>
+                    <Button Content="Not now" Style="{StaticResource GhostButton}" Click="PendingResultKeep_Click" Height="42" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
         <Grid x:Name="ActivationWelcomeOverlay" Panel.ZIndex="200" Visibility="Collapsed" Background="#B0101018">
             <Border x:Name="ActivationWelcomeCard" Style="{StaticResource CardBorder}" MaxWidth="560" Padding="36" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <StackPanel>
@@ -639,34 +673,20 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
 
+                                    <!-- Phase 9: read-only plan card, backed only by real backend entitlement data. -->
                                     <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20">
                                         <StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Plan" Foreground="{StaticResource MutedBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="8" Padding="8,3" Margin="10,0,0,0">
-                                                    <TextBlock x:Name="PlanStateChip" Text="Active" Foreground="{StaticResource SuccessBrush}" FontSize="12" FontWeight="Bold"/>
+                                                <Border x:Name="PlanCardStatusChip" Background="{StaticResource SuccessSoftBrush}" CornerRadius="8" Padding="8,3" Margin="10,0,0,0">
+                                                    <TextBlock x:Name="PlanCardStatusText" Text="Active" Foreground="{StaticResource SuccessBrush}" FontSize="12" FontWeight="Bold"/>
                                                 </Border>
                                             </StackPanel>
-                                            <TextBlock Text="Commercial Beta" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0"/>
-                                            <TextBlock x:Name="PlanStateNote" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"
-                                                       Text="Your Commercial Beta plan is active on this device."/>
-
-                                            <!-- Design-preview only (dev). Collapsed by default; removed when real licensing lands (Phase 6-7). -->
-                                            <Expander Margin="0,16,0,0" IsExpanded="False">
-                                                <Expander.Header>
-                                                    <TextBlock Text="Design preview (dev only)" Foreground="{StaticResource SoftMutedBrush}" FontSize="11" FontWeight="SemiBold"/>
-                                                </Expander.Header>
-                                                <StackPanel Margin="0,8,0,2">
-                                                    <TextBlock Text="License state (stub · no server)" Foreground="{StaticResource SoftMutedBrush}" FontSize="10.5" Margin="0,0,0,4"/>
-                                                    <ComboBox x:Name="LicenseStubCombo" SelectionChanged="LicenseStubCombo_SelectionChanged" FontSize="12" MaxWidth="240" HorizontalAlignment="Left">
-                                                        <ComboBoxItem Content="Unlicensed"/>
-                                                        <ComboBoxItem Content="Active Commercial Beta"/>
-                                                        <ComboBoxItem Content="Grace (offline)"/>
-                                                        <ComboBoxItem Content="Expired"/>
-                                                    </ComboBox>
-                                                    <Button Content="Preview Activation Welcome" Style="{StaticResource GhostButton}" Click="WelcomePreview_Click" Margin="0,8,0,0" HorizontalAlignment="Left" FontSize="11.5"/>
-                                                </StackPanel>
-                                            </Expander>
+                                            <TextBlock x:Name="PlanCardName" Text="Commercial Beta" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0"/>
+                                            <TextBlock x:Name="PlanCardProjects" Foreground="{StaticResource PrimaryBrush}" FontSize="13.5" FontWeight="SemiBold" Margin="0,8,0,0" Text=""/>
+                                            <TextBlock x:Name="PlanCardExpiry" Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,0" Text=""/>
+                                            <TextBlock x:Name="PlanCardNote" Foreground="{StaticResource MutedBrush}" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"
+                                                       Text="A project counts toward your plan the first time you run its descriptive statistics."/>
                                         </StackPanel>
                                     </Border>
 
@@ -2111,13 +2131,13 @@
                             <Border Style="{StaticResource CardBorder}" Padding="28" Width="440"
                                     VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <StackPanel>
-                                    <TextBlock Text="Delete research project?" Style="{StaticResource SectionHeader}"/>
+                                    <TextBlock x:Name="DeleteConfirmTitle" Text="Delete project?" Style="{StaticResource SectionHeader}"/>
                                     <TextBlock x:Name="DeleteConfirmText"
-                                               Text="This will permanently remove the project and its saved details. This cannot be undone."
+                                               Text="This project and its locally stored research data will be permanently deleted. This action cannot be undone."
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
                                         <Button Content="Cancel" Style="{StaticResource GhostButton}" Width="110" Click="CancelDelete_Click"/>
-                                        <Button Content="Delete Project" Style="{StaticResource DangerButton}" Width="160" Margin="0" Click="ConfirmDelete_Click"/>
+                                        <Button x:Name="DeleteConfirmButton" Content="Delete project" Style="{StaticResource DangerButton}" Width="170" Margin="0" Click="ConfirmDelete_Click"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
