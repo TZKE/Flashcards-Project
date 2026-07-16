@@ -96,6 +96,26 @@ public sealed class ProjectUsageDto
     public int Used { get; set; }
     public int Remaining { get; set; }
     public bool Active { get; set; }
+    // Phase 10: draft registrations + distinct occupied positions in the cycle.
+    public int Drafts { get; set; }
+    public int PositionsUsed { get; set; }
+}
+
+// Phase 10: result of registering a project draft (occupies one plan position).
+public sealed class RegisterResultDto
+{
+    public bool Ok { get; set; }
+    public bool Registered { get; set; }
+    public bool AlreadyCounted { get; set; }
+    public int Limit { get; set; }
+    public int Used { get; set; }
+    public int Remaining { get; set; }
+}
+
+public sealed class DraftIdsDto
+{
+    public bool Ok { get; set; }
+    public List<string> ProjectIds { get; set; } = new();
 }
 
 public sealed class AccountOverviewDto
@@ -180,6 +200,17 @@ public static class LicenseApiClient
 
     public static Task<ApiResult<ProjectStatusDto>> GetProjectStatusAsync(string token, string projectPublicId) =>
         GetAsync<ProjectStatusDto>($"/api/projects/{Uri.EscapeDataString(projectPublicId)}/status", token);
+
+    // Phase 10 draft-registration lifecycle: a project draft occupies one plan
+    // position from creation until it is deleted (released) or counted (converted).
+    public static Task<ApiResult<RegisterResultDto>> RegisterProjectAsync(string token, string projectPublicId) =>
+        PostAsync<RegisterResultDto>($"/api/projects/{Uri.EscapeDataString(projectPublicId)}/register", new { }, token);
+
+    public static Task<ApiResult<SimpleOkDto>> ReleaseDraftAsync(string token, string projectPublicId) =>
+        SendAsync<SimpleOkDto>(HttpMethod.Delete, $"/api/projects/{Uri.EscapeDataString(projectPublicId)}/draft", token);
+
+    public static Task<ApiResult<DraftIdsDto>> GetDraftIdsAsync(string token) =>
+        GetAsync<DraftIdsDto>("/api/projects/drafts", token);
 
     // Phase 9 reservation lifecycle.
     public static Task<ApiResult<ReserveResultDto>> ReserveProjectAsync(string token, string projectPublicId) =>

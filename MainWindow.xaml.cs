@@ -417,6 +417,8 @@ public sealed partial class MainWindow : Window
         _ = RefreshAccountOverviewAsync();
         // Phase 9: resolve any pending first-run finalizations now that we're signed in.
         if (_pendingFinalizations.Count > 0) { EnsurePendingRetryTimer(); _ = RetryPendingFinalizationsAsync(); }
+        // Phase 10: release orphan drafts + register grandfathered projects (once per run).
+        _ = ReconcileDraftsAsync();
     }
 
     private void ShowPage(UIElement page)
@@ -727,6 +729,7 @@ public sealed partial class MainWindow : Window
     private BootstrapInfo? _bootstrap;          // last known public bootstrap (cache or live)
     private UpdatePolicyResult? _updatePolicy;  // last update policy from the backend
     private bool _updateGateShown;
+    private bool _updatePromptShownThisRun;   // Phase 10: optional-update dialog, once per run
 
     /// <summary>Best available official Telegram URL (backend-configured first). Https only.</summary>
     private string? EffectiveTelegramUrl()
@@ -793,7 +796,19 @@ public sealed partial class MainWindow : Window
             VersionUtil.IsBelow(AppConfig.CurrentVersion, policy.LatestVersion))
         {
             SetUpdateStatus($"Update v{policy.LatestVersion} is available (optional). Downloads are announced in the official Telegram channel.");
-            ShowToast($"{Branding.ProductName} v{policy.LatestVersion} is available — see Settings → Updates & Telegram.");
+            // Phase 10: a clear once-per-run dialog (Install Update / Later) instead of
+            // only a toast. Optional — "Later" continues into the app normally.
+            if (!_updatePromptShownThisRun)
+            {
+                _updatePromptShownThisRun = true;
+                var prompt = new UpdatePromptWindow(policy);
+                if (IsLoaded && IsVisible) prompt.Owner = this;
+                prompt.ShowDialog();
+            }
+            else
+            {
+                ShowToast($"{Branding.ProductName} v{policy.LatestVersion} is available — see Settings → Updates & Telegram.");
+            }
         }
         else
         {
@@ -866,6 +881,46 @@ public sealed partial class MainWindow : Window
     private DispatcherTimer? _pendingRetryTimer;
     private string _pendingResultOverlayProjectId = "";
     private string PendingFinalizationsPath => Path.Combine(dataDir, "research_pending_finalizations.json");
+
+    // Phase 10: true only when research_projects.json loaded without error (or is a
+    // genuinely fresh store). Gates draft reconciliation so a corrupt/unreadable file
+    // can never cause server-side draft registrations to be released by mistake.
+    private bool _researchLoadedCleanly;
+    private bool _draftReconcileDoneThisRun;
+
+    /// <summary>
+    /// Phase 10 housekeeping, run once per session after sign-in:
+    ///  1. RECONCILE — release server-side draft registrations whose local project no
+    ///     longer exists (e.g. a crash between registration and the local save, or a
+    ///     deletion that couldn't reach the server), freeing their plan positions.
+    ///  2. GRANDFATHER — register drafts for pre-update, never-counted local projects
+    ///     (best-effort; if the allowance is already full they stay usable locally and
+    ///     the first-analysis reservation remains the hard gate).
+    /// Only opaque project ids ever cross the wire.
+    /// </summary>
+    private async Task ReconcileDraftsAsync()
+    {
+        if (_draftReconcileDoneThisRun || !_researchLoadedCleanly) return;
+        if (_license is null || string.IsNullOrEmpty(_license.Token) || !AppConfig.IsBackendConfigured) return;
+        _draftReconcileDoneThisRun = true;
+        try
+        {
+            var drafts = await LicenseApiClient.GetDraftIdsAsync(_license.Token);
+            if (drafts.Ok)
+            {
+                var localIds = _researchData.Projects.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+                foreach (var orphan in drafts.Data!.ProjectIds.Where(id => !localIds.Contains(id)))
+                    try { await LicenseApiClient.ReleaseDraftAsync(_license.Token, orphan); } catch { }
+            }
+
+            // Grandfather existing never-counted projects (created before drafts existed).
+            foreach (var p in _researchData.Projects.Where(p => p.DescriptiveStatistics is null))
+                try { await LicenseApiClient.RegisterProjectAsync(_license.Token, p.Id); } catch { }
+
+            await RefreshAccountOverviewAsync();
+        }
+        catch { /* best-effort housekeeping; retried next run */ }
+    }
 
     /// <summary>Register → login → bind device → heartbeat → enter the app.</summary>
     private async Task BackendSignupAsync(string email, string password, string code)
@@ -1261,12 +1316,15 @@ public sealed partial class MainWindow : Window
 
         if (u is not null)
         {
-            PlanCardProjects.Text = $"Projects used: {u.Used} of {u.Limit}";
+            // Phase 10: drafts occupy positions too, so show the full picture.
+            PlanCardProjects.Text = u.Drafts > 0
+                ? $"Projects: {u.Used} counted + {u.Drafts} draft{(u.Drafts == 1 ? "" : "s")} of {u.Limit}"
+                : $"Projects used: {u.Used} of {u.Limit}";
             PlanCardExpiry.Text = u.EndsAtUtc is { } end
                 ? $"Renews / ends: {end.ToLocalTime():MMM d, yyyy}"
                 : "No expiry set";
             PlanCardNote.Text = active
-                ? "A project counts toward your plan the first time you run its descriptive statistics."
+                ? "A draft holds a project position from creation; it becomes permanently counted the first time you run its descriptive statistics. Deleting an uncounted draft frees its position."
                 : "Your subscription is not active. Contact support or start a new subscription cycle to continue.";
         }
         else
@@ -3002,6 +3060,7 @@ public sealed partial class MainWindow : Window
             if (!File.Exists(ResearchPath))
             {
                 _researchData = new ResearchLabData();
+                _researchLoadedCleanly = true;   // a genuinely empty store is a clean state
                 return;
             }
 
@@ -3009,11 +3068,14 @@ public sealed partial class MainWindow : Window
             _researchData = JsonSerializer.Deserialize<ResearchLabData>(json) ?? new ResearchLabData();
             _researchData.Projects ??= new List<ResearchProject>();
             EnsureProjectUuids();
+            _researchLoadedCleanly = true;   // Phase 10: gates draft reconciliation
         }
         catch
         {
             // Corrupt or unreadable file: fail safely with an empty list and
-            // never touch the user's flashcard data.
+            // never touch the user's flashcard data. _researchLoadedCleanly stays
+            // false so draft reconciliation never releases registrations for
+            // projects that still exist on disk but failed to load.
             _researchData = new ResearchLabData();
             SetStatus("Research projects file could not be read — starting with an empty list.");
         }
@@ -3034,6 +3096,11 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            // Phase 10: progress is always derived from the persisted artifacts (with the
+            // stored value as a monotonic floor) — one hook here keeps every saved file
+            // accurate no matter which workflow action triggered the save.
+            foreach (var p in _researchData.Projects)
+                ResearchProjectProgress.Touch(p);
             string json = JsonSerializer.Serialize(_researchData, new JsonSerializerOptions { WriteIndented = true });
             // Phase 4: atomic write (temp -> replace) + last-good backup so a crash mid-write
             // never corrupts the main store. Local-first only; no rows logged, no network.
@@ -3204,6 +3271,10 @@ public sealed partial class MainWindow : Window
 
     private void RefreshResearchProjects()
     {
+        // Phase 10: every card shows the derived workflow progress, not a stale counter.
+        foreach (var p in _researchData.Projects)
+            ResearchProjectProgress.Touch(p);
+
         var projects = _researchData.Projects
             .OrderByDescending(p => p.UpdatedAt)
             .ToList();
@@ -3218,9 +3289,10 @@ public sealed partial class MainWindow : Window
 
     private void OpenCreateProject_Click(object sender, RoutedEventArgs e)
     {
-        // Creating a project requires an active license but does NOT consume a plan
-        // allowance (Phase 9). A project is counted only when it first completes
-        // descriptive statistics, so creation and editing are always free.
+        // Phase 10: creating a project registers a server-side DRAFT that occupies one
+        // plan position (released if the draft is deleted before its first analysis;
+        // permanent once descriptive statistics complete). The registration itself
+        // happens on Create — this just opens the form.
         if (!LicenseAllowsProtectedAction(out string gateMessage))
         {
             ShowToast(gateMessage);
@@ -3281,9 +3353,13 @@ public sealed partial class MainWindow : Window
         return outputs;
     }
 
-    private void CreateProject_Click(object sender, RoutedEventArgs e)
+    private bool _createProjectBusy;   // double-click guard for the async registration
+
+    private async void CreateProject_Click(object sender, RoutedEventArgs e)
     {
-        // Safety re-check of the active license (Phase 9: creation never consumes a slot).
+        if (_createProjectBusy) return;
+
+        // Safety re-check of the active license.
         if (!LicenseAllowsProtectedAction(out string gateMessage))
         {
             CreateProjectOverlay.Visibility = Visibility.Collapsed;
@@ -3300,6 +3376,11 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // Phase 10: a new project must REGISTER a server-side draft (opaque UUID only —
+        // the title and every other detail stay local) before it exists locally. The
+        // draft occupies one plan position; the backend rejects registration when the
+        // allowance is full, and an unreachable backend blocks creation entirely so an
+        // unregistered local project can never appear.
         var project = new ResearchProject
         {
             Title = title,
@@ -3313,17 +3394,52 @@ public sealed partial class MainWindow : Window
             DesiredOutputs = CollectDesiredOutputs(),
             Notes = RpNotesBox.Text.Trim(),
             CurrentStage = "Project created",
-            ProgressPercent = 15,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        _researchData.Projects.Add(project);
-        SaveResearch();
+        _createProjectBusy = true;
+        try
+        {
+            if (AppConfig.IsBackendConfigured)
+            {
+                if (_license is null || string.IsNullOrEmpty(_license.Token))
+                {
+                    ShowToast("Please log in to your OrbitLab account to create a project.");
+                    return;
+                }
+                var reg = await LicenseApiClient.RegisterProjectAsync(_license.Token, project.Id);
+                if (!reg.Ok)
+                {
+                    if (reg.Error?.Code == "project_limit_reached")
+                    {
+                        int limit = _overview?.Usage?.Limit ?? 1;
+                        RpValidationText.Text = reg.Error.Message.Length > 0
+                            ? reg.Error.Message
+                            : $"Your plan allows {limit} project{(limit == 1 ? "" : "s")} for this subscription cycle. You are currently using {limit} of {limit}.";
+                    }
+                    else if (reg.Error?.Code == "not_entitled")
+                    {
+                        RpValidationText.Text = "Your OrbitLab subscription is not active. Please contact support or renew your Commercial Beta access.";
+                    }
+                    else
+                    {
+                        RpValidationText.Text = "OrbitLab needs to reach the server to create a new project. Check your connection and try again.";
+                    }
+                    RpValidationText.Visibility = Visibility.Visible;
+                    return;   // no orphan local project is ever created
+                }
+                _ = RefreshAccountOverviewAsync();   // plan card reflects the new draft
+            }
 
-        CreateProjectOverlay.Visibility = Visibility.Collapsed;
-        RefreshResearchProjects();
-        ShowToast($"Research project created: {project.Title}");
+            _researchData.Projects.Add(project);
+            SaveResearch();
+
+            CreateProjectOverlay.Visibility = Visibility.Collapsed;
+            RefreshResearchProjects();
+            ShowToast($"Research project created: {project.Title}");
+        }
+        finally { _createProjectBusy = false; }
     }
 
     private void ContinueProject_Click(object sender, RoutedEventArgs e)
@@ -3422,7 +3538,8 @@ public sealed partial class MainWindow : Window
         // A project that never ran descriptive statistics locally could never have been
         // counted, so it is safe to treat as never_counted even offline.
         string title = "Delete project?";
-        string message = "This project and its locally stored research data will be permanently deleted. This action cannot be undone.";
+        string message = "This project and its locally stored research data will be permanently deleted. This action cannot be undone.\n\n" +
+                         "Because this project hasn't been counted toward your plan yet, deleting it frees its project position.";
         string button = "Delete project";
 
         bool locallyNeverRan = project.DescriptiveStatistics is null;
@@ -3488,9 +3605,14 @@ public sealed partial class MainWindow : Window
 
         // Phase 9: record local deletion as metadata (best-effort). The server ledger
         // row is RETAINED — deletion never restores the consumed allowance.
+        // Phase 10: also release the draft registration. For a never-counted draft this
+        // frees its plan position; for a counted project the draft was already converted
+        // and the backend correctly refuses to release it (no slot is ever restored).
         if (_license is not null && AppConfig.IsBackendConfigured)
         {
             try { await LicenseApiClient.MarkProjectDeletedAsync(_license.Token, deletedId); } catch { }
+            try { await LicenseApiClient.ReleaseDraftAsync(_license.Token, deletedId); } catch { }
+            _ = RefreshAccountOverviewAsync();
         }
     }
 
@@ -4071,8 +4193,7 @@ public sealed partial class MainWindow : Window
         p.Plan ??= BuildPlanFromRecommendations(p, rec);
 
         p.CurrentStage = "Research plan ready";
-        p.ProgressPercent = Math.Max(p.ProgressPercent, 30);
-        p.UpdatedAt = DateTime.UtcNow;
+        p.UpdatedAt = DateTime.UtcNow;   // progress derives from artifacts in SaveResearch
         SaveResearch();
 
         PopulateOverview(p);
@@ -4241,7 +4362,6 @@ public sealed partial class MainWindow : Window
             AiWorkAdvance();   // response received + parsed → validating
             p.ProposalDraft = draft;
             p.CurrentStage = "Proposal drafted";
-            p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
             p.UpdatedAt = DateTime.UtcNow;
             SaveResearch();
             AiWorkAdvance();   // validated → preparing editor
@@ -4378,7 +4498,6 @@ public sealed partial class MainWindow : Window
         d.UpdatedAt = DateTime.UtcNow;
 
         p.CurrentStage = "Proposal drafted";
-        p.ProgressPercent = Math.Max(p.ProgressPercent, 45);
         p.UpdatedAt = DateTime.UtcNow;
         SaveResearch();
 
@@ -5509,18 +5628,12 @@ public sealed partial class MainWindow : Window
                 ? _lastImportText.Substring(0, ImportProposalMaxChars)
                 : _lastImportText;
 
-        // --- Stage / progress ---
+        // --- Stage (progress derives from artifacts in SaveResearch) ---
         p.DetailsChangedSinceRecommendations = false;
         if (p.ProposalDraft is not null)
-        {
             p.CurrentStage = markAccepted ? "Proposal imported" : "Proposal draft imported";
-            p.ProgressPercent = Math.Max(p.ProgressPercent, markAccepted ? 45 : 40);
-        }
         else if (p.Recommendations is not null)
-        {
             p.CurrentStage = markAccepted ? "Research plan ready" : "Recommendations imported";
-            p.ProgressPercent = Math.Max(p.ProgressPercent, markAccepted ? 30 : 25);
-        }
         p.UpdatedAt = DateTime.UtcNow;
         SaveResearch();
 
@@ -10126,6 +10239,7 @@ public sealed partial class MainWindow : Window
     private void CommitDescriptiveResult(ResearchProject p, DescriptiveStatisticsRecord record, StatisticsDataset data, StatisticsMatchInput match)
     {
         p.DescriptiveStatistics = record;
+        p.CurrentStage = "Descriptive statistics completed";
         p.UpdatedAt = DateTime.UtcNow;
         SaveResearch();
         StStaleBanner.Visibility = Visibility.Collapsed;
