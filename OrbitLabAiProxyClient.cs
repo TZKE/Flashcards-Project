@@ -104,6 +104,32 @@ public sealed class OrbitLabAiProxyClient
         catch { /* malformed upstream body → empty */ }
         return "";
     }
+
+    /// <summary>
+    /// Reads choices[0].finish_reason from an upstream chat-completion body.
+    /// "length" means the model was cut off before finishing — which arrives as
+    /// HTTP 200 with empty or truncated content and is otherwise indistinguishable
+    /// from a genuinely malformed reply. Returns "" when absent or unreadable.
+    /// </summary>
+    public static string ExtractFinishReason(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("choices", out var choices)
+                && choices.ValueKind == JsonValueKind.Array
+                && choices.GetArrayLength() > 0
+                && choices[0].TryGetProperty("finish_reason", out var reason)
+                && reason.ValueKind == JsonValueKind.String)
+                return reason.GetString() ?? "";
+        }
+        catch { /* malformed upstream body → unknown */ }
+        return "";
+    }
+
+    /// <summary>True when the model stopped because it hit the token ceiling.</summary>
+    public static bool WasTruncated(string json) =>
+        string.Equals(ExtractFinishReason(json), "length", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

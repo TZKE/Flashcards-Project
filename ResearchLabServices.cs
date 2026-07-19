@@ -1078,6 +1078,16 @@ public sealed class ProxiedResearchAiService : IResearchAiService
         string content = OrbitLabAiProxyClient.ExtractContent(r.Body);
         if (string.IsNullOrWhiteSpace(content))
         {
+            // finish_reason distinguishes "the model ran out of room" from "the
+            // reply was malformed". Both arrive as HTTP 200 with no usable
+            // content, and reporting the first as "empty response, please try
+            // again" sent users into a retry loop that could never succeed.
+            if (OrbitLabAiProxyClient.WasTruncated(r.Body))
+            {
+                throw new ResearchAiException(
+                    "The AI ran out of room before it could finish answering. Your content was kept. Try a shorter or simpler request, or raise the response limit in Research AI Settings.",
+                    LogCall(status: r.Status, empty: true, category: "truncated"), category: "truncated");
+            }
             throw new ResearchAiException("AI returned an empty response. Your content was kept. Please try again.",
                 LogCall(status: r.Status, empty: true, category: "empty_response"), category: "empty_response");
         }
