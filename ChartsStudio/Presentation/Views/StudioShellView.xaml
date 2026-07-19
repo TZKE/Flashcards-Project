@@ -155,45 +155,54 @@
             </Grid>
         </Border>
 
-        <!-- ============================ THREE SURFACES ============================ -->
+        <!-- ============================ SURFACES ============================
+             The Contact Sheet gets the ENTIRE width. Figure Canvas and Figure Shelf are
+             still placeholders, and a placeholder must never cost the working surface real
+             estate — earlier they took a 300px rail and a full-width block between them,
+             squeezing figure cards to two per row. They are now a single compact footer
+             strip that says what is coming without competing for space.
+        -->
         <Grid Grid.Row="1" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="300"/>
-            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Contact Sheet — real from Phase 2 -->
-            <views:ContactSheetView Grid.Row="0" Grid.Column="0"
-                                    Margin="0,0,16,0"
-                                    DataContext="{Binding ContactSheet}"/>
+            <views:ContactSheetView Grid.Row="0" DataContext="{Binding ContactSheet}"/>
 
-            <!-- Figure Shelf -->
-            <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource PlaceholderRegion}">
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Figure Shelf" Style="{StaticResource PlaceholderTitle}"/>
-                    <TextBlock Style="{StaticResource PlaceholderBody}"
-                               Text="Figures you keep become a numbered set here, ordered and checked for consistency across the whole paper."/>
-                    <Border Style="{StaticResource PhaseTag}">
-                        <TextBlock Text="Phase 4" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
-                    </Border>
-                </StackPanel>
-            </Border>
+            <!-- Coming next — one quiet line, not two empty boxes -->
+            <Border Grid.Row="1"
+                    Background="{StaticResource SoftCardBrush}"
+                    BorderBrush="{StaticResource BorderBrushSoft}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="16,10"
+                    Margin="0,14,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Coming next"
+                               FontSize="11"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource SoftMutedBrush}"
+                               VerticalAlignment="Center"/>
 
-            <!-- Figure Canvas -->
-            <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                    Style="{StaticResource PlaceholderRegion}"
-                    Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="Figure Canvas" Style="{StaticResource PlaceholderTitle}"/>
-                    <TextBlock Style="{StaticResource PlaceholderBody}"
-                               Text="Opening a figure expands it here for editing — variables, scales, labels and style — with its provenance receipt and caption beneath."/>
-                    <Border Style="{StaticResource PhaseTag}">
+                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="5" Padding="6,2" Margin="14,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="Phase 3" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
                     </Border>
+                    <TextBlock Text="Figure Canvas — open a figure to edit its variables, scales, labels and style"
+                               FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"/>
+
+                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="5" Padding="6,2" Margin="20,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Phase 4" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
+                    </Border>
+                    <TextBlock Text="Figure Shelf — kept figures become a numbered set"
+                               FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"/>
                 </StackPanel>
             </Border>
 

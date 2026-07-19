@@ -33,9 +33,20 @@ public sealed class ContactSheetViewModel : ObservableObject
     private bool _isGenerating;
     private string _emptyReason = "";
 
-    /// <summary>Thumbnail size. Small enough to render fast, large enough to judge a figure.</summary>
-    private const int ThumbWidth = 420;
-    private const int ThumbHeight = 300;
+    /// <summary>
+    /// Thumbnail geometry.
+    ///
+    /// 16:9 to match the card's figure area exactly — a mismatched aspect letterboxes the
+    /// figure and makes it look small inside its own card.
+    ///
+    /// Rendered at roughly 1.9× the displayed size with a matching ScaleFactor, which is the
+    /// supersampling trick: fonts and line weights scale with the raster, so downscaling to the
+    /// card yields crisp text at its intended size rather than soft or tiny text. The same
+    /// ScaleFactor mechanism is what will carry a figure to 600 DPI at export.
+    /// </summary>
+    private const int ThumbWidth = 648;
+    private const int ThumbHeight = 364;
+    private const double ThumbScale = 1.9;
 
     public ContactSheetViewModel(
         ChartsStudioSession session,
@@ -155,7 +166,7 @@ public sealed class ContactSheetViewModel : ObservableObject
             Context = _context,
             WidthPixels = ThumbWidth,
             HeightPixels = ThumbHeight,
-            ScaleFactor = 1.0
+            ScaleFactor = ThumbScale
         };
 
         var result = await _renderQueue.RenderAsync(request).ConfigureAwait(true);

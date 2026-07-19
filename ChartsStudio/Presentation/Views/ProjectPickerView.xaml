@@ -82,8 +82,11 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
+            <!-- Uses the DEFAULT TextBox style, not EditorTextBox. EditorTextBox is styled for
+                 multi-line notes and sets MinHeight=120, which beats any local Height and made
+                 a single-line search field 120px tall. The default style is already a proper
+                 single-line input. -->
             <TextBox Grid.Column="0"
-                     Style="{StaticResource EditorTextBox}"
                      Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
                      ToolTip="Search by project name, specialty or study type"/>
 

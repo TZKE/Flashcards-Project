@@ -83,9 +83,9 @@
                             Click="Close_Click"/>
                 </Grid>
 
-                <!-- Search -->
+                <!-- Default TextBox style, not EditorTextBox: the latter is for multi-line
+                     notes and sets MinHeight=120, which would dominate a dialog this size. -->
                 <TextBox Grid.Row="1"
-                         Style="{StaticResource EditorTextBox}"
                          Margin="22,16,22,12"
                          Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                          ToolTip="Search by variable or chart type"/>

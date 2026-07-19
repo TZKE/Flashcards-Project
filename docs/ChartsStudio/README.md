@@ -1,0 +1,54 @@
+# Charts Studio — design set
+
+Charts Studio is OrbitLab's module for producing publication-quality scientific figures from
+an existing research project. These four documents are the Phase 0 design work, written before
+any implementation and used as the reference for every phase since.
+
+| # | Document | What it settles |
+|---|---|---|
+| 1 | [Product vision & architecture](01-product-vision-and-architecture.md) | What the feature is, why deterministic-first, MVP scope, risks |
+| 2 | [Template gallery & live preview](02-template-gallery-and-live-preview.md) | Browsing model, template taxonomy, live previews from the user's own variables |
+| 3 | [Premium experience design](03-premium-experience-design.md) | The end-to-end experience: contact sheet, curation, journal mode, submission export |
+| 4 | [Software architecture](04-software-architecture.md) | Layers, module boundary, data models, services, figure lifecycle, extensibility |
+
+## The one invariant
+
+Everything below follows from a single commitment:
+
+> **AI never touches the data. Deterministic C# computes every number.**
+
+`ResearchLabNarrativeGenerator.cs` already proves the pattern — manuscript-ready prose with zero
+AI in the path. Charts Studio holds the same line. AI may reorder suggestions and reword
+explanations; it may never compute, choose a bin width, determine an *n*, or decide
+significance. The module must ship fully working with the AI layer disabled, and that is
+verified by test.
+
+A second rule follows from it, learned the expensive way in commit `dbaeed5`:
+
+> **Charts Studio never reads the dataset.** It renders only from aggregates Research Lab has
+> already computed. Two independent readers of the same data that disagree is a bug class this
+> codebase has already paid to eliminate — and here the output would be a published figure.
+
+## Implementation status
+
+| Phase | State | Commit |
+|---|---|---|
+| 0 — Design | Complete (these documents) | — |
+| 1 — Foundation | Complete — module skeleton, project picker, session, per-project persistence | `12953d1` |
+| 2 — Contact Sheet | Complete — ScottPlot 5 rendering, recommendations, keep/remove, add figure | `0e3e158` |
+| 3 — Figure Editor | Not started | — |
+| 4 — Figure Shelf | Not started | — |
+| 5 — Export | Not started | — |
+| 6 — AI advisory layer | Not started, and deliberately last | — |
+
+**Rendering engine:** ScottPlot 5, chosen by spike over OxyPlot and LiveCharts2. ScottPlot and
+OxyPlot both held WYSIWYG exactly from 96 to 600 DPI; LiveCharts2 produced a materially
+different figure at print size and was eliminated. See document 4, §12.
+
+## Known constraint on chart types
+
+Charts Studio can currently draw **box plots, bar charts and mean ± SD intervals**, because
+those are exactly what Research Lab's persisted aggregates support. Histograms, scatter plots
+and grouped comparison figures are blocked on Research Lab persisting more — bin counts, paired
+raw values, and per-group five-number summaries respectively. That is a statistics dependency,
+not a charting one, and it must not be worked around by reading the dataset.

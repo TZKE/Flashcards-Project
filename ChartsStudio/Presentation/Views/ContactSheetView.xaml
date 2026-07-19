@@ -19,6 +19,9 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
+        <!-- Kept is the core gesture of this surface, so it must be legible at a glance across
+             the whole sheet — not just a changed button label. A kept card takes the primary
+             border and a badge, so scanning answers "which did I keep?" without reading. -->
         <Style x:Key="FigureCardBorder" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
@@ -27,7 +30,14 @@
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0,0,16,16"/>
             <Setter Property="Width" Value="360"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsKept}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
+
 
         <Style x:Key="CardActionButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -56,6 +66,18 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- Keep button, filled once kept so the action reads as done rather than available. -->
+        <Style x:Key="KeepButton" TargetType="Button" BasedOn="{StaticResource CardActionButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsKept}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource PrimarySoftBrush}"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
     </UserControl.Resources>
 
@@ -95,9 +117,10 @@
                     Click="AddFigure_Click"/>
         </Grid>
 
-        <!-- Cards -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
-            <StackPanel>
+        <!-- Cards.
+             Bottom padding so the last row clears the scroll edge instead of being sliced. -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+            <StackPanel Margin="0,0,0,10">
 
                 <ItemsControl ItemsSource="{Binding Cards}">
                     <ItemsControl.ItemsPanel>
@@ -112,15 +135,23 @@
                                 <StackPanel>
 
                                     <!-- Figure area: fixed height so cards do not jump as
-                                         thumbnails arrive. -->
-                                    <Border Height="210"
+                                         thumbnails arrive.
+
+                                         Background is WHITE, not the soft card tint. The
+                                         rendered PNG has a white figure background, and a
+                                         tinted container left a visible hard-edged rectangle
+                                         inside the rounded corner. Matching the two removes
+                                         the seam. The 16:9 area matches the render aspect so
+                                         the figure fills it instead of letterboxing. -->
+                                    <Border Height="204"
                                             CornerRadius="14,14,0,0"
-                                            Background="{StaticResource SoftCardBrush}">
+                                            Background="White"
+                                            ClipToBounds="True">
                                         <Grid>
                                             <!-- Drawn -->
                                             <Image Source="{Binding Image}"
                                                    Stretch="Uniform"
-                                                   Margin="8"
+                                                   Margin="6,8,6,4"
                                                    RenderOptions.BitmapScalingMode="HighQuality"
                                                    Visibility="{Binding IsRendered, Converter={StaticResource BoolToVis}}"/>
 
@@ -147,6 +178,19 @@
 
                                     <!-- Text -->
                                     <StackPanel Margin="18,14,18,0">
+                                        <!-- Kept badge — the at-a-glance marker -->
+                                        <Border Background="{StaticResource PrimarySoftBrush}"
+                                                CornerRadius="5"
+                                                Padding="7,2"
+                                                HorizontalAlignment="Left"
+                                                Margin="0,0,0,8"
+                                                Visibility="{Binding IsKept, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="KEPT"
+                                                       Foreground="{StaticResource PrimaryBrush}"
+                                                       FontSize="9.5"
+                                                       FontWeight="Bold"/>
+                                        </Border>
+
                                         <TextBlock Text="{Binding Headline}"
                                                    FontSize="14.5"
                                                    FontWeight="SemiBold"
@@ -181,7 +225,7 @@
                                     <!-- Actions -->
                                     <StackPanel Orientation="Horizontal" Margin="18,14,18,18">
                                         <Button Content="{Binding KeepLabel}"
-                                                Style="{StaticResource CardActionButton}"
+                                                Style="{StaticResource KeepButton}"
                                                 Click="Keep_Click"
                                                 Margin="0,0,8,0"/>
                                         <Button Content="Remove"
@@ -215,14 +259,37 @@
                     </Border.Style>
                     <StackPanel>
                         <TextBlock Text="No figures to propose yet"
-                                   FontSize="16"
+                                   FontSize="17"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource TextBrush}"/>
                         <TextBlock Text="{Binding EmptyReason}"
-                                   FontSize="13"
+                                   FontSize="13.5"
                                    Foreground="{StaticResource MutedBrush}"
                                    TextWrapping="Wrap"
+                                   LineHeight="21"
                                    Margin="0,10,0,0"/>
+
+                        <!-- Says what Charts Studio WILL do, so an empty sheet reads as "not
+                             yet" rather than "nothing here". -->
+                        <Border Background="{StaticResource CardBrush}"
+                                BorderBrush="{StaticResource BorderBrushSoft}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="16,13"
+                                Margin="0,18,0,0">
+                            <StackPanel>
+                                <TextBlock Text="What happens once they're available"
+                                           FontSize="11.5"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource SoftMutedBrush}"/>
+                                <TextBlock FontSize="12.5"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           TextWrapping="Wrap"
+                                           LineHeight="20"
+                                           Margin="0,7,0,0"
+                                           Text="Charts Studio proposes figures built from your own variables — you keep the ones you want. Every value comes from the statistics OrbitLab already computed, never from a fresh calculation."/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Border>
 
