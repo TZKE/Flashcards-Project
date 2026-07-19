@@ -12,11 +12,6 @@ public partial class App : Application
 {
     public App()
     {
-        // Keep the page scrolling when the pointer is over an inner scrollable
-        // control (see RegisterScrollBehaviour). Registered before any window
-        // is created so it applies everywhere.
-        RegisterScrollBehaviour();
-
         // Phase 6A: Velopack updater hooks must run as early as possible. For a
         // normal (non-Velopack-installed) build this is a documented safe no-op —
         // startup behavior is unchanged. Wrapped defensively anyway: the updater
@@ -28,6 +23,12 @@ public partial class App : Application
         // must never hard-close the whole app. Log the details for diagnosis and
         // keep the window open. No sensitive data (keys) is ever written here.
         DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+        // Keep the page scrolling when the pointer is over an inner scrollable
+        // control (see RegisterScrollBehaviour). Deliberately AFTER the Velopack
+        // bootstrap above, which must stay first, and before any window exists
+        // so the handlers apply everywhere.
+        RegisterScrollBehaviour();
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
