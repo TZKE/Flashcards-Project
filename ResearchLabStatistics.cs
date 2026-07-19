@@ -33,8 +33,11 @@ namespace AIFlashcardMaker;
 public static class StatisticsMissingTokens
 {
     // Case-insensitive tokens treated as missing everywhere in Phase 4A.
+    // "none" was previously honoured by the CSV importer but not here, so the
+    // import summary and the analysis disagreed about N for the same file.
+    // This list is now the single source of truth for both layers.
     public static readonly string[] Tokens =
-        { "na", "n/a", "null", "missing", ".", "-", "unknown", "not available" };
+        { "na", "n/a", "null", "none", "missing", ".", "-", "unknown", "not available" };
 
     public static bool IsMissing(string? value)
     {
@@ -133,7 +136,11 @@ public static class StatisticsCsvReader
         }
 
         string[]? headers = null;
-        foreach (var rawLine in text.Split('\n'))
+        // Split on CRLF, lone CR and lone LF. Splitting on '\n' alone made a
+        // CR-only file (classic Mac / some lab instruments) collapse into a
+        // single line: the importer reported rows while this reader produced
+        // zero, with no error surfaced anywhere.
+        foreach (var rawLine in text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None))
         {
             string line = rawLine.TrimEnd('\r');
             if (headers is null)
@@ -591,15 +598,42 @@ public static class StatisticsVariablePreparer
 
     // Numeric parsing: invariant culture; a single comma with no dot is
     // accepted as a decimal comma ("2,5" → 2.5). Documented in audit notes.
+    // Two classes of value are deliberately REJECTED rather than guessed at,
+    // because both previously produced silently wrong statistics:
+    //   * "1,000" — a single comma followed by exactly three digits is
+    //     indistinguishable from a thousands separator. The old code read it
+    //     as 1, a 1000x error that never surfaced because the value parsed.
+    //   * "Infinity" / "NaN" — these parse under invariant culture and then
+    //     poison every mean, SD, min and max they touch.
+    // Rejected values are counted as invalid (not missing), which the existing
+    // quality checks already surface to the user.
     public static bool TryParseNumeric(string value, out double result)
     {
         result = 0;
         string s = (value ?? "").Trim();
         if (s.Length == 0) return false;
-        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out result)) return true;
-        if (s.Count(c => c == ',') == 1 && !s.Contains('.'))
-            return double.TryParse(s.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out result);
+
+        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double direct))
+            return Accept(direct, out result);
+
+        int firstComma = s.IndexOf(',');
+        if (firstComma >= 0 && s.IndexOf(',', firstComma + 1) < 0 && !s.Contains('.'))
+        {
+            string afterComma = s[(firstComma + 1)..];
+            bool looksLikeThousands = afterComma.Length == 3 && afterComma.All(char.IsDigit);
+            if (!looksLikeThousands &&
+                double.TryParse(s.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double viaComma))
+                return Accept(viaComma, out result);
+        }
         return false;
+    }
+
+    // A parsed value is only usable if it is finite.
+    private static bool Accept(double parsed, out double result)
+    {
+        if (double.IsNaN(parsed) || double.IsInfinity(parsed)) { result = 0; return false; }
+        result = parsed;
+        return true;
     }
 
     // Parses "0 = No, 1 = Yes" / "1: Mild; 2: Moderate" style coding into a

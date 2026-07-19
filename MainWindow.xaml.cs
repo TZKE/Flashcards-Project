@@ -5847,12 +5847,11 @@ public sealed partial class MainWindow : Window
         return cols;
     }
 
-    private static bool IsMissingToken(string v)
-    {
-        if (string.IsNullOrWhiteSpace(v)) return true;
-        string s = v.Trim().ToLowerInvariant();
-        return s is "na" or "n/a" or "null" or "none" or "-" or "." or "missing";
-    }
+    // Delegates to the one shared missing-value list so the import summary and
+    // the statistics engine can never disagree about what counts as missing.
+    // This previously kept its own list, which omitted "unknown" and
+    // "not available" and so reported a different N than the analysis used.
+    private static bool IsMissingToken(string v) => StatisticsMissingTokens.IsMissing(v);
 
     private static string InferColumnType(List<string> values, List<string> distinct, out bool likelyCategorical)
     {
