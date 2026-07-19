@@ -36,9 +36,12 @@ public sealed class ChartsStudioProjectState
 {
     /// <summary>
     /// Bumped whenever the persisted shape changes in a way older readers cannot handle.
-    /// Version 1 = Phase 1 foundation (no figures yet).
+    ///   v1 = Phase 1/2: figures were bare FigureSpec objects.
+    ///   v2 = Phase 3/4: figures are KeptFigure records (spec + patch + metadata).
+    /// The store migrates v1 files on read (see ChartsStudioStore.MigrateV1) — the version
+    /// stamp exists precisely so this moment could be handled instead of guessed at.
     /// </summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>
     /// Identifies these files as Charts Studio's, independently of where they happen to live.
@@ -87,18 +90,19 @@ public sealed class ChartsStudioProjectState
     public string? LastFingerprint { get; set; }
 
     /// <summary>
-    /// The figures the user has KEPT for this project, in shelf order.
+    /// The figures the user has KEPT for this project, in SHELF ORDER — list position IS the
+    /// persisted ordering, so reordering the shelf is reordering this list and nothing more.
     ///
-    /// Phase 1 reserved this slot as an empty list precisely so filling it in Phase 2 would be
-    /// an additive change to a file older readers already understand — no schema break, no
-    /// migration, and the version stamp stays at 1.
+    /// Each entry is a KeptFigure: the immutable recommendation spec, the user's patch overlay
+    /// and shelf metadata. The recommendation data exists exactly once (in the spec); the
+    /// patch stores only deviations, so nothing is ever duplicated between the two.
     ///
     /// Only kept figures are persisted. Proposals are derived state, reproducible from the
     /// context plus the engine version; storing them would mean migrating records the user
     /// never chose to keep.
     /// </summary>
     [JsonPropertyName("figures")]
-    public List<FigureSpec> Figures { get; set; } = new();
+    public List<KeptFigure> Figures { get; set; } = new();
 
     /// <summary>Figures saved for this project.</summary>
     [JsonIgnore]

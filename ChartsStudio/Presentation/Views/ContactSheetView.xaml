@@ -228,6 +228,11 @@
                                                 Style="{StaticResource KeepButton}"
                                                 Click="Keep_Click"
                                                 Margin="0,0,8,0"/>
+                                        <Button Content="Edit"
+                                                Style="{StaticResource CardActionButton}"
+                                                Click="Edit_Click"
+                                                ToolTip="Keeps the figure and opens it in the editor"
+                                                Margin="0,0,8,0"/>
                                         <Button Content="Remove"
                                                 Style="{StaticResource CardActionButton}"
                                                 Click="Remove_Click"/>

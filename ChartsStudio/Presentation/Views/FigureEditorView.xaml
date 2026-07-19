@@ -1,0 +1,426 @@
+<UserControl x:Class="AIFlashcardMaker.ChartsStudio.Presentation.Views.FigureEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             mc:Ignorable="d"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             Focusable="True">
+
+    <!--
+        Charts Studio Phase 3 — Figure Editor.
+
+        One overlay, two panes: the live preview on the left, the inspector on the right.
+        Every control binds through the view model into FigureEditSession — no rule lives in
+        this file. The preview re-renders on every accepted edit; undo/redo previews are
+        instant because their styles are already in the render cache.
+
+        Bindings use UpdateSourceTrigger=LostFocus (the TextBox default) deliberately: a patch
+        state per COMMITTED edit keeps the undo stack meaningful — one step per field change,
+        not one per keystroke.
+    -->
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource SoftMutedBrush}"/>
+            <Setter Property="Margin" Value="0,18,0,8"/>
+        </Style>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="10,0"/>
+        </Style>
+
+        <Style x:Key="FieldCombo" TargetType="ComboBox">
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <!-- Small per-field reset: visible only when that field is overridden, so the
+             inspector doubles as a map of what the user has changed. -->
+        <Style x:Key="FieldReset" TargetType="Button">
+            <Setter Property="Content" Value="⟲"/>
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip" Value="Reset to the recommended value"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="EditorAction" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SwatchButton" TargetType="Button">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{StaticResource BorderBrushSoft}"
+                                BorderThickness="1"
+                                CornerRadius="6"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}"/>
+        <KeyBinding Key="Y" Modifiers="Control" Command="{Binding RedoCommand}"/>
+        <KeyBinding Key="Escape" Command="{Binding CloseCommand}"/>
+    </UserControl.InputBindings>
+
+    <!-- Scrim + editor panel -->
+    <Grid Background="#66000000" Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
+        <Border Background="{StaticResource CardBrush}"
+                BorderBrush="{StaticResource BorderBrushSoft}"
+                BorderThickness="1"
+                CornerRadius="16"
+                Margin="40,24"
+                MaxWidth="1280">
+            <Grid Margin="24,20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- ============================ HEADER ============================ -->
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding HeaderTitle}"
+                                   FontSize="17" FontWeight="Bold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="560"/>
+                        <TextBlock Text="{Binding ChartTypeName}"
+                                   FontSize="12" Foreground="{StaticResource SoftMutedBrush}"
+                                   VerticalAlignment="Center" Margin="12,2,0,0"/>
+
+                        <!-- Dirty dot: quiet, but always visible when edits are unsaved -->
+                        <Ellipse Width="8" Height="8" Fill="{StaticResource WarningBrush}"
+                                 VerticalAlignment="Center" Margin="12,2,0,0"
+                                 ToolTip="Unsaved changes"
+                                 Visibility="{Binding IsDirty, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Undo" Style="{StaticResource EditorAction}"
+                                Command="{Binding UndoCommand}" Margin="0,0,8,0"
+                                ToolTip="Ctrl+Z"/>
+                        <Button Content="Redo" Style="{StaticResource EditorAction}"
+                                Command="{Binding RedoCommand}" Margin="0,0,8,0"
+                                ToolTip="Ctrl+Y"/>
+                        <Button Content="Reset all" Style="{StaticResource EditorAction}"
+                                Click="ResetAll_Click" Margin="0,0,16,0"
+                                ToolTip="Return the whole figure to its recommendation"/>
+                        <Button Content="Save" Style="{StaticResource PrimaryButton}"
+                                Click="Save_Click" IsEnabled="{Binding CanSave}"
+                                MinWidth="86" Margin="0,0,8,0"/>
+                        <Button Content="Close" Style="{StaticResource SoftButton}"
+                                Command="{Binding CloseCommand}" ToolTip="Esc"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ============================ BODY ============================ -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="380"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Preview -->
+                    <Grid Grid.Column="0" Margin="0,0,20,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Background="White"
+                                BorderBrush="{StaticResource BorderBrushSoft}"
+                                BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+                            <Grid>
+                                <Image Source="{Binding PreviewImage}"
+                                       Stretch="Uniform" Margin="10"
+                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                <TextBlock Text="updating…"
+                                           FontSize="11" Foreground="{StaticResource SoftMutedBrush}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Top"
+                                           Margin="0,10,14,0"
+                                           Visibility="{Binding IsPreviewStale, Converter={StaticResource BoolToVis}}"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Caption sits under the figure, where captions live in print -->
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding CaptionPreview}"
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                   TextWrapping="Wrap" Margin="4,10,4,0"
+                                   Visibility="{Binding HasCaption, Converter={StaticResource BoolToVis}}"/>
+                    </Grid>
+
+                    <!-- Inspector -->
+                    <Border Grid.Column="1"
+                            Background="{StaticResource SoftCardBrush}"
+                            BorderBrush="{StaticResource BorderBrushSoft}"
+                            BorderThickness="1" CornerRadius="12">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,4,16,16">
+                            <StackPanel>
+
+                                <!-- Validation: one quiet line, never a dialog -->
+                                <Border Background="{StaticResource DangerSoftBrush}" CornerRadius="8"
+                                        Padding="10,7" Margin="0,12,0,0"
+                                        Visibility="{Binding HasValidationErrors, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding ValidationText}"
+                                               FontSize="11.5" Foreground="{StaticResource DangerBrush}"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+
+                                <!-- ======== TEXT ======== -->
+                                <Grid>
+                                    <TextBlock Text="TEXT" Style="{StaticResource SectionHeader}"/>
+                                    <Button Content="reset" FontSize="10.5" HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom" Margin="0,0,0,6"
+                                            Style="{StaticResource EditorAction}" Padding="8,2"
+                                            Click="ResetText_Click"/>
+                                </Grid>
+
+                                <TextBlock Text="Title" Style="{StaticResource FieldLabel}"/>
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FieldReset}"
+                                            Click="ResetTitle_Click"
+                                            Visibility="{Binding HasTitleOverride, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBox Style="{StaticResource FieldBox}" Text="{Binding TitleText}"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Subtitle" Style="{StaticResource FieldLabel}"/>
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FieldReset}"
+                                            Click="ResetSubtitle_Click"
+                                            Visibility="{Binding HasSubtitleOverride, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBox Style="{StaticResource FieldBox}" Text="{Binding SubtitleText}"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Caption" Style="{StaticResource FieldLabel}"/>
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FieldReset}"
+                                            Click="ResetCaption_Click"
+                                            Visibility="{Binding HasCaptionOverride, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBox Style="{StaticResource FieldBox}" Text="{Binding CaptionText}"/>
+                                </DockPanel>
+
+                                <TextBlock Text="X axis title" Style="{StaticResource FieldLabel}"/>
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FieldReset}"
+                                            Click="ResetXAxis_Click"
+                                            Visibility="{Binding HasXAxisOverride, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBox Style="{StaticResource FieldBox}" Text="{Binding XAxisTitleText}"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Y axis title" Style="{StaticResource FieldLabel}"/>
+                                <DockPanel Margin="0,4,0,0">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FieldReset}"
+                                            Click="ResetYAxis_Click"
+                                            Visibility="{Binding HasYAxisOverride, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBox Style="{StaticResource FieldBox}" Text="{Binding YAxisTitleText}"/>
+                                </DockPanel>
+
+                                <!-- ======== APPEARANCE ======== -->
+                                <Grid>
+                                    <TextBlock Text="APPEARANCE" Style="{StaticResource SectionHeader}"/>
+                                    <Button Content="reset" FontSize="10.5" HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom" Margin="0,0,0,6"
+                                            Style="{StaticResource EditorAction}" Padding="8,2"
+                                            Click="ResetAppearance_Click"/>
+                                </Grid>
+
+                                <TextBlock Text="Theme" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox Style="{StaticResource FieldCombo}" Margin="0,4,0,10"
+                                          ItemsSource="{Binding ThemeOptions}"
+                                          SelectedItem="{Binding SelectedTheme}"/>
+
+                                <TextBlock Text="Series colour" Style="{StaticResource FieldLabel}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,4"
+                                            x:Name="SwatchPanel"/>
+                                <DockPanel Margin="0,2,0,10">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource FieldReset}"
+                                            Click="ResetSeriesColor_Click"
+                                            Visibility="{Binding HasSeriesColorOverride, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBox Style="{StaticResource FieldBox}" Text="{Binding SeriesColorHexText}"
+                                             ToolTip="Hex colour, e.g. #2F6FB2"/>
+                                </DockPanel>
+
+                                <CheckBox Content="Colour bars by category"
+                                          FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                          Margin="0,0,0,6"
+                                          IsChecked="{Binding ColorByCategory}"
+                                          Visibility="{Binding SupportsCategoryColors, Converter={StaticResource BoolToVis}}"/>
+
+                                <StackPanel Visibility="{Binding SupportsCategoryColors, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="Palette" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox Style="{StaticResource FieldCombo}" Margin="0,4,0,10"
+                                              ItemsSource="{Binding PaletteOptions}"
+                                              SelectedItem="{Binding SelectedPalette}"
+                                              IsEnabled="{Binding ColorByCategory}"/>
+                                </StackPanel>
+
+                                <TextBlock Text="Font" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox Style="{StaticResource FieldCombo}" Margin="0,4,0,10"
+                                          ItemsSource="{Binding FontOptions}"
+                                          SelectedItem="{Binding SelectedFont}"/>
+
+                                <!-- Numeric grid: label + box pairs -->
+                                <UniformGrid Columns="2" Margin="0,0,0,0">
+                                    <StackPanel Margin="0,0,8,8">
+                                        <TextBlock Text="Title size" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Style="{StaticResource FieldBox}" Margin="0,4,0,0"
+                                                 Text="{Binding TitleFontSizeText}"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,0,8">
+                                        <TextBlock Text="Axis size" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Style="{StaticResource FieldBox}" Margin="0,4,0,0"
+                                                 Text="{Binding AxisFontSizeText}"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,8,8">
+                                        <TextBlock Text="Tick size" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Style="{StaticResource FieldBox}" Margin="0,4,0,0"
+                                                 Text="{Binding TickFontSizeText}"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,0,8">
+                                        <TextBlock Text="Line width" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Style="{StaticResource FieldBox}" Margin="0,4,0,0"
+                                                 Text="{Binding LineWidthText}"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,8,0">
+                                        <TextBlock Text="Marker size" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Style="{StaticResource FieldBox}" Margin="0,4,0,0"
+                                                 Text="{Binding MarkerSizeText}"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,0,0">
+                                        <TextBlock Text="Opacity (0–1)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Style="{StaticResource FieldBox}" Margin="0,4,0,0"
+                                                 Text="{Binding OpacityText}"/>
+                                    </StackPanel>
+                                </UniformGrid>
+
+                                <!-- ======== LAYOUT ======== -->
+                                <Grid>
+                                    <TextBlock Text="LAYOUT" Style="{StaticResource SectionHeader}"/>
+                                    <Button Content="reset" FontSize="10.5" HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom" Margin="0,0,0,6"
+                                            Style="{StaticResource EditorAction}" Padding="8,2"
+                                            Click="ResetLayout_Click"/>
+                                </Grid>
+
+                                <CheckBox Content="Show grid" FontSize="12" Margin="0,2,0,7"
+                                          Foreground="{StaticResource MutedBrush}"
+                                          IsChecked="{Binding ShowGrid}"/>
+                                <CheckBox Content="Show legend" FontSize="12" Margin="0,0,0,7"
+                                          Foreground="{StaticResource MutedBrush}"
+                                          IsChecked="{Binding ShowLegend}"/>
+                                <CheckBox Content="Show X axis" FontSize="12" Margin="0,0,0,7"
+                                          Foreground="{StaticResource MutedBrush}"
+                                          IsChecked="{Binding ShowXAxis}"/>
+                                <CheckBox Content="Show Y axis" FontSize="12" Margin="0,0,0,7"
+                                          Foreground="{StaticResource MutedBrush}"
+                                          IsChecked="{Binding ShowYAxis}"/>
+                                <CheckBox Content="Horizontal bars" FontSize="12" Margin="0,0,0,4"
+                                          Foreground="{StaticResource MutedBrush}"
+                                          IsChecked="{Binding IsHorizontal}"
+                                          Visibility="{Binding SupportsOrientation, Converter={StaticResource BoolToVis}}"/>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Discard confirmation: inline, modal within the editor, never a MessageBox -->
+        <Grid Background="#88000000"
+              Visibility="{Binding IsConfirmingDiscard, Converter={StaticResource BoolToVis}}">
+            <Border Background="{StaticResource CardBrush}"
+                    BorderBrush="{StaticResource BorderBrushSoft}"
+                    BorderThickness="1" CornerRadius="14"
+                    Padding="28,24" MaxWidth="440"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="You have unsaved changes"
+                               FontSize="15.5" FontWeight="Bold"
+                               Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock Text="Save them to this figure, or discard them and keep the last saved version?"
+                               FontSize="12.5" Foreground="{StaticResource MutedBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,18"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Keep editing" Style="{StaticResource EditorAction}"
+                                Click="CancelDiscard_Click" Margin="0,0,8,0"/>
+                        <Button Content="Discard" Style="{StaticResource DangerSoftButton}"
+                                Click="ConfirmDiscard_Click" Margin="0,0,8,0"/>
+                        <Button Content="Save &amp; close" Style="{StaticResource PrimaryButton}"
+                                Click="SaveAndClose_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

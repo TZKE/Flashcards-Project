@@ -32,5 +32,10 @@ public partial class ContactSheetView : UserControl
         if (CardOf(sender) is { } card) ViewModel?.RemoveCard(card);
     }
 
+    private void Edit_Click(object sender, RoutedEventArgs e)
+    {
+        if (CardOf(sender) is { } card) ViewModel?.RequestEdit(card);
+    }
+
     private void AddFigure_Click(object sender, RoutedEventArgs e) => ViewModel?.RequestAddFigure();
 }

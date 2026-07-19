@@ -35,13 +35,50 @@ public sealed class StudioShellViewModel : ObservableObject
     /// <summary>The Add Figure surface, shown over the sheet.</summary>
     public AddFigureViewModel? AddFigure { get; private set; }
 
-    public void AttachSurfaces(ContactSheetViewModel contactSheet, AddFigureViewModel addFigure)
+    /// <summary>Phase 4 — the Figure Shelf, the second first-class surface.</summary>
+    public FigureShelfViewModel? Shelf { get; private set; }
+
+    /// <summary>Phase 3 — the Figure Editor, overlaying whichever surface is active.</summary>
+    public FigureEditorViewModel? Editor { get; private set; }
+
+    public void AttachSurfaces(
+        ContactSheetViewModel contactSheet,
+        AddFigureViewModel addFigure,
+        FigureShelfViewModel shelf,
+        FigureEditorViewModel editor)
     {
         ContactSheet = contactSheet;
         AddFigure = addFigure;
+        Shelf = shelf;
+        Editor = editor;
         OnPropertyChanged(nameof(ContactSheet));
         OnPropertyChanged(nameof(AddFigure));
+        OnPropertyChanged(nameof(Shelf));
+        OnPropertyChanged(nameof(Editor));
     }
+
+    // ---- Surface switching ----------------------------------------------------------
+    //
+    // Sheet and Shelf are DEPTHS of one workspace, not tabs of unrelated pages: survey the
+    // proposals, then assemble the set. Switching preserves both surfaces' state entirely —
+    // nothing regenerates on a switch.
+
+    private bool _isShelfActive;
+
+    public bool IsSheetActive => !_isShelfActive;
+
+    public bool IsShelfActive
+    {
+        get => _isShelfActive;
+        private set
+        {
+            if (!Set(ref _isShelfActive, value)) return;
+            OnPropertyChanged(nameof(IsSheetActive));
+        }
+    }
+
+    public void ShowSheet() => IsShelfActive = false;
+    public void ShowShelf() => IsShelfActive = true;
 
     public void Load(AnalysisContext context) => Context = context ?? AnalysisContext.None;
 

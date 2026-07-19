@@ -19,4 +19,10 @@ public partial class StudioShellView : UserControl
 
     private void ChangeProject_Click(object sender, RoutedEventArgs e) =>
         (DataContext as StudioShellViewModel)?.RequestChangeProject();
+
+    private void ShowSheet_Click(object sender, RoutedEventArgs e) =>
+        (DataContext as StudioShellViewModel)?.ShowSheet();
+
+    private void ShowShelf_Click(object sender, RoutedEventArgs e) =>
+        (DataContext as StudioShellViewModel)?.ShowShelf();
 }

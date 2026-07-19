@@ -1,15 +1,23 @@
 using AIFlashcardMaker.ChartsStudio.Domain.Context;
 using AIFlashcardMaker.ChartsStudio.Domain.Specs;
+using AIFlashcardMaker.ChartsStudio.Domain.Themes;
 
 namespace AIFlashcardMaker.ChartsStudio.Application.Rendering;
 
-/// <summary>One figure to draw, at one size.</summary>
+/// <summary>One figure to draw, at one size, in one resolved style.</summary>
 public sealed class RenderRequest
 {
     public required FigureSpec Spec { get; init; }
 
     /// <summary>The context supplying the aggregates. Never a dataset.</summary>
     public required AnalysisContext Context { get; init; }
+
+    /// <summary>
+    /// Phase 3 — every visual decision, fully resolved (spec + patch + theme). Null means
+    /// "recommendation defaults": the renderer resolves an unpatched style itself, so every
+    /// pre-editor call site keeps working and renders exactly as before.
+    /// </summary>
+    public ResolvedFigureStyle? Style { get; init; }
 
     public required int WidthPixels { get; init; }
     public required int HeightPixels { get; init; }
@@ -21,10 +29,12 @@ public sealed class RenderRequest
     public double ScaleFactor { get; init; } = 1.0;
 
     /// <summary>
-    /// Identifies this render for caching: the spec's visual identity plus the output size.
-    /// Two figures of the same variable in the same form at the same size are the same picture.
+    /// Identifies this render for caching: spec identity + style identity + output size.
+    /// The style participates so a patched and an unpatched render of the same spec can never
+    /// collide in the cache — the bug that would show a user their edits "not taking".
     /// </summary>
-    public string CacheKey => $"{Spec.ToRenderKey()}|{WidthPixels}x{HeightPixels}@{ScaleFactor:F2}";
+    public string CacheKey =>
+        $"{Spec.ToRenderKey()}|s:{Style?.CacheKey ?? ""}|{WidthPixels}x{HeightPixels}@{ScaleFactor:F2}";
 }
 
 /// <summary>The outcome of a render — an image, or a stated reason there is none.</summary>

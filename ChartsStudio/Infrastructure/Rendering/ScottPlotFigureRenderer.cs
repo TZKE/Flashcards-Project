@@ -1,30 +1,29 @@
 using AIFlashcardMaker.ChartsStudio.Application.Rendering;
 using AIFlashcardMaker.ChartsStudio.Domain.ChartTypes;
 using AIFlashcardMaker.ChartsStudio.Domain.Context;
+using AIFlashcardMaker.ChartsStudio.Domain.Themes;
 
 namespace AIFlashcardMaker.ChartsStudio.Infrastructure.Rendering;
 
 /// <summary>
-/// Charts Studio Phase 2 — the ScottPlot 5 renderer.
+/// Charts Studio — the ScottPlot 5 renderer.
 ///
 /// THE ONLY FILE IN THE MODULE THAT REFERENCES A CHARTING LIBRARY. Everything above works in
-/// specs and contexts, so swapping engines means writing one new implementation of
-/// IFigureRenderer and changing nothing else.
+/// specs, contexts and resolved styles, so swapping engines means writing one new
+/// implementation of IFigureRenderer and changing nothing else.
 ///
-/// ScottPlot 5 was chosen by spike over OxyPlot and LiveCharts2. The deciding measurements:
-/// ScottPlot and OxyPlot both held WYSIWYG exactly from 96 to 600 DPI — identical layout AND
-/// identical tick labels — while LiveCharts2 produced a different figure at print size (tick
-/// density exploded, type microscopic). Between the two survivors, ScottPlot has materially
-/// more active development, a first-party WPF control for the interactive canvas, and a better
-/// model for the custom plottables Kaplan-Meier, ROC and forest plots will need.
+/// PHASE 3: rendering is now STYLE-DRIVEN. Every visual decision arrives pre-resolved and
+/// pre-clamped in a ResolvedFigureStyle (spec + user patch + theme, merged by
+/// FigureStyleResolver). This file translates those decisions into ScottPlot calls and adds
+/// none of its own — if a colour or size is wrong, the bug is in the resolver where it is
+/// unit-testable, not scattered through drawing code.
 ///
-/// WYSIWYG IS THE CONTRACT. Every render — thumbnail, canvas, export — goes through this one
-/// method, and print-resolution output uses ScottPlot's ScaleFactor so a large raster is the
-/// same figure enlarged rather than the same figure with unreadable type.
+/// WYSIWYG IS THE CONTRACT. Thumbnail, editor preview and (later) export all pass through this
+/// one method; print-resolution output uses ScaleFactor so a large raster is the same figure
+/// enlarged, not the same figure with microscopic type.
 ///
-/// RENDERS FROM AGGREGATES ONLY. Every number drawn here was computed by Research Lab and
-/// projected into the context. This renderer never sees a dataset and never calculates a
-/// statistic — it cannot, because the data it would need is not reachable from here.
+/// RENDERS FROM AGGREGATES ONLY. Every number drawn was computed by Research Lab and projected
+/// into the context. This renderer never sees a dataset and never calculates a statistic.
 /// </summary>
 public sealed class ScottPlotFigureRenderer : IFigureRenderer
 {
@@ -40,32 +39,32 @@ public sealed class ScottPlotFigureRenderer : IFigureRenderer
             if (variable is null)
                 return RenderResult.Failure("The variable this figure was built from is no longer in the project.");
 
+            // Null style = recommendation defaults. Resolving here (rather than requiring
+            // every call site to) keeps pre-editor callers byte-identical to Phase 2.
+            var style = request.Style ?? FigureStyleResolver.Resolve(request.Spec, null);
+
             var plot = new ScottPlot.Plot();
-            ApplyTheme(plot);
+            ApplyChrome(plot, style);
 
-            switch (request.Spec.ChartTypeId)
+            bool drawn = request.Spec.ChartTypeId switch
             {
-                case ChartTypeRegistry.BoxPlotId:
-                    if (!DrawBoxPlot(plot, variable)) return RenderResult.Failure("No five-number summary available.");
-                    break;
+                ChartTypeRegistry.BoxPlotId => DrawBoxPlot(plot, variable, style),
+                ChartTypeRegistry.BarChartId => DrawBarChart(plot, variable, style),
+                ChartTypeRegistry.MeanSdId => DrawMeanSd(plot, variable, style),
+                _ => false
+            };
 
-                case ChartTypeRegistry.BarChartId:
-                    if (!DrawBarChart(plot, variable)) return RenderResult.Failure("No categories available.");
-                    break;
-
-                case ChartTypeRegistry.MeanSdId:
-                    if (!DrawMeanSd(plot, variable)) return RenderResult.Failure("Mean and SD are not both available.");
-                    break;
-
-                default:
-                    return RenderResult.Failure($"Unknown chart type '{request.Spec.ChartTypeId}'.");
+            if (!drawn)
+            {
+                return ChartTypeRegistry.Find(request.Spec.ChartTypeId) is null
+                    ? RenderResult.Failure($"Unknown chart type '{request.Spec.ChartTypeId}'.")
+                    : RenderResult.Failure("The aggregates this figure needs are not available.");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!string.IsNullOrWhiteSpace(request.Spec.Title)) plot.Title(request.Spec.Title);
-            if (!string.IsNullOrWhiteSpace(request.Spec.ValueAxisLabel)) plot.YLabel(request.Spec.ValueAxisLabel);
-            if (!string.IsNullOrWhiteSpace(request.Spec.CategoryAxisLabel)) plot.XLabel(request.Spec.CategoryAxisLabel);
+            ApplyText(plot, style);
+            ApplyLegend(plot, variable, style);
 
             // The WYSIWYG lever: type and line weights scale with the raster.
             plot.ScaleFactor = (float)request.ScaleFactor;
@@ -87,32 +86,92 @@ public sealed class ScottPlotFigureRenderer : IFigureRenderer
         }
         catch (Exception ex)
         {
-            // A renderer fault degrades to a card that explains itself. It never takes down the
-            // contact sheet, and it never shows a blank frame pretending to be a figure.
+            // A renderer fault degrades to a card that explains itself. It never takes down
+            // the surface, and it never shows a blank frame pretending to be a figure.
             return RenderResult.Failure($"This figure could not be drawn ({ex.GetType().Name}).");
         }
     }
 
     // ---------------------------------------------------------------------------------
-    // Theme — one sober publication default. The full theme system is a later phase.
+    // Chrome — backgrounds, axes, grid, fonts. All values arrive resolved and clamped.
     // ---------------------------------------------------------------------------------
 
-    private static void ApplyTheme(ScottPlot.Plot plot)
+    private static void ApplyChrome(ScottPlot.Plot plot, ResolvedFigureStyle style)
     {
-        plot.FigureBackground.Color = ScottPlot.Colors.White;
-        plot.DataBackground.Color = ScottPlot.Colors.White;
-        plot.Axes.Color(ScottPlot.Color.FromHex("#333333"));
-        plot.Grid.MajorLineColor = ScottPlot.Color.FromHex("#ECECEC");
+        var background = Hex(style.BackgroundHex);
+        var axisColor = Hex(style.AxisHex);
+
+        plot.FigureBackground.Color = background;
+        plot.DataBackground.Color = background;
+        plot.Axes.Color(axisColor);
+
+        if (style.ShowGrid)
+        {
+            plot.Grid.MajorLineColor = Hex(style.GridHex);
+        }
+        else
+        {
+            plot.HideGrid();
+        }
+
+        foreach (var axis in new ScottPlot.AxisPanels.AxisBase[]
+                 { (ScottPlot.AxisPanels.AxisBase)plot.Axes.Left, (ScottPlot.AxisPanels.AxisBase)plot.Axes.Bottom })
+        {
+            axis.LabelFontName = style.FontFamily;
+            axis.LabelFontSize = (float)style.AxisFontSize;
+            axis.TickLabelStyle.FontName = style.FontFamily;
+            axis.TickLabelStyle.FontSize = (float)style.TickFontSize;
+        }
+
+        // Hiding an axis hides the panel — ticks, tick labels and title together. The data
+        // area keeps its frame, which is what a "clean" figure looks like in print.
+        if (!style.ShowXAxis) ((ScottPlot.AxisPanels.AxisBase)plot.Axes.Bottom).IsVisible = false;
+        if (!style.ShowYAxis) ((ScottPlot.AxisPanels.AxisBase)plot.Axes.Left).IsVisible = false;
     }
 
-    private static readonly ScottPlot.Color SeriesFill = ScottPlot.Color.FromHex("#2F6FB2");
-    private static readonly ScottPlot.Color SeriesLine = ScottPlot.Color.FromHex("#1B4A7A");
+    private static void ApplyText(ScottPlot.Plot plot, ResolvedFigureStyle style)
+    {
+        // ScottPlot has no subtitle concept; a second, unstyled line under the title is the
+        // honest equivalent and survives export at any DPI.
+        string title = string.IsNullOrWhiteSpace(style.Subtitle)
+            ? style.Title
+            : style.Title + "\n" + style.Subtitle;
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            plot.Title(title, (float)style.TitleFontSize);
+            plot.Axes.Title.Label.FontName = style.FontFamily;
+        }
+
+        if (!string.IsNullOrWhiteSpace(style.YLabel) && style.ShowYAxis)
+            plot.YLabel(style.YLabel, (float)style.AxisFontSize);
+
+        if (!string.IsNullOrWhiteSpace(style.XLabel) && style.ShowXAxis)
+            plot.XLabel(style.XLabel, (float)style.AxisFontSize);
+    }
+
+    private static void ApplyLegend(ScottPlot.Plot plot, ContextVariable variable, ResolvedFigureStyle style)
+    {
+        if (style.ShowLegend)
+        {
+            var legend = plot.ShowLegend();
+            legend.FontName = style.FontFamily;
+            legend.FontSize = (float)style.TickFontSize;
+        }
+        else
+        {
+            // Plottables carry LegendText (so the legend is populated when wanted), and
+            // ScottPlot auto-shows a legend once any plottable has text. Hide explicitly or
+            // every figure grows a legend the user never asked for.
+            plot.HideLegend();
+        }
+    }
 
     // ---------------------------------------------------------------------------------
     // Forms
     // ---------------------------------------------------------------------------------
 
-    private static bool DrawBoxPlot(ScottPlot.Plot plot, ContextVariable v)
+    private static bool DrawBoxPlot(ScottPlot.Plot plot, ContextVariable v, ResolvedFigureStyle style)
     {
         if (!v.HasFiveNumberSummary) return false;
 
@@ -124,20 +183,25 @@ public sealed class ScottPlotFigureRenderer : IFigureRenderer
             BoxMax = v.Q3!.Value,
             WhiskerMin = v.Min!.Value,
             WhiskerMax = v.Max!.Value,
-            Width = 0.6,
-            FillColor = SeriesFill.WithAlpha(0.75),
-            LineColor = SeriesLine
+            Width = 0.6
         };
 
-        plot.Add.Boxes(new[] { box });
+        var boxes = plot.Add.Boxes(new[] { box });
+        boxes.LegendText = v.DisplayName;
+
+        // Style at the PLOTTABLE level, AFTER adding. Add.Boxes assigns the next palette
+        // colour on add, silently clobbering anything set on the Box beforehand — caught
+        // visually when a user's series colour changed the outline but not the fill.
+        boxes.FillColor = Hex(style.SeriesFillHex).WithAlpha(style.Opacity);
+        boxes.LineColor = Hex(style.SeriesLineHex);
+        boxes.LineWidth = (float)style.LineWidth;
 
         plot.Axes.SetLimitsX(0.2, 1.8);
-        plot.HideGrid();
         plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual();
         return true;
     }
 
-    private static bool DrawBarChart(ScottPlot.Plot plot, ContextVariable v)
+    private static bool DrawBarChart(ScottPlot.Plot plot, ContextVariable v, ResolvedFigureStyle style)
     {
         if (!v.HasCategories) return false;
 
@@ -147,26 +211,53 @@ public sealed class ScottPlotFigureRenderer : IFigureRenderer
         for (int i = 0; i < v.Categories.Count; i++)
         {
             var c = v.Categories[i];
-            bars.Add(new ScottPlot.Bar
-            {
-                Position = i,
-                Value = c.Count,
-                FillColor = SeriesFill,
-                LineColor = SeriesLine,
-                Size = 0.7
-            });
+            bars.Add(new ScottPlot.Bar { Position = i, Value = c.Count, Size = 0.7 });
             ticks.Add(new ScottPlot.Tick(i, c.DisplayLabel));
         }
 
-        plot.Add.Bars(bars);
+        var barPlot = plot.Add.Bars(bars);
+        barPlot.LegendText = v.DisplayName;
+        barPlot.Horizontal = style.Horizontal;
 
-        plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(ticks.ToArray());
-        plot.Axes.Bottom.MajorTickStyle.Length = 0;
-        plot.Axes.SetLimitsY(0, bars.Max(b => b.Value) * 1.15);
+        // Colour AFTER adding, for the same reason as the box plot: Add.Bars restyles bars
+        // with a palette colour on add. These are the same Bar instances, so styling them now
+        // is what actually reaches the render.
+        for (int i = 0; i < bars.Count; i++)
+        {
+            string fillHex = style.CategoryPalette is { Length: > 0 }
+                ? style.CategoryPalette[i % style.CategoryPalette.Length]
+                : style.SeriesFillHex;
+
+            bars[i].FillColor = Hex(fillHex).WithAlpha(style.Opacity);
+            bars[i].LineColor = Hex(FigureStyleResolver.Darken(fillHex, 0.6));
+            bars[i].LineWidth = (float)style.LineWidth;
+        }
+
+        if (style.Horizontal)
+        {
+            // Categories move to the Y axis; the value axis becomes X. The resolver already
+            // guaranteed Horizontal only for bar charts, so no form re-check here.
+            plot.Axes.Left.TickGenerator = new ScottPlot.TickGenerators.NumericManual(ticks.ToArray());
+            ((ScottPlot.AxisPanels.AxisBase)plot.Axes.Left).MajorTickStyle.Length = 0;
+            plot.Axes.SetLimitsX(0, bars.Max(b => b.Value) * 1.15);
+
+            // Swap the axis titles to follow their content.
+            if (!string.IsNullOrWhiteSpace(style.XLabel) && style.ShowYAxis)
+                plot.YLabel(style.XLabel, (float)style.AxisFontSize);
+            if (!string.IsNullOrWhiteSpace(style.YLabel) && style.ShowXAxis)
+                plot.XLabel(style.YLabel, (float)style.AxisFontSize);
+        }
+        else
+        {
+            plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual(ticks.ToArray());
+            ((ScottPlot.AxisPanels.AxisBase)plot.Axes.Bottom).MajorTickStyle.Length = 0;
+            plot.Axes.SetLimitsY(0, bars.Max(b => b.Value) * 1.15);
+        }
+
         return true;
     }
 
-    private static bool DrawMeanSd(ScottPlot.Plot plot, ContextVariable v)
+    private static bool DrawMeanSd(ScottPlot.Plot plot, ContextVariable v, ResolvedFigureStyle style)
     {
         if (!v.HasMeanAndSd) return false;
 
@@ -174,17 +265,23 @@ public sealed class ScottPlotFigureRenderer : IFigureRenderer
 
         var marker = plot.Add.Marker(1, mean);
         marker.MarkerStyle.Shape = ScottPlot.MarkerShape.FilledCircle;
-        marker.MarkerStyle.Size = 12;
-        marker.MarkerStyle.FillColor = SeriesFill;
+        marker.MarkerStyle.Size = (float)style.MarkerSize;
+        marker.MarkerStyle.FillColor = Hex(style.SeriesFillHex).WithAlpha(style.Opacity);
+        marker.LegendText = v.DisplayName;
 
         var errorBar = plot.Add.ErrorBar(
             xs: new[] { 1.0 },
             ys: new[] { mean },
             yErrors: new[] { sd });
-        errorBar.Color = SeriesLine;
+        errorBar.Color = Hex(style.SeriesLineHex);
+        errorBar.LineWidth = (float)style.LineWidth;
 
         plot.Axes.SetLimitsX(0.2, 1.8);
         plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.NumericManual();
         return true;
     }
+
+    // ---------------------------------------------------------------------------------
+
+    private static ScottPlot.Color Hex(string hex) => ScottPlot.Color.FromHex(hex);
 }

@@ -96,6 +96,22 @@ public sealed class ContactSheetViewModel : ObservableObject
     /// <summary>Raised when the user asks to add a figure beyond the proposals.</summary>
     public event EventHandler? AddFigureRequested;
 
+    /// <summary>
+    /// Phase 3 — raised when the user asks to edit a card's figure. Editing implies keeping:
+    /// an edit is an investment in the figure, and a patch needs a kept record to live on. The
+    /// root view model performs the keep and opens the editor.
+    /// </summary>
+    public event EventHandler<FigureCardViewModel>? EditRequested;
+
+    public void RequestEdit(FigureCardViewModel card)
+    {
+        if (card is null) return;
+
+        // Keep first (no-op if already kept), so the editor always operates on a kept figure.
+        if (!card.IsKept) ToggleKeep(card);
+        EditRequested?.Invoke(this, card);
+    }
+
     // ---------------------------------------------------------------------------------
     // Generation
     // ---------------------------------------------------------------------------------
@@ -225,8 +241,7 @@ public sealed class ContactSheetViewModel : ObservableObject
 
         if (card.IsKept)
         {
-            var existing = _session.KeptFigures.FirstOrDefault(f =>
-                f.ToRenderKey() == card.Spec.ToRenderKey());
+            var existing = _session.FindKeptByRenderKey(card.Spec);
 
             if (existing is not null) _session.RemoveFigure(existing.Id);
             card.IsKept = false;
@@ -253,8 +268,7 @@ public sealed class ContactSheetViewModel : ObservableObject
 
         if (card.IsKept)
         {
-            var existing = _session.KeptFigures.FirstOrDefault(f =>
-                f.ToRenderKey() == card.Spec.ToRenderKey());
+            var existing = _session.FindKeptByRenderKey(card.Spec);
             if (existing is not null) _session.RemoveFigure(existing.Id);
         }
 

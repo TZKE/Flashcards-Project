@@ -96,24 +96,31 @@ public sealed class ChartsStudioSession
     public string? PersistenceNotice => _store.LastLoadIssue;
 
     /// <summary>
-    /// The figures the user has KEPT for the open project, in shelf order.
-    ///
-    /// Phase 1 declared this as an unused extension point; Phase 2 fills it. Kept figures are
-    /// the only thing persisted — proposals stay derived state.
+    /// The figures the user has KEPT for the open project, in SHELF ORDER. Each entry pairs
+    /// the immutable recommendation spec with the user's patch overlay (Phase 3) and shelf
+    /// metadata (Phase 4). Kept figures are the only thing persisted — proposals stay derived.
     /// </summary>
-    public IReadOnlyList<FigureSpec> KeptFigures => _keptFigures;
+    public IReadOnlyList<KeptFigure> KeptFigures => _keptFigures;
 
-    private List<FigureSpec> _keptFigures = new();
+    private List<KeptFigure> _keptFigures = new();
 
     public int KeptFigureCount => _keptFigures.Count;
 
     /// <summary>
-    /// Whether a figure with this visual identity is already on the shelf. Compared by render
-    /// key rather than by id, so the same picture proposed again is recognised as already kept
-    /// instead of being duplicated.
+    /// Whether a figure with this visual identity is already on the shelf. Compared by the
+    /// SPEC's render key — the patch deliberately does not participate, because "is this
+    /// picture already kept?" is a question about the recommendation, not about styling.
     /// </summary>
     public bool IsKept(FigureSpec spec) =>
-        spec is not null && _keptFigures.Any(f => f.ToRenderKey() == spec.ToRenderKey());
+        spec is not null && _keptFigures.Any(f => f.Spec.ToRenderKey() == spec.ToRenderKey());
+
+    /// <summary>The kept figure for an id, or null. The editor opens through this.</summary>
+    public KeptFigure? FindKeptFigure(string figureId) =>
+        _keptFigures.FirstOrDefault(f => string.Equals(f.Id, figureId, StringComparison.Ordinal));
+
+    /// <summary>The kept figure whose spec draws the same picture as this spec, or null.</summary>
+    public KeptFigure? FindKeptByRenderKey(FigureSpec spec) =>
+        spec is null ? null : _keptFigures.FirstOrDefault(f => f.Spec.ToRenderKey() == spec.ToRenderKey());
 
     /// <summary>Raised whenever session state changes, so views can refresh.</summary>
     public event EventHandler? Changed;
@@ -190,7 +197,7 @@ public sealed class ChartsStudioSession
 
             // Kept figures come back from this project's own sidecar.
             var record = _store.Load(projectId);
-            _keptFigures = record.Figures ?? new List<FigureSpec>();
+            _keptFigures = record.Figures ?? new List<KeptFigure>();
 
             RememberVisit(projectId, context.Fingerprint.Value);
 
@@ -225,13 +232,14 @@ public sealed class ChartsStudioSession
         if (spec is null || CurrentProjectId is null) return false;
         if (IsKept(spec)) return true;
 
-        _keptFigures.Add(spec.Clone());
+        _keptFigures.Add(new KeptFigure { Spec = spec.Clone(), CreatedAt = DateTime.UtcNow });
         PersistFigures();
         RaiseChanged();
         return true;
     }
 
-    /// <summary>Takes a figure off the shelf and persists the removal.</summary>
+    /// <summary>Takes a figure off the shelf and persists the removal. The patch goes with it
+    /// — removing a figure removes the whole record, never touching any recommendation.</summary>
     public bool RemoveFigure(string figureId)
     {
         if (string.IsNullOrEmpty(figureId) || CurrentProjectId is null) return false;
@@ -245,6 +253,71 @@ public sealed class ChartsStudioSession
     }
 
     /// <summary>
+    /// Phase 3 — stores a figure's edited patch. The spec is untouched: the patch is the only
+    /// thing an edit ever writes. No-op (and no timestamp churn) when the patch is unchanged.
+    /// </summary>
+    public bool UpdatePatch(string figureId, FigurePatch? patch)
+    {
+        if (CurrentProjectId is null) return false;
+
+        var figure = FindKeptFigure(figureId);
+        if (figure is null) return false;
+
+        patch = FigurePatch.Canonicalize(patch);
+        if (string.Equals(FigurePatch.KeyOf(patch), FigurePatch.KeyOf(figure.Patch), StringComparison.Ordinal))
+            return true;
+
+        figure.Patch = patch?.Clone();
+        figure.LastEditedAt = DateTime.UtcNow;
+        PersistFigures();
+        RaiseChanged();
+        return true;
+    }
+
+    /// <summary>
+    /// Phase 4 — moves a figure to a new shelf position and persists the order. List position
+    /// is the ordering; there is no separate order field to fall out of sync.
+    /// </summary>
+    public bool ReorderFigure(string figureId, int newIndex)
+    {
+        if (CurrentProjectId is null) return false;
+
+        int oldIndex = _keptFigures.FindIndex(f => string.Equals(f.Id, figureId, StringComparison.Ordinal));
+        if (oldIndex < 0) return false;
+
+        newIndex = Math.Clamp(newIndex, 0, _keptFigures.Count - 1);
+        if (newIndex == oldIndex) return true;
+
+        var figure = _keptFigures[oldIndex];
+        _keptFigures.RemoveAt(oldIndex);
+        _keptFigures.Insert(newIndex, figure);
+
+        PersistFigures();
+        RaiseChanged();
+        return true;
+    }
+
+    /// <summary>
+    /// Phase 4 — duplicates a kept figure (new identity, deep-copied patch) directly after the
+    /// original. Deliberately bypasses the IsKept dedupe: a duplicate exists precisely to be
+    /// styled differently from its source.
+    /// </summary>
+    public string? DuplicateFigure(string figureId)
+    {
+        if (CurrentProjectId is null) return null;
+
+        int index = _keptFigures.FindIndex(f => string.Equals(f.Id, figureId, StringComparison.Ordinal));
+        if (index < 0) return null;
+
+        var copy = _keptFigures[index].DuplicateWithNewId();
+        _keptFigures.Insert(index + 1, copy);
+
+        PersistFigures();
+        RaiseChanged();
+        return copy.Id;
+    }
+
+    /// <summary>
     /// Writes the shelf to this project's sidecar. A failed write is non-fatal but DOES mark
     /// the session dirty, so the UI can tell the user their figure set is not on disk rather
     /// than letting them believe it is.
@@ -255,7 +328,7 @@ public sealed class ChartsStudioSession
 
         var record = _store.Load(CurrentProjectId);
         record.ProjectId = CurrentProjectId;
-        record.Figures = new List<FigureSpec>(_keptFigures);
+        record.Figures = new List<KeptFigure>(_keptFigures);
 
         bool saved = _store.Save(record);
         HasUnsavedChanges = !saved;
@@ -272,7 +345,7 @@ public sealed class ChartsStudioSession
     {
         CurrentProjectId = null;
         CurrentContext = AnalysisContext.None;
-        _keptFigures = new List<FigureSpec>();
+        _keptFigures = new List<KeptFigure>();
         HasUnsavedChanges = false;
         LoadError = null;
         Phase = SessionPhase.Picking;

@@ -1,0 +1,258 @@
+<UserControl x:Class="AIFlashcardMaker.ChartsStudio.Presentation.Views.FigureShelfView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             mc:Ignorable="d"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <!--
+        Charts Studio Phase 4 — Figure Shelf.
+
+        A ListBox with Extended selection gives single/Ctrl/Shift/Ctrl+A semantics natively —
+        the platform's multi-select, not a reimplementation. The view syncs it onto the item
+        view models; drag-reorder is mouse-driven in code-behind and lands in the view model,
+        which persists through the session.
+
+        The items panel is a plain WrapPanel (not virtualized): a curated figure set is tens of
+        figures, not thousands, and virtualization would break drag-reorder hit-testing for no
+        measurable win at this scale. Revisit only if real shelves grow past a few hundred.
+    -->
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="ShelfAction" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ShelfBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBox Width="220"
+                         Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="Search kept figures by title or chart type"/>
+
+                <ComboBox Width="150" Margin="10,0,0,0" Height="34"
+                          VerticalContentAlignment="Center" FontSize="12.5"
+                          ItemsSource="{Binding SortOptions}"
+                          SelectedItem="{Binding SelectedSort}"/>
+
+                <TextBlock Text="{Binding SelectionLabel}"
+                           FontSize="12" Foreground="{StaticResource MutedBrush}"
+                           VerticalAlignment="Center" Margin="14,0,0,0"
+                           Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Content="Duplicate" Style="{StaticResource ShelfAction}" Margin="0,0,8,0"
+                        IsEnabled="{Binding HasSelection}" Click="Duplicate_Click"/>
+                <Button Content="Remove from shelf" Style="{StaticResource ShelfAction}" Margin="0,0,14,0"
+                        IsEnabled="{Binding HasSelection}" Click="Delete_Click"/>
+
+                <!-- Roadmap placeholders: visible so the shelf reads as a library with a
+                     future, disabled so nothing pretends to work before its phase. -->
+                <Button Content="Export" Style="{StaticResource ShelfAction}" Margin="0,0,8,0"
+                        IsEnabled="False" ToolTip="Publication export arrives in a later phase"/>
+                <Button Content="Move to…" Style="{StaticResource ShelfAction}"
+                        IsEnabled="False" ToolTip="Folders and collections arrive in a later phase"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Items -->
+        <Grid Grid.Row="1">
+            <ListBox x:Name="ShelfList"
+                     ItemsSource="{Binding Items}"
+                     SelectionMode="Extended"
+                     Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     SelectionChanged="ShelfList_SelectionChanged"
+                     KeyDown="ShelfList_KeyDown"
+                     AllowDrop="True">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+
+                <!-- The card owns all visuals; the container is a transparent shell so
+                     selection reads on OUR border, not a system highlight rectangle. -->
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="320" Margin="0,0,16,16"
+                                Background="{StaticResource CardBrush}"
+                                CornerRadius="14"
+                                MouseMove="Item_MouseMove"
+                                DragOver="Item_DragOver"
+                                DragLeave="Item_DragLeave"
+                                Drop="Item_Drop"
+                                AllowDrop="True">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+
+                            <StackPanel>
+                                <!-- Thumbnail -->
+                                <Border Height="180" CornerRadius="14,14,0,0"
+                                        Background="White" ClipToBounds="True">
+                                    <Grid>
+                                        <Image Source="{Binding Image}" Stretch="Uniform" Margin="6"
+                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                               Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Text="drawing…" FontSize="11"
+                                                   Foreground="{StaticResource SoftMutedBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasImage}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Text + badges -->
+                                <StackPanel Margin="16,12,16,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Border Style="{StaticResource ShelfBadge}"
+                                                Background="{StaticResource PrimarySoftBrush}"
+                                                Visibility="{Binding IsModified, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="MODIFIED" FontSize="9" FontWeight="Bold"
+                                                       Foreground="{StaticResource PrimaryBrush}"/>
+                                        </Border>
+                                        <Border Style="{StaticResource ShelfBadge}"
+                                                Background="{StaticResource WarningSoftBrush}"
+                                                Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="★" FontSize="9" FontWeight="Bold"
+                                                       Foreground="{StaticResource WarningBrush}"/>
+                                        </Border>
+                                        <Border Style="{StaticResource ShelfBadge}"
+                                                Background="{StaticResource SoftCardBrush}"
+                                                Visibility="{Binding HasNotes, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="NOTES" FontSize="9" FontWeight="Bold"
+                                                       Foreground="{StaticResource SoftMutedBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <TextBlock Text="{Binding Title}"
+                                               FontSize="13.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               TextWrapping="Wrap" MaxHeight="40"
+                                               TextTrimming="CharacterEllipsis"/>
+
+                                    <TextBlock FontSize="11.5" Foreground="{StaticResource SoftMutedBrush}"
+                                               Margin="0,3,0,0">
+                                        <Run Text="{Binding ChartTypeName, Mode=OneWay}"/><Run Text="  ·  "/><Run Text="{Binding CreatedDisplay, Mode=OneWay}"/>
+                                    </TextBlock>
+
+                                    <TextBlock FontSize="11" Foreground="{StaticResource SoftMutedBrush}"
+                                               Margin="0,2,0,0"
+                                               Visibility="{Binding HasBeenEdited, Converter={StaticResource BoolToVis}}">
+                                        <Run Text="edited "/><Run Text="{Binding EditedDisplay, Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <!-- Actions -->
+                                <StackPanel Orientation="Horizontal" Margin="16,12,16,16">
+                                    <Button Content="Edit" Style="{StaticResource ShelfAction}"
+                                            Click="Edit_Click" Margin="0,0,8,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Empty state -->
+            <Border Padding="32" MaxWidth="560"
+                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Background="{StaticResource SoftCardBrush}"
+                    BorderBrush="{StaticResource BorderBrushSoft}"
+                    BorderThickness="1" CornerRadius="14"
+                    Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock Text="Your figure set is empty"
+                               FontSize="16" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock Text="{Binding EmptyReason}"
+                               FontSize="13" Foreground="{StaticResource MutedBrush}"
+                               TextWrapping="Wrap" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

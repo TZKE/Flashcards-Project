@@ -40,11 +40,27 @@ public sealed class ChartsStudioViewModel : ObservableObject
 
         ContactSheet = new ContactSheetViewModel(_session, engine, _renderQueue, dispatcher);
         AddFigure = new AddFigureViewModel(engine);
+        Shelf = new FigureShelfViewModel(_session, _renderQueue, dispatcher);
+        Editor = new FigureEditorViewModel(_session, _renderQueue, dispatcher);
 
-        Shell.AttachSurfaces(ContactSheet, AddFigure);
+        Shell.AttachSurfaces(ContactSheet, AddFigure, Shelf, Editor);
 
         ContactSheet.AddFigureRequested += (_, _) => OpenAddFigure();
         AddFigure.OptionChosen += async (_, candidate) => await ContactSheet.AddCandidateAsync(candidate);
+
+        // Phase 3/4 — edit paths. Both roads lead to the same editor over the same kept
+        // figure; the contact sheet keeps first (see RequestEdit), the shelf edits directly.
+        ContactSheet.EditRequested += (_, card) =>
+        {
+            var kept = _session.FindKeptByRenderKey(card.Spec);
+            if (kept is not null) Editor.Open(kept, _session.CurrentContext);
+        };
+        Shelf.EditRequested += (_, item) =>
+        {
+            var kept = _session.FindKeptFigure(item.Id);
+            if (kept is not null) Editor.Open(kept, _session.CurrentContext);
+        };
+        Editor.Saved += (_, _) => Shelf.Refresh();
 
         Picker.ProjectChosen += (_, summary) => OpenProject(summary.Id);
         Shell.ChangeProjectRequested += (_, _) => ChangeProject();
@@ -54,6 +70,10 @@ public sealed class ChartsStudioViewModel : ObservableObject
     public ContactSheetViewModel ContactSheet { get; }
 
     public AddFigureViewModel AddFigure { get; }
+
+    public FigureShelfViewModel Shelf { get; }
+
+    public FigureEditorViewModel Editor { get; }
 
     private void OpenAddFigure() =>
         AddFigure.Open(_session.CurrentContext, ContactSheet.Cards.Select(c => c.Spec.ToRenderKey()));
@@ -151,7 +171,15 @@ public sealed class ChartsStudioViewModel : ObservableObject
             if (projectChanged)
             {
                 _shownProjectId = _session.CurrentProjectId;
+                Shell.ShowSheet();
                 _ = ContactSheet.GenerateAsync(_session.CurrentContext);
+                Shelf.Refresh(_session.CurrentContext);
+            }
+            else
+            {
+                // Keep/remove/patch/reorder all land here: the shelf mirrors the session
+                // cheaply (cache makes unchanged thumbnails instant), the sheet is untouched.
+                Shelf.Refresh(_session.CurrentContext);
             }
         }
         else if (_session.Phase != SessionPhase.Loading)

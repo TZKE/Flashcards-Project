@@ -127,55 +127,116 @@ public sealed class ChartsStudioStore
             string json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return ChartsStudioProjectState.CreateNew(projectId);
 
-            var state = JsonSerializer.Deserialize<ChartsStudioProjectState>(json);
-            if (state is null)
-            {
-                LastLoadIssue = $"Charts Studio state for this project could not be read; starting fresh.";
-                return ChartsStudioProjectState.CreateNew(projectId);
-            }
+            var state = ParseState(json, projectId, out string? issue);
+            LastLoadIssue = issue;
 
-            // Rule 4: a newer file is used read-only and never rewritten.
-            if (state.SchemaVersion > ChartsStudioProjectState.CurrentSchemaVersion)
-            {
-                LastLoadIssue =
-                    $"Charts Studio state for this project was written by a newer version of " +
-                    $"OrbitLab (schema {state.SchemaVersion}). It will not be modified.";
-
-                return new ChartsStudioProjectState
-                {
-                    ProjectId = projectId,
-                    SchemaVersion = state.SchemaVersion,
-                    IsReadOnly = true,
-                    ExistsOnDisk = true
-                };
-            }
-
-            // A file that does not identify itself as ours is not treated as ours.
-            if (!string.Equals(state.Kind, ChartsStudioProjectState.FileKind, StringComparison.Ordinal))
-            {
-                LastLoadIssue = "A file in the Charts Studio folder was not recognised and was ignored.";
-                return new ChartsStudioProjectState
-                {
-                    ProjectId = projectId,
-                    IsReadOnly = true,      // never overwrite something we did not write
-                    ExistsOnDisk = true
-                };
-            }
-
-            state.Figures ??= new List<FigureSpec>();
-            state.ExistsOnDisk = true;
-
-            // The filename is authoritative for identity; a mismatched inner id is repaired
-            // rather than trusted, so a copied file cannot masquerade as another project.
-            state.ProjectId = projectId;
-
-            return state;
+            return state ?? ChartsStudioProjectState.CreateNew(projectId);
         }
         catch (Exception ex)
         {
             LastLoadIssue = $"Charts Studio state could not be read ({ex.GetType().Name}); starting fresh.";
             return ChartsStudioProjectState.CreateNew(projectId);
         }
+    }
+
+    /// <summary>
+    /// Parses one sidecar's JSON: version check, kind check, and the v1→v2 migration. Shared
+    /// by Load and LoadAll so the two paths can never disagree about what a file means.
+    /// Returns null for content that should be treated as absent (unparseable).
+    /// </summary>
+    private static ChartsStudioProjectState? ParseState(string json, string projectId, out string? issue)
+    {
+        issue = null;
+
+        int version;
+        string kind;
+        using (var doc = JsonDocument.Parse(json))
+        {
+            version = doc.RootElement.TryGetProperty("schemaVersion", out var v) ? v.GetInt32() : 0;
+            kind = doc.RootElement.TryGetProperty("kind", out var k) ? (k.GetString() ?? "") : "";
+        }
+
+        // Rule 4: a newer file is used read-only and never rewritten.
+        if (version > ChartsStudioProjectState.CurrentSchemaVersion)
+        {
+            issue = $"Charts Studio state for this project was written by a newer version of " +
+                    $"OrbitLab (schema {version}). It will not be modified.";
+
+            return new ChartsStudioProjectState
+            {
+                ProjectId = projectId,
+                SchemaVersion = version,
+                IsReadOnly = true,
+                ExistsOnDisk = true
+            };
+        }
+
+        // A file that does not identify itself as ours is not treated as ours.
+        if (!string.Equals(kind, ChartsStudioProjectState.FileKind, StringComparison.Ordinal))
+        {
+            issue = "A file in the Charts Studio folder was not recognised and was ignored.";
+            return new ChartsStudioProjectState
+            {
+                ProjectId = projectId,
+                IsReadOnly = true,      // never overwrite something we did not write
+                ExistsOnDisk = true
+            };
+        }
+
+        var state = version <= 1
+            ? MigrateV1(json)
+            : JsonSerializer.Deserialize<ChartsStudioProjectState>(json);
+
+        if (state is null)
+        {
+            issue = "Charts Studio state for this project could not be read; starting fresh.";
+            return null;
+        }
+
+        state.Figures ??= new List<KeptFigure>();
+        state.Figures.RemoveAll(f => f?.Spec is null || string.IsNullOrEmpty(f.Spec.Id));
+        state.ExistsOnDisk = true;
+
+        // The filename is authoritative for identity; a mismatched inner id is repaired
+        // rather than trusted, so a copied file cannot masquerade as another project.
+        state.ProjectId = projectId;
+
+        return state;
+    }
+
+    /// <summary>The v1 shape, used only for migration. In v1 a figure was a bare FigureSpec.</summary>
+    private sealed class V1State
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("lastOpenedAt")] public DateTime? LastOpenedAt { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("lastFingerprint")] public string? LastFingerprint { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("figures")] public List<FigureSpec>? Figures { get; set; }
+    }
+
+    /// <summary>
+    /// v1 → v2: each bare spec becomes a KeptFigure with no patch — exactly what those figures
+    /// were: kept recommendations the user had not yet edited. Nothing is lost, nothing is
+    /// invented, and the file upgrades to v2 on its next save.
+    /// </summary>
+    private static ChartsStudioProjectState? MigrateV1(string json)
+    {
+        var v1 = JsonSerializer.Deserialize<V1State>(json);
+        if (v1 is null) return null;
+
+        return new ChartsStudioProjectState
+        {
+            LastOpenedAt = v1.LastOpenedAt,
+            LastFingerprint = v1.LastFingerprint,
+            Figures = (v1.Figures ?? new List<FigureSpec>())
+                .Where(s => s is not null && !string.IsNullOrEmpty(s.Id))
+                .Select(s => new KeptFigure
+                {
+                    Spec = s,
+                    Patch = null,
+                    CreatedAt = s.CreatedAt,
+                    LastEditedAt = null
+                })
+                .ToList()
+        };
     }
 
     /// <summary>
@@ -199,15 +260,21 @@ public sealed class ChartsStudioStore
                     string json = File.ReadAllText(path);
                     if (string.IsNullOrWhiteSpace(json)) continue;
 
-                    var state = JsonSerializer.Deserialize<ChartsStudioProjectState>(json);
-                    if (state is null) continue;
-                    if (!string.Equals(state.Kind, ChartsStudioProjectState.FileKind, StringComparison.Ordinal))
-                        continue;
-                    if (string.IsNullOrWhiteSpace(state.ProjectId)) continue;
+                    // The inner projectId keys the map; for hashed filenames it is the only
+                    // recoverable identity. Files without one are not project sidecars.
+                    string? innerId;
+                    using (var doc = JsonDocument.Parse(json))
+                        innerId = doc.RootElement.TryGetProperty("projectId", out var p) ? p.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(innerId)) continue;
 
-                    state.Figures ??= new List<FigureSpec>();
-                    state.ExistsOnDisk = true;
-                    state.IsReadOnly = state.SchemaVersion > ChartsStudioProjectState.CurrentSchemaVersion;
+                    var state = ParseState(json, innerId, out _);
+                    if (state is null) continue;
+
+                    // Foreign files (wrong kind marker) are excluded from the listing entirely;
+                    // newer-schema files are listed read-only so the project still shows up.
+                    if (state.IsReadOnly &&
+                        state.SchemaVersion <= ChartsStudioProjectState.CurrentSchemaVersion)
+                        continue;
 
                     map[state.ProjectId] = state;
                 }

@@ -156,60 +156,102 @@
         </Border>
 
         <!-- ============================ SURFACES ============================
-             The Contact Sheet gets the ENTIRE width. Figure Canvas and Figure Shelf are
-             still placeholders, and a placeholder must never cost the working surface real
-             estate — earlier they took a 300px rail and a full-width block between them,
-             squeezing figure cards to two per row. They are now a single compact footer
-             strip that says what is coming without competing for space.
+             Phase 3/4: two first-class surfaces — the Contact Sheet (survey proposals) and
+             the Figure Shelf (assemble the set) — switched by the tabs below. They are depths
+             of one workspace: switching preserves both surfaces' state entirely.
         -->
         <Grid Grid.Row="1" Margin="0,16,0,0">
             <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- Contact Sheet — real from Phase 2 -->
-            <views:ContactSheetView Grid.Row="0" DataContext="{Binding ContactSheet}"/>
+            <!-- Surface switcher -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
+                <Button Click="ShowSheet_Click" Cursor="Hand" Padding="16,7" FontSize="13">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                            <Setter Property="FontWeight" Value="Normal"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Root" Background="Transparent" CornerRadius="9"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsSheetActive}" Value="True">
+                                                <Setter TargetName="Root" Property="Background" Value="{StaticResource PrimarySoftBrush}"/>
+                                            </DataTrigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSheetActive}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <TextBlock Text="Proposed figures"/>
+                </Button>
 
-            <!-- Coming next — one quiet line, not two empty boxes -->
-            <Border Grid.Row="1"
-                    Background="{StaticResource SoftCardBrush}"
-                    BorderBrush="{StaticResource BorderBrushSoft}"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Padding="16,10"
-                    Margin="0,14,0,0">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Coming next"
-                               FontSize="11"
-                               FontWeight="Bold"
-                               Foreground="{StaticResource SoftMutedBrush}"
-                               VerticalAlignment="Center"/>
+                <Button Click="ShowShelf_Click" Cursor="Hand" Padding="16,7" FontSize="13" Margin="6,0,0,0">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                            <Setter Property="FontWeight" Value="Normal"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Root" Background="Transparent" CornerRadius="9"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsShelfActive}" Value="True">
+                                                <Setter TargetName="Root" Property="Background" Value="{StaticResource PrimarySoftBrush}"/>
+                                            </DataTrigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsShelfActive}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <TextBlock Text="{Binding Shelf.CountLabel}"/>
+                </Button>
+            </StackPanel>
 
-                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="5" Padding="6,2" Margin="14,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="Phase 3" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
-                    </Border>
-                    <TextBlock Text="Figure Canvas — open a figure to edit its variables, scales, labels and style"
-                               FontSize="12"
-                               Foreground="{StaticResource MutedBrush}"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0"/>
+            <!-- Contact Sheet -->
+            <views:ContactSheetView Grid.Row="1"
+                                    DataContext="{Binding ContactSheet}"
+                                    Visibility="{Binding DataContext.IsSheetActive,
+                                                 RelativeSource={RelativeSource AncestorType=UserControl},
+                                                 Converter={StaticResource BoolToVis}}"/>
 
-                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="5" Padding="6,2" Margin="20,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="Phase 4" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
-                    </Border>
-                    <TextBlock Text="Figure Shelf — kept figures become a numbered set"
-                               FontSize="12"
-                               Foreground="{StaticResource MutedBrush}"
-                               VerticalAlignment="Center"
-                               Margin="8,0,0,0"/>
-                </StackPanel>
-            </Border>
-
+            <!-- Figure Shelf -->
+            <views:FigureShelfView Grid.Row="1"
+                                   DataContext="{Binding Shelf}"
+                                   Visibility="{Binding DataContext.IsShelfActive,
+                                                RelativeSource={RelativeSource AncestorType=UserControl},
+                                                Converter={StaticResource BoolToVis}}"/>
         </Grid>
 
         <!-- Add Figure overlays the whole shell so it reads as a decision, not a side panel. -->
         <views:AddFigureView Grid.Row="0" Grid.RowSpan="2"
                              DataContext="{Binding AddFigure}"/>
+
+        <!-- Figure Editor overlays everything: editing is modal within the studio. -->
+        <views:FigureEditorView Grid.Row="0" Grid.RowSpan="2"
+                                DataContext="{Binding Editor}"/>
     </Grid>
 </UserControl>
