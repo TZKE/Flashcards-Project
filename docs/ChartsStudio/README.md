@@ -39,7 +39,18 @@ A second rule follows from it, learned the expensive way in commit `dbaeed5`:
 | 3 — Figure Editor | Complete — patch layer (non-destructive), undo/redo, live preview, validation | `27ba766` |
 | 4 — Figure Shelf | Complete — curated set, multi-select, drag reorder, duplicate, schema v2 | `27ba766` |
 | 5 — Export | Complete — PNG/SVG/PDF, profiles, batch, manifest, captions, WYSIWYG | `29afe13` |
-| 6 — AI advisory layer | Not started, and deliberately last | — |
+| 6 — AI advisory layer | Complete — Core AI module + advisory assistant (caption, critique, accessibility, consistency); deterministic-first, degrades offline | `67e1447` |
+
+## AI architecture (Phase 6)
+
+The shared AI transport (`OrbitLabAiProxyClient`) already existed and was already shared by the
+flashcard AI and Research Lab. Phase 6 added a **Core AI module** (`CoreAi/`) that lifts the
+generic completion orchestration (timeout policy, error mapping, diagnostics) into a reusable
+layer wrapping that transport. **Research Lab was left byte-for-byte unchanged.** Charts Studio's
+AI builds entirely on Core AI; both modules depend on the shared transport, neither depends on
+the other. AI is advisory only — the accessibility and consistency reviews have a deterministic
+core that runs fully offline, and every task degrades to those deterministic findings when AI is
+unavailable. The prompt payload is data-free by construction.
 
 **Rendering engine:** ScottPlot 5, chosen by spike over OxyPlot and LiveCharts2. ScottPlot and
 OxyPlot both held WYSIWYG exactly from 96 to 600 DPI; LiveCharts2 produced a materially
