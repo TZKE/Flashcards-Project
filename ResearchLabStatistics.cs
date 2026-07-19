@@ -140,17 +140,19 @@ public static class StatisticsCsvReader
         // CR-only file (classic Mac / some lab instruments) collapse into a
         // single line: the importer reported rows while this reader produced
         // zero, with no error surfaced anywhere.
+        char delimiter = ',';
         foreach (var rawLine in text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None))
         {
             string line = rawLine.TrimEnd('\r');
             if (headers is null)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;   // leading blank lines
-                headers = ParseLine(line);
+                delimiter = DetectDelimiter(line);
+                headers = ParseLine(line, delimiter);
                 continue;
             }
             if (string.IsNullOrWhiteSpace(line)) continue;       // skip fully blank lines
-            var cells = ParseLine(line);
+            var cells = ParseLine(line, delimiter);
             if (cells.Length != headers.Length) dataset.RaggedRowCount++;
             dataset.Rows.Add(cells);
         }
@@ -184,9 +186,28 @@ public static class StatisticsCsvReader
         return true;
     }
 
+    // Excel exports across most of continental Europe are semicolon-delimited,
+    // and lab instruments often emit tab-separated files. Parsing those with a
+    // comma produced a single meaningless column and STILL reported success.
+    // The override is deliberately conservative: it only applies when the
+    // header line contains no comma at all, so a genuine CSV can never be
+    // re-interpreted as something else.
+    private static char DetectDelimiter(string headerLine)
+    {
+        if (headerLine.IndexOf(',') >= 0) return ',';
+        int semis = headerLine.Count(ch => ch == ';');
+        int tabs = headerLine.Count(ch => ch == '\t');
+        int pipes = headerLine.Count(ch => ch == '|');
+        int best = Math.Max(semis, Math.Max(tabs, pipes));
+        if (best == 0) return ',';
+        if (semis == best) return ';';
+        if (tabs == best) return '\t';
+        return '|';
+    }
+
     // Same splitting rules as MainWindow.ParseCsvLine so the stored copy is
     // read exactly like the profiling sample was.
-    public static string[] ParseLine(string line)
+    public static string[] ParseLine(string line, char delimiter = ',')
     {
         var fields = new List<string>();
         var sb = new StringBuilder();
@@ -206,7 +227,7 @@ public static class StatisticsCsvReader
             else
             {
                 if (c == '"') inQuotes = true;
-                else if (c == ',') { fields.Add(sb.ToString()); sb.Clear(); }
+                else if (c == delimiter) { fields.Add(sb.ToString()); sb.Clear(); }
                 else sb.Append(c);
             }
         }
