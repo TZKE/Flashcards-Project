@@ -1063,6 +1063,10 @@ public sealed class ProxiedResearchAiService : IResearchAiService
                 403 => ("Your OrbitLab subscription is not active for AI features. Please contact support.", "auth", false),
                 429 => ("You have reached today's AI limit. Your content was kept. Please try again tomorrow.", "rate_limit", false),
                 413 => ("The request was too large. Your content was kept. Retry sends compact input; if it persists, split the task.", "prompt_too_long", false),
+            // The backend returns 400 for an empty or malformed request body.
+            // Retrying sends the identical request, so it can never succeed —
+            // say so rather than inviting an endless retry loop.
+            400 => ("OrbitLab could not process that AI request. Your content was kept. Retrying will not help; please report this if it keeps happening.", "bad_request", false),
                 504 or 408 => ("AI stopped the request before completion. Your content was kept. Try again with the compact input or split the task.", "timeout", true),
                 502 or 503 => ("AI is temporarily unavailable. Your content was kept. Try again in a moment.", "overload", false),
                 >= 500 => ("AI had a server error. Your content was kept. Please try again shortly.", "provider_error", false),
