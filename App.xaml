@@ -971,17 +971,20 @@
             </Setter>
         </Style>
 
+        <!-- 12px track (was 8px, which left only a 4px grab target after the
+             thumb's 2px margin) and a minimum thumb length, so the thumb stays
+             draggable on very long pages instead of shrinking to a few pixels. -->
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Width" Value="8"/>
-            <Setter Property="MinWidth" Value="8"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="MinWidth" Value="12"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
                         <Grid Background="Transparent">
                             <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
                                 <Track.Thumb>
-                                    <Thumb Style="{StaticResource PremiumScrollThumb}"/>
+                                    <Thumb x:Name="ScrollThumb" Style="{StaticResource PremiumScrollThumb}" MinHeight="32"/>
                                 </Track.Thumb>
                                 <Track.IncreaseRepeatButton>
                                     <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False" IsTabStop="False"/>
@@ -994,6 +997,9 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="Orientation" Value="Horizontal">
                                 <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+                                <!-- swap the minimum length onto the other axis -->
+                                <Setter TargetName="ScrollThumb" Property="MinHeight" Value="0"/>
+                                <Setter TargetName="ScrollThumb" Property="MinWidth" Value="32"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -1003,10 +1009,19 @@
                 <Trigger Property="Orientation" Value="Horizontal">
                     <Setter Property="Width" Value="Auto"/>
                     <Setter Property="MinWidth" Value="0"/>
-                    <Setter Property="Height" Value="8"/>
-                    <Setter Property="MinHeight" Value="8"/>
+                    <Setter Property="Height" Value="12"/>
+                    <Setter Property="MinHeight" Value="12"/>
                 </Trigger>
             </Style.Triggers>
+        </Style>
+
+        <!-- Touch / precision-trackpad panning. WPF leaves this off by default,
+             so two-finger scrolling degraded to coarse wheel notches with no
+             inertia. VerticalFirst keeps horizontal panning available for the
+             wide data grids. -->
+        <Style TargetType="ScrollViewer">
+            <Setter Property="PanningMode" Value="VerticalFirst"/>
+            <Setter Property="PanningDeceleration" Value="0.001"/>
         </Style>
 
         <!-- ========================================================= -->
@@ -1104,6 +1119,11 @@
             <Setter Property="ColumnHeaderStyle" Value="{StaticResource ResearchDataGridColumnHeader}"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="EnableRowVirtualization" Value="True"/>
+            <!-- Reuse row containers instead of rebuilding them on every scroll
+                 step. Without this the grid re-creates ~15 controls per row
+                 (4 combo-box columns + 5 template buttons) as you scroll, which
+                 is what made the grid feel laggy rather than smooth. -->
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
         </Style>
 
         <!-- Compact icon button used inside the grid's Actions column -->
