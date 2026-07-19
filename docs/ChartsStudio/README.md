@@ -38,7 +38,7 @@ A second rule follows from it, learned the expensive way in commit `dbaeed5`:
 | 2 — Contact Sheet | Complete — ScottPlot 5 rendering, recommendations, keep/remove, add figure | `0e3e158` |
 | 3 — Figure Editor | Complete — patch layer (non-destructive), undo/redo, live preview, validation | `27ba766` |
 | 4 — Figure Shelf | Complete — curated set, multi-select, drag reorder, duplicate, schema v2 | `27ba766` |
-| 5 — Export | Not started | — |
+| 5 — Export | Complete — PNG/SVG/PDF, profiles, batch, manifest, captions, WYSIWYG | `29afe13` |
 | 6 — AI advisory layer | Not started, and deliberately last | — |
 
 **Rendering engine:** ScottPlot 5, chosen by spike over OxyPlot and LiveCharts2. ScottPlot and
