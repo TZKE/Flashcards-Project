@@ -134,6 +134,11 @@ public sealed class FigureShelfViewModel : ObservableObject
     /// <summary>Phase 5 — raised with the figures to export (selection, or the whole set).</summary>
     public event EventHandler<IReadOnlyList<KeptFigure>>? ExportRequested;
 
+    /// <summary>Phase 6 — raised to open the AI assistant's set-level consistency review.</summary>
+    public event EventHandler? ReviewSetRequested;
+
+    public void RequestReviewSet() => ReviewSetRequested?.Invoke(this, EventArgs.Empty);
+
     // ---- Header / organisation ------------------------------------------------------
 
     public IReadOnlyList<NamedOption> SortOptions { get; } = new List<NamedOption>

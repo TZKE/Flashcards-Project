@@ -687,8 +687,12 @@ public sealed partial class MainWindow : Window
             var renderer = new ChartsStudio.Infrastructure.Rendering.ScottPlotFigureRenderer();
             var renderQueue = new ChartsStudio.Application.Rendering.FigureRenderQueue(renderer);
 
+            // Phase 6: the AI assistant runs on Core AI, which wraps the SAME shared proxy the
+            // flashcard AI and Research Lab already use — no separate AI backend, no new key path.
+            var aiRunner = new CoreAi.AiCompletionRunner(new CoreAi.ProxyAiChatClient(_aiProxy));
+
             _chartsStudioViewModel = new ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel(
-                session, renderQueue, renderer, Dispatcher, PickChartsStudioExportFolder);
+                session, renderQueue, renderer, aiRunner, Dispatcher, PickChartsStudioExportFolder);
 
             ChartsStudioHost.DataContext = _chartsStudioViewModel;
         }

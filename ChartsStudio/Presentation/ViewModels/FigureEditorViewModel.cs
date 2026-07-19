@@ -76,6 +76,30 @@ public sealed class FigureEditorViewModel : ObservableObject
     /// <summary>Phase 5 — raised to export the figure currently being edited.</summary>
     public event EventHandler<KeptFigure>? ExportRequested;
 
+    /// <summary>Phase 6 — raised to open the AI assistant for the figure being edited.</summary>
+    public event EventHandler<KeptFigure>? AiRequested;
+
+    public void RequestAi()
+    {
+        if (_figure is null) return;
+        if (IsDirty) Save();   // review what the user sees, not stale styling
+        AiRequested?.Invoke(this, _figure);
+    }
+
+    /// <summary>True when the editor is open on this figure — lets the host decide whether an
+    /// external change (an applied AI caption) needs the live editor refreshed.</summary>
+    public bool IsEditing(string figureId) =>
+        IsOpen && _figure is not null && string.Equals(_figure.Id, figureId, StringComparison.Ordinal);
+
+    /// <summary>Re-opens the current figure from the session, picking up a patch changed
+    /// elsewhere (e.g. an AI caption applied from the assistant) without losing the editor.</summary>
+    public void ReloadFromSession()
+    {
+        if (_figure is null) return;
+        var fresh = _session.FindKeptFigure(_figure.Id);
+        if (fresh is not null) Open(fresh, _context);
+    }
+
     /// <summary>Exports this figure. Saves first if dirty, so the export is of what the user
     /// sees — exporting stale styling would violate the WYSIWYG promise at the worst moment.</summary>
     public void RequestExport()

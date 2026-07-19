@@ -59,6 +59,7 @@ public partial class FigureEditorView : UserControl
     private void Save_Click(object sender, RoutedEventArgs e) => ViewModel?.Save();
     private void ResetAll_Click(object sender, RoutedEventArgs e) => ViewModel?.ResetAll();
     private void Export_Click(object sender, RoutedEventArgs e) => ViewModel?.RequestExport();
+    private void Ai_Click(object sender, RoutedEventArgs e) => ViewModel?.RequestAi();
 
     private void ResetText_Click(object sender, RoutedEventArgs e) => ViewModel?.ResetSection(EditSection.Text);
     private void ResetAppearance_Click(object sender, RoutedEventArgs e) => ViewModel?.ResetSection(EditSection.Appearance);

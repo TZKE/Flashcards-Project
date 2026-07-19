@@ -44,23 +44,29 @@ public sealed class StudioShellViewModel : ObservableObject
     /// <summary>Phase 5 — the export dialog, overlaying everything.</summary>
     public ExportDialogViewModel? Export { get; private set; }
 
+    /// <summary>Phase 6 — the AI advisory assistant, overlaying everything.</summary>
+    public AiAssistantViewModel? Ai { get; private set; }
+
     public void AttachSurfaces(
         ContactSheetViewModel contactSheet,
         AddFigureViewModel addFigure,
         FigureShelfViewModel shelf,
         FigureEditorViewModel editor,
-        ExportDialogViewModel export)
+        ExportDialogViewModel export,
+        AiAssistantViewModel ai)
     {
         ContactSheet = contactSheet;
         AddFigure = addFigure;
         Shelf = shelf;
         Editor = editor;
         Export = export;
+        Ai = ai;
         OnPropertyChanged(nameof(ContactSheet));
         OnPropertyChanged(nameof(AddFigure));
         OnPropertyChanged(nameof(Shelf));
         OnPropertyChanged(nameof(Editor));
         OnPropertyChanged(nameof(Export));
+        OnPropertyChanged(nameof(Ai));
     }
 
     // ---- Surface switching ----------------------------------------------------------

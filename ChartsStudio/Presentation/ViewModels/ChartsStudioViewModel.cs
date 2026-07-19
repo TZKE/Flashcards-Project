@@ -37,16 +37,22 @@ public sealed class ChartsStudioViewModel : ObservableObject
     /// Opens a folder picker and returns the chosen path, or null. Injected so the export VM —
     /// and this whole tree — stays constructible and testable without a live shell dialog.
     /// </param>
+    /// <param name="aiRunner">
+    /// Core AI completion runner (shared transport). The AI assistant is built on this; the
+    /// module works fully without it, so it is injected rather than constructed here.
+    /// </param>
     public ChartsStudioViewModel(
         ChartsStudioSession session,
         FigureRenderQueue renderQueue,
         IFigureRenderer renderer,
+        CoreAi.AiCompletionRunner aiRunner,
         System.Windows.Threading.Dispatcher dispatcher,
         Func<string?> pickExportFolder)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _renderQueue = renderQueue ?? throw new ArgumentNullException(nameof(renderQueue));
         _pickExportFolder = pickExportFolder ?? throw new ArgumentNullException(nameof(pickExportFolder));
+        if (aiRunner is null) throw new ArgumentNullException(nameof(aiRunner));
 
         var engine = new FigureRecommendationEngine();
 
@@ -61,7 +67,12 @@ public sealed class ChartsStudioViewModel : ObservableObject
         var exportService = new Application.Export.ExportService(renderer);
         Export = new ExportDialogViewModel(_session, exportService, dispatcher, _pickExportFolder);
 
-        Shell.AttachSurfaces(ContactSheet, AddFigure, Shelf, Editor, Export);
+        // Phase 6 — the AI advisory assistant. Built on Core AI (shared transport) via a
+        // completion runner; the whole stack is optional and degrades to deterministic checks.
+        var aiService = new Application.Ai.ChartsStudioAiService(aiRunner);
+        Ai = new AiAssistantViewModel(aiService, _session, dispatcher);
+
+        Shell.AttachSurfaces(ContactSheet, AddFigure, Shelf, Editor, Export, Ai);
 
         ContactSheet.AddFigureRequested += (_, _) => OpenAddFigure();
         AddFigure.OptionChosen += async (_, candidate) => await ContactSheet.AddCandidateAsync(candidate);
@@ -88,6 +99,26 @@ public sealed class ChartsStudioViewModel : ObservableObject
         Editor.ExportRequested += (_, figure) =>
             Export.Open(new[] { figure }, _session.CurrentContext, ExportScope.CurrentFigure);
 
+        // Phase 6 — AI assistant entry points.
+        Editor.AiRequested += (_, figure) =>
+        {
+            int index = IndexOfKept(figure.Id);
+            Ai.OpenForFigure(figure, _session.CurrentContext, index);
+        };
+        Shelf.ReviewSetRequested += (_, _) => Ai.OpenForSet();
+
+        // Applying an AI caption is the one place its output reaches a figure — and only on the
+        // user's press. It goes through the session's patch update, exactly like a manual edit.
+        Ai.CaptionApplied += (_, e) =>
+        {
+            var kept = _session.FindKeptFigure(e.FigureId);
+            if (kept is null) return;
+            var patch = (kept.Patch?.Clone() ?? new Domain.Specs.FigurePatch());
+            patch.Caption = e.Caption;
+            _session.UpdatePatch(e.FigureId, patch);
+            if (Editor.IsEditing(e.FigureId)) Editor.ReloadFromSession();
+        };
+
         Picker.ProjectChosen += (_, summary) => OpenProject(summary.Id);
         Shell.ChangeProjectRequested += (_, _) => ChangeProject();
         _session.Changed += (_, _) => SyncFromSession();
@@ -103,8 +134,19 @@ public sealed class ChartsStudioViewModel : ObservableObject
 
     public ExportDialogViewModel Export { get; }
 
+    public AiAssistantViewModel Ai { get; }
+
     private void OpenAddFigure() =>
         AddFigure.Open(_session.CurrentContext, ContactSheet.Cards.Select(c => c.Spec.ToRenderKey()));
+
+    /// <summary>1-based shelf position of a kept figure, or 0 if not found.</summary>
+    private int IndexOfKept(string figureId)
+    {
+        var kept = _session.KeptFigures;
+        for (int i = 0; i < kept.Count; i++)
+            if (string.Equals(kept[i].Id, figureId, StringComparison.Ordinal)) return i + 1;
+        return 0;
+    }
 
     public ProjectPickerViewModel Picker { get; } = new();
 

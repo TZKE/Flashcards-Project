@@ -90,6 +90,11 @@
                 <Button Content="Remove from shelf" Style="{StaticResource ShelfAction}" Margin="0,0,14,0"
                         IsEnabled="{Binding HasSelection}" Click="Delete_Click"/>
 
+                <!-- Phase 6: review the whole set (consistency + accessibility). Works offline. -->
+                <Button Content="Review set" Style="{StaticResource ShelfAction}" Margin="0,0,8,0"
+                        IsEnabled="{Binding CanExport}" Click="ReviewSet_Click"
+                        ToolTip="Check the figures for consistency across the set"/>
+
                 <!-- Export is real from Phase 5: exports the selection, or the whole set. -->
                 <Button Content="{Binding ExportButtonLabel}" Style="{StaticResource ShelfAction}" Margin="0,0,8,0"
                         IsEnabled="{Binding CanExport}" Click="Export_Click"

@@ -257,5 +257,9 @@
         <!-- Export dialog overlays even the editor: exporting from the editor stacks on top. -->
         <views:ExportDialogView Grid.Row="0" Grid.RowSpan="2"
                                 DataContext="{Binding Export}"/>
+
+        <!-- AI assistant panel overlays everything, docked right. -->
+        <views:AiAssistantView Grid.Row="0" Grid.RowSpan="2"
+                               DataContext="{Binding Ai}"/>
     </Grid>
 </UserControl>

@@ -62,6 +62,8 @@ public partial class FigureShelfView : UserControl
 
     private void Export_Click(object sender, RoutedEventArgs e) => ViewModel?.RequestExport();
 
+    private void ReviewSet_Click(object sender, RoutedEventArgs e) => ViewModel?.RequestReviewSet();
+
     // ---- Drag reorder ---------------------------------------------------------------
     //
     // Standard WPF drag: press on a card, move past the system threshold, DoDragDrop with the
