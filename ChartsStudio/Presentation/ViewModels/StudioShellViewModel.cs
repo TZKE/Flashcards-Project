@@ -25,6 +25,24 @@ public sealed class StudioShellViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The contact sheet. Injected rather than constructed here because it needs the session,
+    /// the render queue and a dispatcher — dependencies a view model of the header should not
+    /// know about.
+    /// </summary>
+    public ContactSheetViewModel? ContactSheet { get; private set; }
+
+    /// <summary>The Add Figure surface, shown over the sheet.</summary>
+    public AddFigureViewModel? AddFigure { get; private set; }
+
+    public void AttachSurfaces(ContactSheetViewModel contactSheet, AddFigureViewModel addFigure)
+    {
+        ContactSheet = contactSheet;
+        AddFigure = addFigure;
+        OnPropertyChanged(nameof(ContactSheet));
+        OnPropertyChanged(nameof(AddFigure));
+    }
+
     public void Load(AnalysisContext context) => Context = context ?? AnalysisContext.None;
 
     /// <summary>

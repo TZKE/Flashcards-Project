@@ -2,6 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using AIFlashcardMaker.ChartsStudio.Domain.Specs;
 
 namespace AIFlashcardMaker.ChartsStudio.Infrastructure.Persistence;
 
@@ -161,7 +162,7 @@ public sealed class ChartsStudioStore
                 };
             }
 
-            state.Figures ??= new List<object>();
+            state.Figures ??= new List<FigureSpec>();
             state.ExistsOnDisk = true;
 
             // The filename is authoritative for identity; a mismatched inner id is repaired
@@ -204,7 +205,7 @@ public sealed class ChartsStudioStore
                         continue;
                     if (string.IsNullOrWhiteSpace(state.ProjectId)) continue;
 
-                    state.Figures ??= new List<object>();
+                    state.Figures ??= new List<FigureSpec>();
                     state.ExistsOnDisk = true;
                     state.IsReadOnly = state.SchemaVersion > ChartsStudioProjectState.CurrentSchemaVersion;
 

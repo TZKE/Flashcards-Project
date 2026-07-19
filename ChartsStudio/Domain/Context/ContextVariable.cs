@@ -98,9 +98,13 @@ public sealed class ContextVariable
     public string Units { get; init; } = "";
 
     /// <summary>
-    /// False in Phase 1 for every variable: no dataset has been read, so counts and observed
-    /// category levels are unknown. A later phase sets this true and fills the fields below
-    /// from Research Lab's prepared values.
+    /// True once Research Lab has run descriptive statistics for this project and this
+    /// variable was analysed. Everything below is null or empty until then.
+    ///
+    /// PHASE 2: this is the gate on whether a figure can be drawn at all. Charts Studio renders
+    /// exclusively from the AGGREGATES Research Lab already computed — it never reads the
+    /// dataset, so a project whose descriptive statistics have not been run has nothing to draw
+    /// from, and the recommender says so rather than inventing anything.
     /// </summary>
     public bool IsObservedDataAvailable { get; init; }
 
@@ -112,6 +116,38 @@ public sealed class ContextVariable
 
     /// <summary>Observed distinct category count. Null until observed data is available.</summary>
     public int? ObservedCategoryCount { get; init; }
+
+    // ---- Continuous aggregates (projected verbatim from VariableDescriptiveResult) --------
+    // Never recomputed here. These are the numbers Research Lab's engine produced, carried
+    // across unchanged, so a figure and the descriptive statistics table can never disagree.
+
+    public double? Mean { get; init; }
+    public double? StdDev { get; init; }
+    public double? Median { get; init; }
+    public double? Q1 { get; init; }
+    public double? Q3 { get; init; }
+    public double? Min { get; init; }
+    public double? Max { get; init; }
+
+    /// <summary>
+    /// True when a complete five-number summary is present, which is exactly what a box plot
+    /// needs. Checked rather than assumed: SD is null below n=2, and quartiles can be absent.
+    /// </summary>
+    public bool HasFiveNumberSummary =>
+        Min.HasValue && Q1.HasValue && Median.HasValue && Q3.HasValue && Max.HasValue;
+
+    /// <summary>True when mean and SD are both present, for a mean ± SD interval figure.</summary>
+    public bool HasMeanAndSd => Mean.HasValue && StdDev.HasValue;
+
+    // ---- Categorical aggregates ---------------------------------------------------------
+
+    /// <summary>
+    /// Observed categories with their counts, in the order Research Lab reported them (which
+    /// preserves a resolved ordinal ordering). Empty for continuous variables.
+    /// </summary>
+    public IReadOnlyList<ContextCategory> Categories { get; init; } = Array.Empty<ContextCategory>();
+
+    public bool HasCategories => Categories.Count > 0;
 
     /// <summary>True when this variable can never carry a figure (identifier, free text).</summary>
     public bool IsChartable =>

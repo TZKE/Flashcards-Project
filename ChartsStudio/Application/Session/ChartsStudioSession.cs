@@ -1,5 +1,6 @@
 using AIFlashcardMaker.ChartsStudio.Domain.Context;
 using AIFlashcardMaker.ChartsStudio.Domain.Projects;
+using AIFlashcardMaker.ChartsStudio.Domain.Specs;
 using AIFlashcardMaker.ChartsStudio.Infrastructure.Persistence;
 using AIFlashcardMaker.ChartsStudio.Infrastructure.ResearchLabAdapter;
 
@@ -95,13 +96,24 @@ public sealed class ChartsStudioSession
     public string? PersistenceNotice => _store.LastLoadIssue;
 
     /// <summary>
-    /// EXTENSION POINT — the figure collection for the open project.
+    /// The figures the user has KEPT for the open project, in shelf order.
     ///
-    /// Null throughout Phase 1 and never populated. Declared now so the first figure-bearing
-    /// phase attaches to an existing session shape rather than reshaping the session, and so
-    /// the persisted file already reserves the slot (see ChartsStudioProjectRecord.Figures).
+    /// Phase 1 declared this as an unused extension point; Phase 2 fills it. Kept figures are
+    /// the only thing persisted — proposals stay derived state.
     /// </summary>
-    public object? FigureCollection { get; private set; }
+    public IReadOnlyList<FigureSpec> KeptFigures => _keptFigures;
+
+    private List<FigureSpec> _keptFigures = new();
+
+    public int KeptFigureCount => _keptFigures.Count;
+
+    /// <summary>
+    /// Whether a figure with this visual identity is already on the shelf. Compared by render
+    /// key rather than by id, so the same picture proposed again is recognised as already kept
+    /// instead of being duplicated.
+    /// </summary>
+    public bool IsKept(FigureSpec spec) =>
+        spec is not null && _keptFigures.Any(f => f.ToRenderKey() == spec.ToRenderKey());
 
     /// <summary>Raised whenever session state changes, so views can refresh.</summary>
     public event EventHandler? Changed;
@@ -175,7 +187,10 @@ public sealed class ChartsStudioSession
             CurrentProjectId = projectId;
             CurrentContext = context;
             HasUnsavedChanges = false;
-            FigureCollection = null;   // populated by a later phase
+
+            // Kept figures come back from this project's own sidecar.
+            var record = _store.Load(projectId);
+            _keptFigures = record.Figures ?? new List<FigureSpec>();
 
             RememberVisit(projectId, context.Fingerprint.Value);
 
@@ -194,12 +209,70 @@ public sealed class ChartsStudioSession
         }
     }
 
+    // ---- Figure collection ----------------------------------------------------------
+
+    /// <summary>
+    /// Puts a proposed figure on the shelf and persists it immediately.
+    ///
+    /// Persisting on every keep rather than on some later "save" is deliberate: a figure set is
+    /// not a document the user should have to remember to save, and per-project sidecars make
+    /// the write cheap enough to do inline.
+    ///
+    /// Keeping the same picture twice is a no-op rather than a duplicate.
+    /// </summary>
+    public bool KeepFigure(FigureSpec spec)
+    {
+        if (spec is null || CurrentProjectId is null) return false;
+        if (IsKept(spec)) return true;
+
+        _keptFigures.Add(spec.Clone());
+        PersistFigures();
+        RaiseChanged();
+        return true;
+    }
+
+    /// <summary>Takes a figure off the shelf and persists the removal.</summary>
+    public bool RemoveFigure(string figureId)
+    {
+        if (string.IsNullOrEmpty(figureId) || CurrentProjectId is null) return false;
+
+        int removed = _keptFigures.RemoveAll(f => string.Equals(f.Id, figureId, StringComparison.Ordinal));
+        if (removed == 0) return false;
+
+        PersistFigures();
+        RaiseChanged();
+        return true;
+    }
+
+    /// <summary>
+    /// Writes the shelf to this project's sidecar. A failed write is non-fatal but DOES mark
+    /// the session dirty, so the UI can tell the user their figure set is not on disk rather
+    /// than letting them believe it is.
+    /// </summary>
+    private void PersistFigures()
+    {
+        if (CurrentProjectId is null) return;
+
+        var record = _store.Load(CurrentProjectId);
+        record.ProjectId = CurrentProjectId;
+        record.Figures = new List<FigureSpec>(_keptFigures);
+
+        bool saved = _store.Save(record);
+        HasUnsavedChanges = !saved;
+
+        var refreshed = new Dictionary<string, ChartsStudioProjectState>(_states, StringComparer.Ordinal)
+        {
+            [CurrentProjectId] = record
+        };
+        _states = refreshed;
+    }
+
     /// <summary>Returns to the picker without discarding what is remembered on disk.</summary>
     public void CloseProject()
     {
         CurrentProjectId = null;
         CurrentContext = AnalysisContext.None;
-        FigureCollection = null;
+        _keptFigures = new List<FigureSpec>();
         HasUnsavedChanges = false;
         LoadError = null;
         Phase = SessionPhase.Picking;

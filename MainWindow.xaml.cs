@@ -682,7 +682,13 @@ public sealed partial class MainWindow : Window
 
             var session = new ChartsStudio.Application.Session.ChartsStudioSession(store, provider);
 
-            _chartsStudioViewModel = new ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel(session);
+            // Phase 2: figures are drawn by ScottPlot behind the IFigureRenderer interface, and
+            // scheduled off the UI thread by the render queue.
+            var renderer = new ChartsStudio.Infrastructure.Rendering.ScottPlotFigureRenderer();
+            var renderQueue = new ChartsStudio.Application.Rendering.FigureRenderQueue(renderer);
+
+            _chartsStudioViewModel = new ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel(
+                session, renderQueue, Dispatcher);
 
             ChartsStudioHost.DataContext = _chartsStudioViewModel;
         }

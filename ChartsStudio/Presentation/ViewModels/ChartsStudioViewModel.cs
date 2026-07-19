@@ -1,5 +1,7 @@
 using AIFlashcardMaker.ChartsStudio.Application.Session;
+using AIFlashcardMaker.ChartsStudio.Application.Rendering;
 using AIFlashcardMaker.ChartsStudio.Domain.Projects;
+using AIFlashcardMaker.ChartsStudio.Domain.Recommendation;
 
 namespace AIFlashcardMaker.ChartsStudio.Presentation.ViewModels;
 
@@ -16,18 +18,45 @@ namespace AIFlashcardMaker.ChartsStudio.Presentation.ViewModels;
 public sealed class ChartsStudioViewModel : ObservableObject
 {
     private readonly ChartsStudioSession _session;
+    private readonly FigureRenderQueue _renderQueue;
 
     private SessionPhase _phase = SessionPhase.Idle;
 
     /// <param name="session">The session this view model drives.</param>
-    public ChartsStudioViewModel(ChartsStudioSession session)
+    /// <param name="renderQueue">
+    /// Owned here rather than by the contact sheet, so switching projects can abandon every
+    /// in-flight render in one call regardless of which surface is showing.
+    /// </param>
+    /// <param name="dispatcher">UI dispatcher, for marshalling completed renders back.</param>
+    public ChartsStudioViewModel(
+        ChartsStudioSession session,
+        FigureRenderQueue renderQueue,
+        System.Windows.Threading.Dispatcher dispatcher)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _renderQueue = renderQueue ?? throw new ArgumentNullException(nameof(renderQueue));
+
+        var engine = new FigureRecommendationEngine();
+
+        ContactSheet = new ContactSheetViewModel(_session, engine, _renderQueue, dispatcher);
+        AddFigure = new AddFigureViewModel(engine);
+
+        Shell.AttachSurfaces(ContactSheet, AddFigure);
+
+        ContactSheet.AddFigureRequested += (_, _) => OpenAddFigure();
+        AddFigure.OptionChosen += async (_, candidate) => await ContactSheet.AddCandidateAsync(candidate);
 
         Picker.ProjectChosen += (_, summary) => OpenProject(summary.Id);
         Shell.ChangeProjectRequested += (_, _) => ChangeProject();
         _session.Changed += (_, _) => SyncFromSession();
     }
+
+    public ContactSheetViewModel ContactSheet { get; }
+
+    public AddFigureViewModel AddFigure { get; }
+
+    private void OpenAddFigure() =>
+        AddFigure.Open(_session.CurrentContext, ContactSheet.Cards.Select(c => c.Spec.ToRenderKey()));
 
     public ProjectPickerViewModel Picker { get; } = new();
 
@@ -108,11 +137,32 @@ public sealed class ChartsStudioViewModel : ObservableObject
 
     private void SyncFromSession()
     {
+        bool projectChanged = !string.Equals(_shownProjectId, _session.CurrentProjectId, StringComparison.Ordinal);
+
         Phase = _session.Phase;
 
         if (_session.Phase == SessionPhase.Open)
+        {
             Shell.Load(_session.CurrentContext);
+
+            // Regenerate only when the project actually changed. The session also raises
+            // Changed on every keep and remove, and rebuilding the whole sheet on each of those
+            // would throw away renders the user is looking at.
+            if (projectChanged)
+            {
+                _shownProjectId = _session.CurrentProjectId;
+                _ = ContactSheet.GenerateAsync(_session.CurrentContext);
+            }
+        }
+        else if (_session.Phase != SessionPhase.Loading)
+        {
+            _shownProjectId = null;
+            _renderQueue.CancelAll();
+        }
 
         OnPropertyChanged(nameof(ErrorMessage));
     }
+
+    /// <summary>Which project the contact sheet currently shows, so it regenerates only on a real change.</summary>
+    private string? _shownProjectId;
 }

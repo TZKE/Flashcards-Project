@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using AIFlashcardMaker.ChartsStudio.Domain.Specs;
 
 namespace AIFlashcardMaker.ChartsStudio.Infrastructure.Persistence;
 
@@ -86,14 +87,20 @@ public sealed class ChartsStudioProjectState
     public string? LastFingerprint { get; set; }
 
     /// <summary>
-    /// Reserved for the figure collection. Empty in Phase 1 and never written with content,
-    /// but present so the file shape is already correct when figures arrive and the first
-    /// figure-bearing phase is an additive change rather than a schema break.
+    /// The figures the user has KEPT for this project, in shelf order.
+    ///
+    /// Phase 1 reserved this slot as an empty list precisely so filling it in Phase 2 would be
+    /// an additive change to a file older readers already understand — no schema break, no
+    /// migration, and the version stamp stays at 1.
+    ///
+    /// Only kept figures are persisted. Proposals are derived state, reproducible from the
+    /// context plus the engine version; storing them would mean migrating records the user
+    /// never chose to keep.
     /// </summary>
     [JsonPropertyName("figures")]
-    public List<object> Figures { get; set; } = new();
+    public List<FigureSpec> Figures { get; set; } = new();
 
-    /// <summary>Figures saved for this project. Always 0 in Phase 1.</summary>
+    /// <summary>Figures saved for this project.</summary>
     [JsonIgnore]
     public int FigureCount => Figures?.Count ?? 0;
 

@@ -1,0 +1,232 @@
+<UserControl x:Class="AIFlashcardMaker.ChartsStudio.Presentation.Views.ContactSheetView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             mc:Ignorable="d"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <!--
+        Charts Studio Phase 2 — Contact Sheet.
+
+        Cards carry their title, reason and cautions as TEXT, which appears immediately. Only
+        the thumbnail arrives asynchronously. That ordering is what makes the sheet readable
+        before a single figure has been drawn.
+
+        All styles are declared locally: the module stays self-contained and App.xaml is left
+        alone (this codebase has a documented stale-XAML gotcha after App.xaml edits).
+    -->
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <Style x:Key="FigureCardBorder" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,16,16"/>
+            <Setter Property="Width" Value="360"/>
+        </Style>
+
+        <Style x:Key="CardActionButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Sheet header -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Proposed figures"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextBrush}"
+                           VerticalAlignment="Center"/>
+
+                <TextBlock Text="{Binding KeptSummary}"
+                           FontSize="12.5"
+                           Foreground="{StaticResource MutedBrush}"
+                           Margin="14,0,0,0"
+                           VerticalAlignment="Center"/>
+
+                <TextBlock Text="drawing…"
+                           FontSize="12"
+                           Foreground="{StaticResource SoftMutedBrush}"
+                           Margin="14,0,0,0"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+
+            <Button Content="Add a figure"
+                    Style="{StaticResource CardActionButton}"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Click="AddFigure_Click"/>
+        </Grid>
+
+        <!-- Cards -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+            <StackPanel>
+
+                <ItemsControl ItemsSource="{Binding Cards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource FigureCardBorder}">
+                                <StackPanel>
+
+                                    <!-- Figure area: fixed height so cards do not jump as
+                                         thumbnails arrive. -->
+                                    <Border Height="210"
+                                            CornerRadius="14,14,0,0"
+                                            Background="{StaticResource SoftCardBrush}">
+                                        <Grid>
+                                            <!-- Drawn -->
+                                            <Image Source="{Binding Image}"
+                                                   Stretch="Uniform"
+                                                   Margin="8"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   Visibility="{Binding IsRendered, Converter={StaticResource BoolToVis}}"/>
+
+                                            <!-- Drawing -->
+                                            <TextBlock Text="drawing…"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource SoftMutedBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+                                            <!-- Failed: explains itself, never a blank frame -->
+                                            <TextBlock Text="{Binding FailureReason}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource MutedBrush}"
+                                                       TextWrapping="Wrap"
+                                                       TextAlignment="Center"
+                                                       MaxWidth="280"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Visibility="{Binding IsFailed, Converter={StaticResource BoolToVis}}"/>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Text -->
+                                    <StackPanel Margin="18,14,18,0">
+                                        <TextBlock Text="{Binding Headline}"
+                                                   FontSize="14.5"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   TextWrapping="Wrap"/>
+
+                                        <TextBlock Text="{Binding Subtitle}"
+                                                   FontSize="12"
+                                                   Foreground="{StaticResource SoftMutedBrush}"
+                                                   Margin="0,3,0,0"/>
+
+                                        <TextBlock Text="{Binding Rationale}"
+                                                   FontSize="12.5"
+                                                   Foreground="{StaticResource MutedBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,10,0,0"/>
+
+                                        <!-- Cautions travel WITH the card, so small n is seen
+                                             before the user invests in the figure. -->
+                                        <Border Background="{StaticResource WarningSoftBrush}"
+                                                CornerRadius="7"
+                                                Padding="9,5"
+                                                Margin="0,10,0,0"
+                                                Visibility="{Binding HasCautions, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding CautionText}"
+                                                       FontSize="11.5"
+                                                       Foreground="{StaticResource WarningBrush}"
+                                                       TextWrapping="Wrap"/>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Actions -->
+                                    <StackPanel Orientation="Horizontal" Margin="18,14,18,18">
+                                        <Button Content="{Binding KeepLabel}"
+                                                Style="{StaticResource CardActionButton}"
+                                                Click="Keep_Click"
+                                                Margin="0,0,8,0"/>
+                                        <Button Content="Remove"
+                                                Style="{StaticResource CardActionButton}"
+                                                Click="Remove_Click"/>
+                                    </StackPanel>
+
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Empty state: always says WHY, and what to do next -->
+                <Border Padding="32"
+                        MaxWidth="620"
+                        HorizontalAlignment="Left"
+                        Background="{StaticResource SoftCardBrush}"
+                        BorderBrush="{StaticResource BorderBrushSoft}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="No figures to propose yet"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"/>
+                        <TextBlock Text="{Binding EmptyReason}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,10,0,0"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

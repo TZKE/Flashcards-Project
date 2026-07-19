@@ -114,9 +114,15 @@ public sealed class AnalysisContextProvider
     {
         ArgumentNullException.ThrowIfNull(project);
 
+        // Phase 2: the aggregates Research Lab already computed, indexed by variable name.
+        // This is the ONLY source of numbers Charts Studio ever draws — it never reads the
+        // dataset, so a project whose descriptive statistics have not been run simply has
+        // nothing to chart, and the recommender says so rather than inventing anything.
+        var descriptives = BuildDescriptiveIndex(project);
+
         var variables = (project.Variables ?? new List<ResearchVariable>())
             .Where(v => v is not null)
-            .Select(ProjectVariable)
+            .Select(v => ProjectVariable(v, descriptives))
             .ToList();
 
         var results = (project.ComputedResults ?? new List<SavedComputedResult>())
@@ -146,13 +152,50 @@ public sealed class AnalysisContextProvider
     // Projection
     // ---------------------------------------------------------------------------------
 
-    private static ContextVariable ProjectVariable(ResearchVariable v)
+    /// <summary>
+    /// Indexes Research Lab's descriptive results by variable name. Returns an empty index when
+    /// descriptive statistics have not been run, which is a normal state, not an error.
+    /// </summary>
+    private static Dictionary<string, VariableDescriptiveResult> BuildDescriptiveIndex(ResearchProject p)
+    {
+        var index = new Dictionary<string, VariableDescriptiveResult>(StringComparer.OrdinalIgnoreCase);
+
+        var record = p.DescriptiveStatistics;
+        if (record?.Variables is null) return index;
+
+        foreach (var d in record.Variables)
+        {
+            if (d is null || string.IsNullOrWhiteSpace(d.VariableName)) continue;
+            index[d.VariableName] = d;    // last wins; names are unique in practice
+        }
+
+        return index;
+    }
+
+    private static ContextVariable ProjectVariable(
+        ResearchVariable v,
+        Dictionary<string, VariableDescriptiveResult> descriptives)
     {
         string type = (v.VariableType ?? "").Trim();
         string level = (v.MeasurementLevel ?? "").Trim();
         string role = (v.Role ?? "").Trim();
 
         var kind = ResolveKind(type, level, role);
+
+        descriptives.TryGetValue(v.VariableName ?? "", out var d);
+
+        // "Analysed" means Research Lab actually produced usable aggregates for this variable.
+        // A variable it excluded (identifier, unset type) has a result row but nothing to draw.
+        bool analysed = d is not null
+                     && !string.Equals(d.AnalysisKind, "Excluded", StringComparison.OrdinalIgnoreCase)
+                     && d.ValidN > 0;
+
+        var categories = analysed && d!.Frequencies is { Count: > 0 }
+            ? d.Frequencies
+                .Where(f => f is not null)
+                .Select(f => new ContextCategory { Value = f.Value ?? "", Label = f.Label ?? "", Count = f.Count })
+                .ToArray()
+            : Array.Empty<ContextCategory>();
 
         return new ContextVariable
         {
@@ -167,10 +210,23 @@ public sealed class AnalysisContextProvider
             Kind = kind,
             Role = ResolveRole(role),
             Units = "",                       // not modelled on the sheet yet
-            IsObservedDataAvailable = false,  // no dataset is read in Phase 1
-            ValidN = null,
-            MissingN = null,
-            ObservedCategoryCount = null
+
+            IsObservedDataAvailable = analysed,
+            ValidN = analysed ? d!.ValidN : null,
+            MissingN = analysed ? d!.MissingN : null,
+            ObservedCategoryCount = categories.Length > 0 ? categories.Length : null,
+
+            // Carried across verbatim — never recomputed here, so a figure and the descriptive
+            // statistics table can never disagree about the same variable.
+            Mean = analysed ? d!.Mean : null,
+            StdDev = analysed ? d!.SampleSd : null,
+            Median = analysed ? d!.Median : null,
+            Q1 = analysed ? d!.Q1 : null,
+            Q3 = analysed ? d!.Q3 : null,
+            Min = analysed ? d!.Min : null,
+            Max = analysed ? d!.Max : null,
+
+            Categories = categories
         };
     }
 
@@ -353,6 +409,15 @@ public sealed class AnalysisContextProvider
         sb.Append("project:").Append(project.Id).Append('\n');
         sb.Append("rows:").Append(participants?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-").Append('\n');
         sb.Append("sheet:").Append(project.ExtractionSheetUpdatedAt?.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-").Append('\n');
+
+        // Phase 2: figures are drawn from the descriptive statistics, so re-running them must
+        // invalidate every figure built from the previous run. Research Lab's own fingerprint
+        // is reused rather than re-derived.
+        sb.Append("descriptives:")
+          .Append(project.DescriptiveStatistics?.SourceFingerprint ?? "-")
+          .Append('/')
+          .Append(project.DescriptiveStatistics?.GeneratedAt.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-")
+          .Append('\n');
 
         sb.Append("vars:\n");
         foreach (var v in variables.OrderBy(v => v.Id, StringComparer.Ordinal))
