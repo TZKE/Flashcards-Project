@@ -1041,6 +1041,17 @@ public sealed partial class MainWindow : Window
             _license.Status = d.Status ?? _license.Status;
             _license.GraceDays = d.GraceDays;
             _license.EndsAtUtc = d.EndsAtUtc;
+            // The server's authoritative expiry answer. It was already being sent and
+            // deserialized, then discarded - the client re-derived entitlement from the
+            // status string instead, so a subscription past its end date still looked
+            // active here until the string happened to be flipped.
+            _license.Expired = d.Expired;
+            // The server's clock, and the highest local time ever seen. Offline grace is
+            // measured against the LOCAL clock, so without these a user could roll the PC
+            // date back and extend the offline window indefinitely.
+            _license.LastServerTimeUtc = d.ServerTimeUtc;
+            if (DateTime.UtcNow > _license.MaxObservedUtc) _license.MaxObservedUtc = DateTime.UtcNow;
+            if (d.ServerTimeUtc > _license.MaxObservedUtc) _license.MaxObservedUtc = d.ServerTimeUtc;
             if (d.Entitlements.ValueKind is not System.Text.Json.JsonValueKind.Undefined
                 and not System.Text.Json.JsonValueKind.Null)
                 _license.EntitlementsJson = d.Entitlements.GetRawText();
@@ -1111,17 +1122,23 @@ public sealed partial class MainWindow : Window
             message = "Your session has expired. Please log out and log in again.";
             return false;
         }
+        // One authoritative decision (LicenseCache.AllowsProtectedActions). The checks
+        // below only work out WHICH reason to show; they can no longer disagree with the
+        // decision itself, which is what a second inline copy of this logic risked.
+        if (_license.AllowsProtectedActions) return true;
+
         if (!_license.IsActive)
         {
             message = "Your OrbitLab subscription is not active. Please contact support or renew your Commercial Beta access to continue creating projects and running analyses.";
             return false;
         }
-        if (!_license.WithinOfflineGrace)
+        if (_license.ClockLooksRolledBack)
         {
-            message = "OrbitLab could not verify your subscription recently. Please connect to the internet once so your license can refresh.";
+            message = "Your computer's clock appears to be set incorrectly, so your subscription could not be verified offline. Please correct the date and time, then connect to the internet once.";
             return false;
         }
-        return true;
+        message = "OrbitLab could not verify your subscription recently. Please connect to the internet once so your license can refresh.";
+        return false;
     }
 
     /// <summary>Commercial Beta: 1 active project (from entitlements); legacy dev builds keep the old limit.</summary>

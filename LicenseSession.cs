@@ -37,11 +37,47 @@ public sealed class LicenseCache
     public int DeviceActivationId { get; set; }
     public string DeviceHash { get; set; } = "";
 
-    public bool IsActive => string.Equals(Status, "Active", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// The server's own clock at the last successful heartbeat, and the highest local
+    /// time ever observed. Both exist to detect a rolled-back system clock: offline
+    /// grace is measured against the local clock, so without these, setting the PC
+    /// date backwards extended the offline window indefinitely.
+    /// Defaulted so caches written by older versions load unchanged.
+    /// </summary>
+    public DateTime LastServerTimeUtc { get; set; }
+    public DateTime MaxObservedUtc { get; set; }
 
-    /// <summary>Within the offline-grace window measured from the last successful heartbeat.</summary>
+    /// <summary>Server's authoritative expiry answer from the last heartbeat.</summary>
+    public bool Expired { get; set; }
+
+    /// <summary>
+    /// Entitled right now. Trusts the server's authoritative <see cref="Expired"/> flag
+    /// (previously deserialized and thrown away) and the end date, instead of comparing
+    /// the status string alone - a subscription past its end date is not active even if
+    /// the string has not been flipped yet.
+    /// </summary>
+    public bool IsActive =>
+        string.Equals(Status, "Active", StringComparison.OrdinalIgnoreCase)
+        && !Expired
+        && (EndsAtUtc is null || EndsAtUtc > DateTime.UtcNow);
+
+    /// <summary>
+    /// True when the local clock has moved backwards relative to something we already
+    /// observed - either the highest local time seen, or the server's clock at the last
+    /// heartbeat. Five minutes of slack absorbs ordinary NTP correction and drift.
+    /// </summary>
+    public bool ClockLooksRolledBack =>
+        (MaxObservedUtc != default && DateTime.UtcNow < MaxObservedUtc.AddMinutes(-5))
+        || (LastServerTimeUtc != default && DateTime.UtcNow < LastServerTimeUtc.AddMinutes(-5));
+
+    /// <summary>
+    /// Within the offline-grace window measured from the last successful heartbeat.
+    /// A rolled-back clock forfeits grace: the user must reconnect once so the licence
+    /// can be verified against the server's clock rather than their own.
+    /// </summary>
     public bool WithinOfflineGrace =>
-        DateTime.UtcNow - LastHeartbeatUtc <= TimeSpan.FromDays(Math.Clamp(GraceDays, 0, 90));
+        !ClockLooksRolledBack
+        && DateTime.UtcNow - LastHeartbeatUtc <= TimeSpan.FromDays(Math.Clamp(GraceDays, 0, 90));
 
     /// <summary>License considered usable for protected actions right now.</summary>
     public bool AllowsProtectedActions => IsActive && WithinOfflineGrace;
