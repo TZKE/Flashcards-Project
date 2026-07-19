@@ -652,11 +652,44 @@ public sealed partial class MainWindow : Window
 
     private void Overview_Click(object sender, RoutedEventArgs e) => ShowPage(PageOverview);
 
-    private void ChartsStudio_Click(object sender, RoutedEventArgs e) => ShowPage(PageChartsStudio);
+    private void ChartsStudio_Click(object sender, RoutedEventArgs e) => EnterChartsStudio();
 
     private async void Research_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => await EnterResearchLabAsync();
 
-    private void ChartsStudio_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => ShowPage(PageChartsStudio);
+    private void ChartsStudio_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => EnterChartsStudio();
+
+    // ---- Charts Studio host ------------------------------------------------
+    // Phase 1. This is the ENTIRE footprint of Charts Studio inside MainWindow: one lazily
+    // created view model and one entry call. Everything else lives under ChartsStudio\ and
+    // MainWindow knows nothing about contexts, sessions, figures or persistence.
+    //
+    // The module reaches back into research data through two callbacks rather than holding a
+    // reference to _researchData, so it always sees the current project list without owning
+    // or mutating it.
+
+    private ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel? _chartsStudioViewModel;
+
+    private void EnterChartsStudio()
+    {
+        if (_chartsStudioViewModel is null)
+        {
+            var store = new ChartsStudio.Infrastructure.Persistence.ChartsStudioStore(dataDir);
+
+            // The project source is handed to the ADAPTER, not to the session or view model.
+            // That is what keeps ResearchProject out of every layer above Infrastructure.
+            var provider = new ChartsStudio.Infrastructure.ResearchLabAdapter.AnalysisContextProvider(
+                () => _researchData.Projects);
+
+            var session = new ChartsStudio.Application.Session.ChartsStudioSession(store, provider);
+
+            _chartsStudioViewModel = new ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel(session);
+
+            ChartsStudioHost.DataContext = _chartsStudioViewModel;
+        }
+
+        ShowPage(PageChartsStudio);
+        ChartsStudioHost.Enter();
+    }
 
     // Phase 9: the Dashboard license/plan state is now real, read-only, and backed by
     // backend entitlement data (see UpdatePlanCard). The design-review license-state
