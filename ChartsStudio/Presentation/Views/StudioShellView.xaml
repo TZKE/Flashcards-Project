@@ -253,5 +253,9 @@
         <!-- Figure Editor overlays everything: editing is modal within the studio. -->
         <views:FigureEditorView Grid.Row="0" Grid.RowSpan="2"
                                 DataContext="{Binding Editor}"/>
+
+        <!-- Export dialog overlays even the editor: exporting from the editor stacks on top. -->
+        <views:ExportDialogView Grid.Row="0" Grid.RowSpan="2"
+                                DataContext="{Binding Export}"/>
     </Grid>
 </UserControl>

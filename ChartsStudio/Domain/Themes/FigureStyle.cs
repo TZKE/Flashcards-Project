@@ -131,6 +131,36 @@ public static class FigureStyleResolver
         return style;
     }
 
+    /// <summary>
+    /// Phase 5 — a copy of a resolved style with font sizes multiplied. Only the Custom
+    /// export profile may carry a non-1 scale (a font multiplier changes layout, which breaks
+    /// the "what you approved" guarantee for every named profile). The cache key extends so a
+    /// scaled render can never collide with the approved one.
+    /// </summary>
+    public static ResolvedFigureStyle WithFontScale(ResolvedFigureStyle s, double scale)
+    {
+        if (Math.Abs(scale - 1.0) < 0.001) return s;
+        scale = Math.Clamp(scale, 0.5, 2.0);
+
+        return new ResolvedFigureStyle
+        {
+            Title = s.Title, Subtitle = s.Subtitle, Caption = s.Caption,
+            XLabel = s.XLabel, YLabel = s.YLabel,
+            ShowXAxis = s.ShowXAxis, ShowYAxis = s.ShowYAxis,
+            ShowGrid = s.ShowGrid, ShowLegend = s.ShowLegend,
+            BackgroundHex = s.BackgroundHex, AxisHex = s.AxisHex, GridHex = s.GridHex,
+            SeriesFillHex = s.SeriesFillHex, SeriesLineHex = s.SeriesLineHex,
+            FontFamily = s.FontFamily,
+            TitleFontSize = Math.Clamp(s.TitleFontSize * scale, MinFontSize, MaxFontSize),
+            AxisFontSize = Math.Clamp(s.AxisFontSize * scale, MinFontSize, MaxFontSize),
+            TickFontSize = Math.Clamp(s.TickFontSize * scale, MinTickFontSize, MaxTickFontSize),
+            LineWidth = s.LineWidth, MarkerSize = s.MarkerSize, Opacity = s.Opacity,
+            Horizontal = s.Horizontal, CategoryPalette = s.CategoryPalette,
+            CacheKey = s.CacheKey + ";fontScale=" +
+                       scale.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+        };
+    }
+
     // ---------------------------------------------------------------------------------
 
     private static string FirstNonBlank(string? over, string fallback) =>

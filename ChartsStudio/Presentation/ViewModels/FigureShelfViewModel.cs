@@ -131,6 +131,9 @@ public sealed class FigureShelfViewModel : ObservableObject
     /// <summary>Raised when the user asks to edit a figure from the shelf.</summary>
     public event EventHandler<ShelfItemViewModel>? EditRequested;
 
+    /// <summary>Phase 5 — raised with the figures to export (selection, or the whole set).</summary>
+    public event EventHandler<IReadOnlyList<KeptFigure>>? ExportRequested;
+
     // ---- Header / organisation ------------------------------------------------------
 
     public IReadOnlyList<NamedOption> SortOptions { get; } = new List<NamedOption>
@@ -181,12 +184,19 @@ public sealed class FigureShelfViewModel : ObservableObject
     public bool HasSelection => SelectedCount > 0;
     public string SelectionLabel => SelectedCount == 1 ? "1 selected" : $"{SelectedCount} selected";
 
+    /// <summary>Export is available whenever the shelf has any figures — no selection means
+    /// "export everything", the common case for assembling a submission.</summary>
+    public bool CanExport => Items.Count > 0;
+
+    public string ExportButtonLabel => HasSelection ? $"Export {SelectedCount} selected" : "Export all";
+
     /// <summary>Called by the view whenever the ListBox's selection changes.</summary>
     public void NotifySelectionChanged()
     {
         OnPropertyChanged(nameof(SelectedCount));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectionLabel));
+        OnPropertyChanged(nameof(ExportButtonLabel));
     }
 
     public void SelectAll()
@@ -222,6 +232,19 @@ public sealed class FigureShelfViewModel : ObservableObject
     public void RequestEdit(ShelfItemViewModel item)
     {
         if (item is not null) EditRequested?.Invoke(this, item);
+    }
+
+    /// <summary>Exports the current selection, or the entire shelf when nothing is selected.
+    /// Figures are taken from the SESSION (patched, in persisted order), never the view rows.</summary>
+    public void RequestExport()
+    {
+        var ids = Items.Where(i => i.IsSelected).Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+
+        var figures = ids.Count > 0
+            ? _session.KeptFigures.Where(f => ids.Contains(f.Id)).ToList()
+            : _session.KeptFigures.ToList();
+
+        if (figures.Count > 0) ExportRequested?.Invoke(this, figures);
     }
 
     // ---- Reorder --------------------------------------------------------------------
@@ -276,6 +299,7 @@ public sealed class FigureShelfViewModel : ObservableObject
         OnPropertyChanged(nameof(CountLabel));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(EmptyReason));
+        OnPropertyChanged(nameof(CanExport));
         NotifySelectionChanged();
 
         _ = RenderThumbnailsAsync();

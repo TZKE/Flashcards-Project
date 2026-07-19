@@ -37,6 +37,14 @@ public sealed class FigureRenderQueue : IDisposable
 
     private bool _disposed;
 
+    /// <summary>
+    /// Phase 5 — the renderer's version participates in every cache key. An engine upgrade may
+    /// draw the same spec differently, and a cache that survived it would show stale pictures
+    /// with no way to tell.
+    /// </summary>
+    private readonly string _versionPrefix;
+
+    /// <param name="renderer">The drawing engine; its version becomes part of every cache key.</param>
     /// <param name="maxConcurrency">
     /// Default 2. Deliberately low: a contact sheet renders a handful of small figures, and
     /// leaving cores free keeps the UI responsive while they draw. Raising this trades scroll
@@ -46,6 +54,7 @@ public sealed class FigureRenderQueue : IDisposable
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _concurrency = new SemaphoreSlim(Math.Max(1, maxConcurrency));
+        _versionPrefix = renderer.RendererVersion + "|";
     }
 
     /// <summary>Renders cached so far. Diagnostics only.</summary>
@@ -77,7 +86,7 @@ public sealed class FigureRenderQueue : IDisposable
     {
         if (_disposed) return RenderResult.Failure("Charts Studio is closing.");
 
-        string key = request.CacheKey;
+        string key = _versionPrefix + request.CacheKey;
 
         if (_cache.TryGetValue(key, out byte[]? cached))
             return RenderResult.Success(cached);

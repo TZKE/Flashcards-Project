@@ -19,6 +19,7 @@ public sealed class ChartsStudioViewModel : ObservableObject
 {
     private readonly ChartsStudioSession _session;
     private readonly FigureRenderQueue _renderQueue;
+    private readonly Func<string?> _pickExportFolder;
 
     private SessionPhase _phase = SessionPhase.Idle;
 
@@ -27,14 +28,25 @@ public sealed class ChartsStudioViewModel : ObservableObject
     /// Owned here rather than by the contact sheet, so switching projects can abandon every
     /// in-flight render in one call regardless of which surface is showing.
     /// </param>
+    /// <param name="renderer">
+    /// The raw renderer, for the one-shot export service. The queue is for the live surfaces;
+    /// export runs its own render surfaces and needs no cache-and-cancel machinery.
+    /// </param>
     /// <param name="dispatcher">UI dispatcher, for marshalling completed renders back.</param>
+    /// <param name="pickExportFolder">
+    /// Opens a folder picker and returns the chosen path, or null. Injected so the export VM —
+    /// and this whole tree — stays constructible and testable without a live shell dialog.
+    /// </param>
     public ChartsStudioViewModel(
         ChartsStudioSession session,
         FigureRenderQueue renderQueue,
-        System.Windows.Threading.Dispatcher dispatcher)
+        IFigureRenderer renderer,
+        System.Windows.Threading.Dispatcher dispatcher,
+        Func<string?> pickExportFolder)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _renderQueue = renderQueue ?? throw new ArgumentNullException(nameof(renderQueue));
+        _pickExportFolder = pickExportFolder ?? throw new ArgumentNullException(nameof(pickExportFolder));
 
         var engine = new FigureRecommendationEngine();
 
@@ -43,7 +55,13 @@ public sealed class ChartsStudioViewModel : ObservableObject
         Shelf = new FigureShelfViewModel(_session, _renderQueue, dispatcher);
         Editor = new FigureEditorViewModel(_session, _renderQueue, dispatcher);
 
-        Shell.AttachSurfaces(ContactSheet, AddFigure, Shelf, Editor);
+        // Phase 5 — the export dialog shares the session's renderer through a dedicated
+        // ExportService (its own render surfaces, no queue: exports are one-shot, not a live
+        // scrollable grid). The folder picker is injected so the headless VM stays testable.
+        var exportService = new Application.Export.ExportService(renderer);
+        Export = new ExportDialogViewModel(_session, exportService, dispatcher, _pickExportFolder);
+
+        Shell.AttachSurfaces(ContactSheet, AddFigure, Shelf, Editor, Export);
 
         ContactSheet.AddFigureRequested += (_, _) => OpenAddFigure();
         AddFigure.OptionChosen += async (_, candidate) => await ContactSheet.AddCandidateAsync(candidate);
@@ -62,6 +80,14 @@ public sealed class ChartsStudioViewModel : ObservableObject
         };
         Editor.Saved += (_, _) => Shelf.Refresh();
 
+        // Phase 5 — export requests. The shelf exports its selection or the whole set; the
+        // editor exports the single figure being edited. All three funnel to one dialog.
+        Shelf.ExportRequested += (_, figures) =>
+            Export.Open(figures, _session.CurrentContext,
+                figures.Count == _session.KeptFigureCount ? ExportScope.EntireShelf : ExportScope.SelectedFigures);
+        Editor.ExportRequested += (_, figure) =>
+            Export.Open(new[] { figure }, _session.CurrentContext, ExportScope.CurrentFigure);
+
         Picker.ProjectChosen += (_, summary) => OpenProject(summary.Id);
         Shell.ChangeProjectRequested += (_, _) => ChangeProject();
         _session.Changed += (_, _) => SyncFromSession();
@@ -74,6 +100,8 @@ public sealed class ChartsStudioViewModel : ObservableObject
     public FigureShelfViewModel Shelf { get; }
 
     public FigureEditorViewModel Editor { get; }
+
+    public ExportDialogViewModel Export { get; }
 
     private void OpenAddFigure() =>
         AddFigure.Open(_session.CurrentContext, ContactSheet.Cards.Select(c => c.Spec.ToRenderKey()));

@@ -688,13 +688,26 @@ public sealed partial class MainWindow : Window
             var renderQueue = new ChartsStudio.Application.Rendering.FigureRenderQueue(renderer);
 
             _chartsStudioViewModel = new ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel(
-                session, renderQueue, Dispatcher);
+                session, renderQueue, renderer, Dispatcher, PickChartsStudioExportFolder);
 
             ChartsStudioHost.DataContext = _chartsStudioViewModel;
         }
 
         ShowPage(PageChartsStudio);
         ChartsStudioHost.Enter();
+    }
+
+    // Charts Studio Phase 5: the export destination picker. Injected into the module so its
+    // export view model stays headless-testable; this is the one bit of export that needs a
+    // real window. .NET 8 WPF ships OpenFolderDialog natively — no extra dependency.
+    private string? PickChartsStudioExportFolder()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Choose a folder for your figures",
+            Multiselect = false
+        };
+        return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
     }
 
     // Phase 9: the Dashboard license/plan state is now real, read-only, and backed by

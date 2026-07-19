@@ -60,6 +60,8 @@ public partial class FigureShelfView : UserControl
 
     private void Delete_Click(object sender, RoutedEventArgs e) => ViewModel?.DeleteSelected();
 
+    private void Export_Click(object sender, RoutedEventArgs e) => ViewModel?.RequestExport();
+
     // ---- Drag reorder ---------------------------------------------------------------
     //
     // Standard WPF drag: press on a card, move past the system threshold, DoDragDrop with the

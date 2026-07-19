@@ -48,11 +48,13 @@ public sealed class FigureEditorViewModel : ObservableObject
     private bool _isPreviewStale;
     private int _previewGeneration;
 
-    // Editor preview: large enough to judge type at reading size, 16:10-ish to sit beside
-    // the inspector. Supersampled like the contact sheet so text is crisp.
-    private const int PreviewWidth = 1040;
-    private const int PreviewHeight = 660;
-    private const double PreviewScale = 1.55;
+    // Editor preview = the canonical export canvas (672×426 logical) at 1.5× supersampling.
+    // Phase 5 made this exact rather than approximate: the editor is the surface the user
+    // APPROVES, so it must share the export's logical geometry to the unit — same canvas,
+    // same tick layout, different magnification only. See ExportCanvas.
+    private const int PreviewWidth = Domain.Export.ExportCanvas.LogicalWidth * 3 / 2;    // 1008
+    private const int PreviewHeight = Domain.Export.ExportCanvas.LogicalHeight * 3 / 2;  // 639
+    private const double PreviewScale = 1.5;
 
     public FigureEditorViewModel(
         ChartsStudioSession session,
@@ -70,6 +72,18 @@ public sealed class FigureEditorViewModel : ObservableObject
 
     /// <summary>Raised after a successful save, so the shelf can refresh its thumbnails.</summary>
     public event EventHandler? Saved;
+
+    /// <summary>Phase 5 — raised to export the figure currently being edited.</summary>
+    public event EventHandler<KeptFigure>? ExportRequested;
+
+    /// <summary>Exports this figure. Saves first if dirty, so the export is of what the user
+    /// sees — exporting stale styling would violate the WYSIWYG promise at the worst moment.</summary>
+    public void RequestExport()
+    {
+        if (_figure is null) return;
+        if (IsDirty) Save();
+        ExportRequested?.Invoke(this, _figure);
+    }
 
     public RelayCommand UndoCommand { get; }
     public RelayCommand RedoCommand { get; }

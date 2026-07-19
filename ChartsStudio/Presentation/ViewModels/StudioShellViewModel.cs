@@ -41,20 +41,26 @@ public sealed class StudioShellViewModel : ObservableObject
     /// <summary>Phase 3 — the Figure Editor, overlaying whichever surface is active.</summary>
     public FigureEditorViewModel? Editor { get; private set; }
 
+    /// <summary>Phase 5 — the export dialog, overlaying everything.</summary>
+    public ExportDialogViewModel? Export { get; private set; }
+
     public void AttachSurfaces(
         ContactSheetViewModel contactSheet,
         AddFigureViewModel addFigure,
         FigureShelfViewModel shelf,
-        FigureEditorViewModel editor)
+        FigureEditorViewModel editor,
+        ExportDialogViewModel export)
     {
         ContactSheet = contactSheet;
         AddFigure = addFigure;
         Shelf = shelf;
         Editor = editor;
+        Export = export;
         OnPropertyChanged(nameof(ContactSheet));
         OnPropertyChanged(nameof(AddFigure));
         OnPropertyChanged(nameof(Shelf));
         OnPropertyChanged(nameof(Editor));
+        OnPropertyChanged(nameof(Export));
     }
 
     // ---- Surface switching ----------------------------------------------------------

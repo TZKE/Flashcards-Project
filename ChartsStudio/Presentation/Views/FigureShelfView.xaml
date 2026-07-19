@@ -90,10 +90,12 @@
                 <Button Content="Remove from shelf" Style="{StaticResource ShelfAction}" Margin="0,0,14,0"
                         IsEnabled="{Binding HasSelection}" Click="Delete_Click"/>
 
-                <!-- Roadmap placeholders: visible so the shelf reads as a library with a
-                     future, disabled so nothing pretends to work before its phase. -->
-                <Button Content="Export" Style="{StaticResource ShelfAction}" Margin="0,0,8,0"
-                        IsEnabled="False" ToolTip="Publication export arrives in a later phase"/>
+                <!-- Export is real from Phase 5: exports the selection, or the whole set. -->
+                <Button Content="{Binding ExportButtonLabel}" Style="{StaticResource ShelfAction}" Margin="0,0,8,0"
+                        IsEnabled="{Binding CanExport}" Click="Export_Click"
+                        ToolTip="Export figures as PNG, SVG or PDF for publication"/>
+
+                <!-- Still a roadmap placeholder: folders/collections arrive later. -->
                 <Button Content="Move to…" Style="{StaticResource ShelfAction}"
                         IsEnabled="False" ToolTip="Folders and collections arrive in a later phase"/>
             </StackPanel>
