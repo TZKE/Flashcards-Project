@@ -1,0 +1,266 @@
+using AIFlashcardMaker.ChartsStudio.Application.Session;
+using AIFlashcardMaker.ChartsStudio.Application.Rendering;
+using AIFlashcardMaker.ChartsStudio.Domain.Projects;
+using AIFlashcardMaker.ChartsStudio.Domain.Recommendation;
+
+namespace AIFlashcardMaker.ChartsStudio.Presentation.ViewModels;
+
+/// <summary>
+/// Charts Studio Phase 1 — the module's root view model.
+///
+/// This is the ONE object MainWindow talks to. Everything else in Charts Studio hangs beneath
+/// it, which is what keeps the module's footprint in the host down to a single field and a
+/// single entry call.
+///
+/// It owns which surface is showing (picker or shell) and translates session phase into the
+/// booleans the host view binds its visibility to.
+/// </summary>
+public sealed class ChartsStudioViewModel : ObservableObject
+{
+    private readonly ChartsStudioSession _session;
+    private readonly FigureRenderQueue _renderQueue;
+    private readonly Func<string?> _pickExportFolder;
+
+    private SessionPhase _phase = SessionPhase.Idle;
+
+    /// <param name="session">The session this view model drives.</param>
+    /// <param name="renderQueue">
+    /// Owned here rather than by the contact sheet, so switching projects can abandon every
+    /// in-flight render in one call regardless of which surface is showing.
+    /// </param>
+    /// <param name="renderer">
+    /// The raw renderer, for the one-shot export service. The queue is for the live surfaces;
+    /// export runs its own render surfaces and needs no cache-and-cancel machinery.
+    /// </param>
+    /// <param name="dispatcher">UI dispatcher, for marshalling completed renders back.</param>
+    /// <param name="pickExportFolder">
+    /// Opens a folder picker and returns the chosen path, or null. Injected so the export VM —
+    /// and this whole tree — stays constructible and testable without a live shell dialog.
+    /// </param>
+    /// <param name="aiRunner">
+    /// Core AI completion runner (shared transport). The AI assistant is built on this; the
+    /// module works fully without it, so it is injected rather than constructed here.
+    /// </param>
+    public ChartsStudioViewModel(
+        ChartsStudioSession session,
+        FigureRenderQueue renderQueue,
+        IFigureRenderer renderer,
+        CoreAi.AiCompletionRunner aiRunner,
+        System.Windows.Threading.Dispatcher dispatcher,
+        Func<string?> pickExportFolder)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _renderQueue = renderQueue ?? throw new ArgumentNullException(nameof(renderQueue));
+        _pickExportFolder = pickExportFolder ?? throw new ArgumentNullException(nameof(pickExportFolder));
+        if (aiRunner is null) throw new ArgumentNullException(nameof(aiRunner));
+
+        var engine = new FigureRecommendationEngine();
+
+        ContactSheet = new ContactSheetViewModel(_session, engine, _renderQueue, dispatcher);
+        AddFigure = new AddFigureViewModel(engine);
+        Shelf = new FigureShelfViewModel(_session, _renderQueue, dispatcher);
+        Editor = new FigureEditorViewModel(_session, _renderQueue, dispatcher);
+
+        // Phase 5 — the export dialog shares the session's renderer through a dedicated
+        // ExportService (its own render surfaces, no queue: exports are one-shot, not a live
+        // scrollable grid). The folder picker is injected so the headless VM stays testable.
+        var exportService = new Application.Export.ExportService(renderer);
+        Export = new ExportDialogViewModel(_session, exportService, dispatcher, _pickExportFolder);
+
+        // Phase 6 — the AI advisory assistant. Built on Core AI (shared transport) via a
+        // completion runner; the whole stack is optional and degrades to deterministic checks.
+        var aiService = new Application.Ai.ChartsStudioAiService(aiRunner);
+        Ai = new AiAssistantViewModel(aiService, _session, dispatcher);
+
+        Shell.AttachSurfaces(ContactSheet, AddFigure, Shelf, Editor, Export, Ai);
+
+        ContactSheet.AddFigureRequested += (_, _) => OpenAddFigure();
+        AddFigure.OptionChosen += async (_, candidate) => await ContactSheet.AddCandidateAsync(candidate);
+
+        // Phase 3/4 — edit paths. Both roads lead to the same editor over the same kept
+        // figure; the contact sheet keeps first (see RequestEdit), the shelf edits directly.
+        ContactSheet.EditRequested += (_, card) =>
+        {
+            var kept = _session.FindKeptByRenderKey(card.Spec);
+            if (kept is not null) Editor.Open(kept, _session.CurrentContext);
+        };
+        Shelf.EditRequested += (_, item) =>
+        {
+            var kept = _session.FindKeptFigure(item.Id);
+            if (kept is not null) Editor.Open(kept, _session.CurrentContext);
+        };
+        Editor.Saved += (_, _) => Shelf.Refresh();
+
+        // Phase 5 — export requests. The shelf exports its selection or the whole set; the
+        // editor exports the single figure being edited. All three funnel to one dialog.
+        Shelf.ExportRequested += (_, figures) =>
+            Export.Open(figures, _session.CurrentContext,
+                figures.Count == _session.KeptFigureCount ? ExportScope.EntireShelf : ExportScope.SelectedFigures);
+        Editor.ExportRequested += (_, figure) =>
+            Export.Open(new[] { figure }, _session.CurrentContext, ExportScope.CurrentFigure);
+
+        // Phase 6 — AI assistant entry points.
+        Editor.AiRequested += (_, figure) =>
+        {
+            int index = IndexOfKept(figure.Id);
+            Ai.OpenForFigure(figure, _session.CurrentContext, index);
+        };
+        Shelf.ReviewSetRequested += (_, _) => Ai.OpenForSet();
+
+        // Applying an AI caption is the one place its output reaches a figure — and only on the
+        // user's press. It goes through the session's patch update, exactly like a manual edit.
+        Ai.CaptionApplied += (_, e) =>
+        {
+            var kept = _session.FindKeptFigure(e.FigureId);
+            if (kept is null) return;
+            var patch = (kept.Patch?.Clone() ?? new Domain.Specs.FigurePatch());
+            patch.Caption = e.Caption;
+            _session.UpdatePatch(e.FigureId, patch);
+            if (Editor.IsEditing(e.FigureId)) Editor.ReloadFromSession();
+        };
+
+        Picker.ProjectChosen += (_, summary) => OpenProject(summary.Id);
+        Shell.ChangeProjectRequested += (_, _) => ChangeProject();
+        _session.Changed += (_, _) => SyncFromSession();
+    }
+
+    public ContactSheetViewModel ContactSheet { get; }
+
+    public AddFigureViewModel AddFigure { get; }
+
+    public FigureShelfViewModel Shelf { get; }
+
+    public FigureEditorViewModel Editor { get; }
+
+    public ExportDialogViewModel Export { get; }
+
+    public AiAssistantViewModel Ai { get; }
+
+    private void OpenAddFigure() =>
+        AddFigure.Open(_session.CurrentContext, ContactSheet.Cards.Select(c => c.Spec.ToRenderKey()));
+
+    /// <summary>1-based shelf position of a kept figure, or 0 if not found.</summary>
+    private int IndexOfKept(string figureId)
+    {
+        var kept = _session.KeptFigures;
+        for (int i = 0; i < kept.Count; i++)
+            if (string.Equals(kept[i].Id, figureId, StringComparison.Ordinal)) return i + 1;
+        return 0;
+    }
+
+    public ProjectPickerViewModel Picker { get; } = new();
+
+    public StudioShellViewModel Shell { get; } = new();
+
+    // ---- Surface visibility ---------------------------------------------------------
+
+    public SessionPhase Phase
+    {
+        get => _phase;
+        private set
+        {
+            if (!Set(ref _phase, value)) return;
+            OnPropertyChanged(nameof(IsPickerVisible));
+            OnPropertyChanged(nameof(IsShellVisible));
+            OnPropertyChanged(nameof(IsLoadingVisible));
+            OnPropertyChanged(nameof(IsErrorVisible));
+        }
+    }
+
+    public bool IsPickerVisible => Phase == SessionPhase.Picking;
+    public bool IsShellVisible => Phase == SessionPhase.Open;
+    public bool IsLoadingVisible => Phase == SessionPhase.Loading;
+    public bool IsErrorVisible => Phase == SessionPhase.Failed;
+
+    public string ErrorMessage => _session.LoadError ?? "";
+
+    /// <summary>True when the user has more than one project, so "Change project" is meaningful.</summary>
+    public bool CanChangeProject => Picker.TotalCount > 1;
+
+    // ---- Entry ----------------------------------------------------------------------
+
+    /// <summary>
+    /// Called every time the user navigates to Charts Studio.
+    ///
+    /// Re-reads the project list on each entry rather than caching it, because projects can be
+    /// created, renamed or deleted in Research Lab between visits and a stale picker would be
+    /// worse than a marginally slower one.
+    /// </summary>
+    public void Enter()
+    {
+        _session.ReloadPersistedState();
+
+        var summaries = _session.ListProjects();
+        Picker.Load(summaries);
+        OnPropertyChanged(nameof(CanChangeProject));
+
+        // Already inside a project? Stay there rather than throwing the user back to the picker.
+        if (_session.Phase == SessionPhase.Open && _session.CurrentProjectId is not null)
+        {
+            SyncFromSession();
+            return;
+        }
+
+        if (ChartsStudioSession.ShouldAutoOpen(summaries))
+        {
+            OpenProject(summaries[0].Id);
+            return;
+        }
+
+        _session.ShowPicker();
+    }
+
+    /// <summary>
+    /// Prepares a project and moves to the shell. A project that vanished between listing and
+    /// activation surfaces through the session's Failed phase rather than a hard error.
+    /// </summary>
+    public void OpenProject(string projectId) => _session.Open(projectId);
+
+    /// <summary>Returns to the picker from an open project, refreshing the list on the way.</summary>
+    public void ChangeProject()
+    {
+        Picker.Load(_session.ListProjects());
+        OnPropertyChanged(nameof(CanChangeProject));
+
+        _session.CloseProject();
+    }
+
+    private void SyncFromSession()
+    {
+        bool projectChanged = !string.Equals(_shownProjectId, _session.CurrentProjectId, StringComparison.Ordinal);
+
+        Phase = _session.Phase;
+
+        if (_session.Phase == SessionPhase.Open)
+        {
+            Shell.Load(_session.CurrentContext);
+
+            // Regenerate only when the project actually changed. The session also raises
+            // Changed on every keep and remove, and rebuilding the whole sheet on each of those
+            // would throw away renders the user is looking at.
+            if (projectChanged)
+            {
+                _shownProjectId = _session.CurrentProjectId;
+                Shell.ShowSheet();
+                _ = ContactSheet.GenerateAsync(_session.CurrentContext);
+                Shelf.Refresh(_session.CurrentContext);
+            }
+            else
+            {
+                // Keep/remove/patch/reorder all land here: the shelf mirrors the session
+                // cheaply (cache makes unchanged thumbnails instant), the sheet is untouched.
+                Shelf.Refresh(_session.CurrentContext);
+            }
+        }
+        else if (_session.Phase != SessionPhase.Loading)
+        {
+            _shownProjectId = null;
+            _renderQueue.CancelAll();
+        }
+
+        OnPropertyChanged(nameof(ErrorMessage));
+    }
+
+    /// <summary>Which project the contact sheet currently shows, so it regenerates only on a real change.</summary>
+    private string? _shownProjectId;
+}

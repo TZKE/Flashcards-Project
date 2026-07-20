@@ -652,11 +652,67 @@ public sealed partial class MainWindow : Window
 
     private void Overview_Click(object sender, RoutedEventArgs e) => ShowPage(PageOverview);
 
-    private void ChartsStudio_Click(object sender, RoutedEventArgs e) => ShowPage(PageChartsStudio);
+    private void ChartsStudio_Click(object sender, RoutedEventArgs e) => EnterChartsStudio();
 
     private async void Research_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => await EnterResearchLabAsync();
 
-    private void ChartsStudio_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => ShowPage(PageChartsStudio);
+    private void ChartsStudio_QuickAction(object sender, System.Windows.Input.MouseButtonEventArgs e) => EnterChartsStudio();
+
+    // ---- Charts Studio host ------------------------------------------------
+    // Phase 1. This is the ENTIRE footprint of Charts Studio inside MainWindow: one lazily
+    // created view model and one entry call. Everything else lives under ChartsStudio\ and
+    // MainWindow knows nothing about contexts, sessions, figures or persistence.
+    //
+    // The module reaches back into research data through two callbacks rather than holding a
+    // reference to _researchData, so it always sees the current project list without owning
+    // or mutating it.
+
+    private ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel? _chartsStudioViewModel;
+
+    private void EnterChartsStudio()
+    {
+        if (_chartsStudioViewModel is null)
+        {
+            var store = new ChartsStudio.Infrastructure.Persistence.ChartsStudioStore(dataDir);
+
+            // The project source is handed to the ADAPTER, not to the session or view model.
+            // That is what keeps ResearchProject out of every layer above Infrastructure.
+            var provider = new ChartsStudio.Infrastructure.ResearchLabAdapter.AnalysisContextProvider(
+                () => _researchData.Projects);
+
+            var session = new ChartsStudio.Application.Session.ChartsStudioSession(store, provider);
+
+            // Phase 2: figures are drawn by ScottPlot behind the IFigureRenderer interface, and
+            // scheduled off the UI thread by the render queue.
+            var renderer = new ChartsStudio.Infrastructure.Rendering.ScottPlotFigureRenderer();
+            var renderQueue = new ChartsStudio.Application.Rendering.FigureRenderQueue(renderer);
+
+            // Phase 6: the AI assistant runs on Core AI, which wraps the SAME shared proxy the
+            // flashcard AI and Research Lab already use — no separate AI backend, no new key path.
+            var aiRunner = new CoreAi.AiCompletionRunner(new CoreAi.ProxyAiChatClient(_aiProxy));
+
+            _chartsStudioViewModel = new ChartsStudio.Presentation.ViewModels.ChartsStudioViewModel(
+                session, renderQueue, renderer, aiRunner, Dispatcher, PickChartsStudioExportFolder);
+
+            ChartsStudioHost.DataContext = _chartsStudioViewModel;
+        }
+
+        ShowPage(PageChartsStudio);
+        ChartsStudioHost.Enter();
+    }
+
+    // Charts Studio Phase 5: the export destination picker. Injected into the module so its
+    // export view model stays headless-testable; this is the one bit of export that needs a
+    // real window. .NET 8 WPF ships OpenFolderDialog natively — no extra dependency.
+    private string? PickChartsStudioExportFolder()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Choose a folder for your figures",
+            Multiselect = false
+        };
+        return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+    }
 
     // Phase 9: the Dashboard license/plan state is now real, read-only, and backed by
     // backend entitlement data (see UpdatePlanCard). The design-review license-state

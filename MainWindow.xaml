@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AIFlashcardMaker"
+        xmlns:chartsstudio="clr-namespace:AIFlashcardMaker.ChartsStudio.Presentation.Views"
         Title="{x:Static local:Branding.ProductName}"
         Icon="Assets/appicon.ico"
         Width="1280"
@@ -520,14 +521,13 @@
                                 </StackPanel>
                             </Button>
 
-                            <!-- Phase 3A: Charts Studio (coming soon) -->
+                            <!-- Charts Studio — Phase 1 foundation. The "Soon" badge is gone:
+                                 the module is now navigable, so advertising it as unreleased
+                                 would be wrong. -->
                             <Button x:Name="NavChartsStudio" Style="{StaticResource NavButton}" Click="ChartsStudio_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Data="{StaticResource IconGenerate}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center"/>
                                     <TextBlock Text="Charts Studio" Margin="14,0,0,0" VerticalAlignment="Center"/>
-                                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="6" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                        <TextBlock Text="Soon" Foreground="{StaticResource WarningBrush}" FontSize="10" FontWeight="Bold"/>
-                                    </Border>
                                 </StackPanel>
                             </Button>
 
@@ -768,25 +768,11 @@
 
                     <!-- ============ Phase 3A: Charts Studio (coming soon, non-functional) ============ -->
                     <Grid x:Name="PageChartsStudio" Visibility="Collapsed">
-                        <StackPanel>
-                            <TextBlock Text="Charts Studio" Style="{StaticResource PageTitle}"/>
-                            <Border Style="{StaticResource CardBorder}" Padding="40" Margin="0,16,0,0" HorizontalAlignment="Left" MaxWidth="740">
-                                <StackPanel>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Border Background="{StaticResource WarningSoftBrush}" Width="56" Height="56" CornerRadius="16">
-                                            <Path Data="{StaticResource IconGenerate}" Fill="{StaticResource WarningBrush}" Width="28" Height="28" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="8" Padding="9,4" VerticalAlignment="Center" Margin="14,0,0,0">
-                                            <TextBlock Text="Coming soon" Foreground="{StaticResource WarningBrush}" FontSize="12" FontWeight="Bold"/>
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock Text="Charts Studio" FontSize="26" FontWeight="Bold" Foreground="{StaticResource TextBrush}" Margin="0,16,0,4"/>
-                                    <TextBlock Text="Journal-ready charts and figures for your research reports." FontSize="14" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-                                    <TextBlock Foreground="{StaticResource TextBrush}" FontSize="13.5" TextWrapping="Wrap" Margin="0,16,0,0" MaxWidth="640"
-                                               Text="Charts Studio will help you create publication-ready charts and figures from your analyzed research results. This feature will be released in a future beta update."/>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                        <!-- Charts Studio Phase 1.
+                             The module owns this surface entirely. MainWindow hosts one control
+                             and calls Enter() on it; everything else lives under ChartsStudio\.
+                             Nothing about Charts Studio belongs in this file. -->
+                        <chartsstudio:ChartsStudioHostView x:Name="ChartsStudioHost"/>
                     </Grid>
 
                     <Grid x:Name="PageDashboard">
