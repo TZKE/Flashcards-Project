@@ -122,9 +122,22 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Collapse when empty via a trigger. A string cannot go through
+                         BooleanToVisibilityConverter (the cast throws and WPF falls back to
+                         Visible), which used to leave an empty line showing. -->
                     <TextBlock Text="{Binding StatusNote}" FontSize="11.5"
-                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
-                               Visibility="{Binding StatusNote, Converter={StaticResource BoolToVis}}"/>
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusNote}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
 
                 <!-- Advisory items -->

@@ -96,6 +96,11 @@ public sealed class AiAssistantViewModel : ObservableObject
         HeaderText = "Publication assistant";
         Reset();
         IsOpen = true;
+        // IsFigureContext is a computed property with no field to notify on. The panel lives in
+        // the shell's visual tree from startup, when _figure is null, so the action buttons were
+        // realised Collapsed and never re-evaluated when a figure was later opened — the panel
+        // appeared empty. Raising it here (and in OpenForSet) is what makes the buttons show.
+        OnPropertyChanged(nameof(IsFigureContext));
         OnPropertyChanged(nameof(IsAiAvailable));
         OnPropertyChanged(nameof(AvailabilityNote));
     }
@@ -109,6 +114,9 @@ public sealed class AiAssistantViewModel : ObservableObject
         HeaderText = "Review the figure set";
         Reset();
         IsOpen = true;
+        // Set context has no per-figure buttons; still notify so a re-open after a figure
+        // context correctly hides them rather than leaving them shown from the previous open.
+        OnPropertyChanged(nameof(IsFigureContext));
         OnPropertyChanged(nameof(IsAiAvailable));
         OnPropertyChanged(nameof(AvailabilityNote));
         _ = RunConsistencyAsync();
