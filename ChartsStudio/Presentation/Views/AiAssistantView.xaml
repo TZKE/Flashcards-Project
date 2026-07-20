@@ -51,7 +51,9 @@
     </UserControl.Resources>
 
     <!-- Scrim + right-docked panel -->
-    <Grid Background="#55000000" Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
+    <Grid x:Name="Root" Background="#55000000" Focusable="True"
+          IsVisibleChanged="Root_IsVisibleChanged" PreviewKeyDown="Root_PreviewKeyDown"
+          Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
         <Border Background="{StaticResource CardBrush}"
                 BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1,0,0,0"
                 Width="420" HorizontalAlignment="Right">

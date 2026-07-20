@@ -1,6 +1,7 @@
 <UserControl x:Class="AIFlashcardMaker.ChartsStudio.Presentation.Views.ProjectPickerView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:AIFlashcardMaker"
              mc:Ignorable="d"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
@@ -87,6 +88,7 @@
                  a single-line search field 120px tall. The default style is already a proper
                  single-line input. -->
             <TextBox Grid.Column="0"
+                     local:Watermark.Text="Search projects…"
                      Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
                      ToolTip="Search by project name, specialty or study type"/>
 

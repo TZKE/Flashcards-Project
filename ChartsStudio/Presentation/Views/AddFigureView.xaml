@@ -1,6 +1,7 @@
 <UserControl x:Class="AIFlashcardMaker.ChartsStudio.Presentation.Views.AddFigureView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:AIFlashcardMaker"
              mc:Ignorable="d"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
@@ -47,7 +48,9 @@
     </UserControl.Resources>
 
     <!-- Scrim + panel -->
-    <Grid Background="#66000000" Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
+    <Grid x:Name="Root" Background="#66000000" Focusable="True"
+          IsVisibleChanged="Root_IsVisibleChanged" PreviewKeyDown="Root_PreviewKeyDown"
+          Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
         <Border Background="{StaticResource CardBrush}"
                 BorderBrush="{StaticResource BorderBrushSoft}"
                 BorderThickness="1"
@@ -87,6 +90,7 @@
                      notes and sets MinHeight=120, which would dominate a dialog this size. -->
                 <TextBox Grid.Row="1"
                          Margin="22,16,22,12"
+                         local:Watermark.Text="Search figures…"
                          Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                          ToolTip="Search by variable or chart type"/>
 

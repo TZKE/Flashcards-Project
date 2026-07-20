@@ -30,6 +30,11 @@ public partial class FigureEditorView : UserControl
             if (e.PropertyName is nameof(FigureEditorViewModel.ColorSwatches)
                 or nameof(FigureEditorViewModel.IsOpen))
                 RebuildSwatches();
+
+            // Grab focus when the editor opens so its Ctrl+Z / Ctrl+Y / Escape key bindings
+            // work immediately, without the user having to click inside first.
+            if (e.PropertyName is nameof(FigureEditorViewModel.IsOpen) && ViewModel.IsOpen)
+                Focus();
         };
         RebuildSwatches();
     }

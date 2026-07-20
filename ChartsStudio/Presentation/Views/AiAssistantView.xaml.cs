@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using AIFlashcardMaker.ChartsStudio.Presentation.ViewModels;
 
 namespace AIFlashcardMaker.ChartsStudio.Presentation.Views;
@@ -36,4 +37,16 @@ public partial class AiAssistantView : UserControl
     private void ApplyCaption_Click(object sender, RoutedEventArgs e) => ViewModel?.ApplyCaption();
 
     private void Close_Click(object sender, RoutedEventArgs e) => ViewModel?.Close();
+
+    // Grab focus when the overlay appears so its keyboard handling works immediately, and let
+    // Escape dismiss it — the behaviour a user expects of any modal.
+    private void Root_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true) Root.Focus();
+    }
+
+    private void Root_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape) { ViewModel?.Close(); e.Handled = true; }
+    }
 }

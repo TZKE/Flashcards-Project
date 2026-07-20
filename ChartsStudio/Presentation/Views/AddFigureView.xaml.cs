@@ -25,4 +25,14 @@ public partial class AddFigureView : UserControl
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => ViewModel?.Close();
+
+    private void Root_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true) Root.Focus();
+    }
+
+    private void Root_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Escape) { ViewModel?.Close(); e.Handled = true; }
+    }
 }
