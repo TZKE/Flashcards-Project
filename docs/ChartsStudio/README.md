@@ -40,6 +40,13 @@ A second rule follows from it, learned the expensive way in commit `dbaeed5`:
 | 4 — Figure Shelf | Complete — curated set, multi-select, drag reorder, duplicate, schema v2 | `27ba766` |
 | 5 — Export | Complete — PNG/SVG/PDF, profiles, batch, manifest, captions, WYSIWYG | `29afe13` |
 | 6 — AI advisory layer | Complete — Core AI module + advisory assistant (caption, critique, accessibility, consistency); deterministic-first, degrades offline | `67e1447` |
+| RC — Hardening & verification | Complete — bounded render cache, keyboard/Esc on all modals, full end-to-end verification, zero real binding errors | `bf313e4` |
+
+Release-candidate verified 2026-07-20: every chart type, every editable option (live preview
+confirmed), undo/redo, duplicate/delete/reorder, persistence across restart, PNG/SVG/PDF export,
+all four AI advisory tasks, offline degradation, project switching, Escape on every modal, and a
+WPF binding-error trace across the whole run with zero real binding failures. Backend QA 647/647.
+See [CHANGELOG](CHANGELOG.md).
 
 ## AI architecture (Phase 6)
 
