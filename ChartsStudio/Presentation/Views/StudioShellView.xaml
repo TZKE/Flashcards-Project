@@ -9,11 +9,11 @@
     <!--
         Charts Studio — studio shell.
 
-        Phase 2 replaced the Contact Sheet placeholder with the real surface. Figure Canvas and
-        Figure Shelf remain placeholders; navigation between the three is still not wired.
+        The shell hosts the Contact Sheet and the Figure Shelf, switched by the header nav, with
+        the Figure Editor, Export dialog and AI assistant overlaying on top when opened.
 
-        What IS real here is the context header. It is the first beat of the studio's opening
-        sequence — the moment that proves the project was understood before anything is
+        The context header is the first beat of the studio's opening sequence — the moment that
+        proves the project was understood before anything is
         proposed — so it reads from the live AnalysisContext rather than from placeholder text.
     -->
 

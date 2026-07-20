@@ -30,6 +30,22 @@ public sealed class FigureRenderQueue : IDisposable
     private readonly ConcurrentDictionary<string, byte[]> _cache = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Insertion order of cache keys, for bounded eviction. Every edit in the Figure Editor
+    /// changes the style — and therefore the cache key — so a long editing session would
+    /// otherwise accumulate one PNG per edit forever (measured: ~24 KB/edit at preview size).
+    /// Bounding the cache keeps a heavy session flat instead of monotonic; oldest entries are
+    /// evicted first, which is the right policy for a cache the user scrolls back through.
+    /// </summary>
+    private readonly ConcurrentQueue<string> _insertionOrder = new();
+
+    /// <summary>
+    /// Cap on cached renders. Comfortably covers a full contact sheet plus an editing session's
+    /// recent history, while bounding the worst case to a few MB. Not configurable: there is no
+    /// scenario that benefits from tuning it, and a fixed value keeps behaviour predictable.
+    /// </summary>
+    private const int MaxCacheEntries = 96;
+
+    /// <summary>
     /// Cancelled and replaced whenever the sheet is superseded. Held here rather than by the
     /// view model so a single call abandons every in-flight render at once.
     /// </summary>
@@ -73,7 +89,28 @@ public sealed class FigureRenderQueue : IDisposable
     }
 
     /// <summary>Empties the render cache. Called when the underlying data changed.</summary>
-    public void ClearCache() => _cache.Clear();
+    public void ClearCache()
+    {
+        _cache.Clear();
+        while (_insertionOrder.TryDequeue(out _)) { }
+    }
+
+    /// <summary>
+    /// Adds a render to the cache and evicts the oldest entries once over the cap. Insertion-
+    /// order eviction: simple, allocation-light, and a good fit for a cache the user scrolls
+    /// back through. The loop tolerates a key already evicted or re-added — it only removes
+    /// when the dictionary is genuinely over the cap.
+    /// </summary>
+    private void CacheAndBound(string key, byte[] png)
+    {
+        if (_cache.TryAdd(key, png))
+            _insertionOrder.Enqueue(key);
+        else
+            _cache[key] = png;   // same picture re-rendered; keep one queue entry
+
+        while (_cache.Count > MaxCacheEntries && _insertionOrder.TryDequeue(out string? oldest))
+            _cache.TryRemove(oldest, out _);
+    }
 
     /// <summary>
     /// Renders one figure, returning a cached image immediately when there is one.
@@ -116,7 +153,7 @@ public sealed class FigureRenderQueue : IDisposable
                                    .ConfigureAwait(false);
 
             if (result.Succeeded && result.PngBytes is not null)
-                _cache[key] = result.PngBytes;
+                CacheAndBound(key, result.PngBytes);
 
             return result;
         }
